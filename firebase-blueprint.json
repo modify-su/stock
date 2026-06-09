@@ -1,0 +1,171 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "App user accounts details",
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "description": "Unique username"
+        },
+        "passwordHash": {
+          "type": "string",
+          "description": "Passphrase or plaintext password for auth"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "user"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "securityQuestion": {
+          "type": "string"
+        },
+        "securityAnswer": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": ["username", "passwordHash", "role", "status"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Stock products list",
+      "type": "object",
+      "properties": {
+        "sku": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "number"
+        },
+        "lowStockThreshold": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": ["sku", "name", "category", "quantity", "lowStockThreshold"]
+    },
+    "StockIn": {
+      "title": "StockIn",
+      "description": "Stock import tracking",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sku": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "number"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "sku", "quantity", "timestamp", "user"]
+    },
+    "StockOut": {
+      "title": "StockOut",
+      "description": "Stock export delivery tracking",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sku": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "number"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["TikTok", "Shopee", "Lazada", "Facebook"]
+        },
+        "courier": {
+          "type": "string",
+          "enum": ["Flash", "J&T", "LEX", "Best"]
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "sku", "quantity", "platform", "courier", "timestamp", "user"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "System color and label settings",
+      "type": "object",
+      "properties": {
+        "logoUrl": {
+          "type": "string"
+        },
+        "logoText": {
+          "type": "string"
+        },
+        "loginBgColor": {
+          "type": "string"
+        },
+        "loginTitle": {
+          "type": "string"
+        },
+        "lowStockAlertEnabled": {
+          "type": "boolean"
+        }
+      },
+      "required": ["logoText", "loginBgColor", "loginTitle"]
+    }
+  },
+  "firestore": {
+    "users/{username}": {
+      "schema": "User",
+      "description": "Users registered on the platform"
+    },
+    "products/{sku}": {
+      "schema": "Product",
+      "description": "Inventory products catalog document path"
+    },
+    "stock_in/{id}": {
+      "schema": "StockIn",
+      "description": "Stock incoming logs history details"
+    },
+    "stock_out/{id}": {
+      "schema": "StockOut",
+      "description": "Stock outbound logs delivery histories"
+    },
+    "settings/app": {
+      "schema": "AppSettings",
+      "description": "Configure dashboard logo or title values"
+    }
+  }
+}

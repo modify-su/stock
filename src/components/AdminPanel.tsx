@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Users, Settings, Palette, CheckCircle, XCircle, LayoutGrid, Sparkles, RefreshCw, AlertCircle, Save } from 'lucide-react';
+import { firebaseService } from '../services/firebaseService';
 
 interface ManagedUser {
   username: string;
@@ -40,11 +41,8 @@ export default function AdminPanel({ onUpdateSettings, appSettings }: AdminPanel
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
-      const res = await fetch('/api/admin/users');
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data);
-      }
+      const data = await firebaseService.getUsers();
+      setUsers(data);
     } catch (e) {
       console.error('Failed to pull registered staff', e);
     } finally {
@@ -59,21 +57,20 @@ export default function AdminPanel({ onUpdateSettings, appSettings }: AdminPanel
   // Update staff status
   const handleUserStatusUpdate = async (tgtUsername: string, fields: { status?: 'approved' | 'rejected' | 'pending'; role?: 'admin' | 'user' }) => {
     try {
-      const res = await fetch(`/api/admin/users/${tgtUsername}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(fields)
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'บันทึกสถานะผู้ใช้ล้มเหลว');
-      }
-      setFeedback(data.message);
+      // Find current user values to handle partial updates
+      const userToUpdate = users.find(u => u.username === tgtUsername);
+      if (!userToUpdate) return;
+      
+      const newStatus = fields.status !== undefined ? fields.status : userToUpdate.status;
+      const newRole = fields.role !== undefined ? fields.role : userToUpdate.role;
+
+      await firebaseService.updateUserStatus(tgtUsername, newStatus, newRole);
+      setFeedback(`อัปเดตสิทธิ์ ${tgtUsername} เรียบร้อยแล้ว`);
       // Re-fetch users
       fetchUsers();
       setTimeout(() => setFeedback(''), 3000);
     } catch (e: any) {
-      setErrorFeedback(e.message);
+      setErrorFeedback(e.message || 'บันทึกสถานะผู้ใช้ล้มเหลว');
       setTimeout(() => setErrorFeedback(''), 3000);
     }
   };

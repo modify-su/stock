@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Send, Reply, Bot, ShieldCheck, HelpCircle, AlertOctagon, RefreshCw, Layers } from 'lucide-react';
+import { firebaseService } from '../services/firebaseService';
 
 interface ChatMessage {
   id: string;
@@ -43,17 +44,12 @@ export default function LineBotSandbox() {
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      const res = await fetch('/api/line-simulator', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText })
-      });
-      const data = await res.json();
+      const replyObj = await firebaseService.generateBotReply(userText);
       
       const botMsg: ChatMessage = {
         id: 'bot-' + Date.now().toString(),
         sender: 'bot',
-        text: data.botReply?.text || 'ขออภัยครับ พิมพ์เพื่อเรียกดูคู่มือสต็อกสินค้าอีกครั้งนะค้าบ',
+        text: replyObj.text,
         timestamp: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
       };
       
@@ -67,7 +63,7 @@ export default function LineBotSandbox() {
       const errorMsg: ChatMessage = {
         id: 'bot-err-' + Date.now(),
         sender: 'bot',
-        text: '❌ เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์บอทจำลอง',
+        text: '❌ เกิดข้อผิดพลาดในการดึงข้อมูลตอบกลับจากระบบอัจฉริยะ',
         timestamp: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, errorMsg]);

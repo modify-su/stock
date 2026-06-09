@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lock, User, HelpCircle, ArrowRight, ShieldCheck, RefreshCw, KeyRound, Check } from 'lucide-react';
+import { firebaseService } from '../services/firebaseService';
 
 interface LoginFormProps {
   onLoginSuccess: (user: any) => void;
@@ -51,30 +52,14 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
+      const user = await firebaseService.loginUser(username, password);
       
-      let data: any;
-      const contentType = res.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        data = await res.json();
-      } else {
-        const text = await res.text();
-        throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่เป็น JSON (${res.status}): ${text.substring(0, 150)}`);
-      }
-
-      if (!res.ok) {
-        throw new Error(data.message || 'เกิดข้อผิดพลาดในการตรวจสอบข้อมูล');
-      }
-      setSuccess(data.message);
+      setSuccess('ยินดีต้อนรับเข้าสูระบบคลังสินค้า!');
       setTimeout(() => {
-        onLoginSuccess(data.user);
+        onLoginSuccess(user);
       }, 800);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'เกิดข้อผิดพลาดในการตรวจสอบข้อมูล');
     } finally {
       setLoading(false);
     }
@@ -92,30 +77,14 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
     setError('');
     setSuccess('');
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: regUsername,
-          password: regPassword,
-          securityQuestion: finalQuestion,
-          securityAnswer
-        })
-      });
+      const result = await firebaseService.registerUser(
+        regUsername,
+        regPassword,
+        finalQuestion,
+        securityAnswer
+      );
       
-      let data: any;
-      const contentType = res.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        data = await res.json();
-      } else {
-        const text = await res.text();
-        throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่เป็น JSON (${res.status}): ${text.substring(0, 150)}`);
-      }
-
-      if (!res.ok) {
-        throw new Error(data.message || 'การลงทะเบียนล้มเหลว');
-      }
-      setSuccess(data.message);
+      setSuccess(result.message);
       // If approved, send user directly or let them log in
       setTimeout(() => {
         setActiveTab('signin');
@@ -123,7 +92,7 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
         setPassword(regPassword);
       }, 2000);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'การลงทะเบียนล้มเหลว');
     } finally {
       setLoading(false);
     }
@@ -139,15 +108,11 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/auth/security-question/${forgotUsername}`);
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'ไม่พบชื่อผู้ใช้นี้ในคลังข้อมูล');
-      }
-      setRetrievedQuestion(data.question);
+      const questionText = await firebaseService.getSecurityQuestion(forgotUsername);
+      setRetrievedQuestion(questionText);
       setStep(2);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'ไม่พบชื่อผู้ใช้นี้ในคลังข้อมูล');
     } finally {
       setLoading(false);
     }
@@ -163,20 +128,8 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: forgotUsername,
-          securityAnswer: forgotAnswer,
-          newPassword
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'ข้อมูลการคำนวณสิทธิ์ไม่ถูกต้อง');
-      }
-      setSuccess(data.message);
+      await firebaseService.resetPassword(forgotUsername, forgotAnswer, newPassword);
+      setSuccess('เปลี่ยนรหัสผ่านใหม่สำเร็จแล้ว! กรุณาเข้าสู่ระบบด้วยรหัสผ่านใหม่');
       setTimeout(() => {
         setActiveTab('signin');
         setUsername(forgotUsername);
@@ -187,7 +140,7 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
         setNewPassword('');
       }, 2500);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'ข้อมูลการคำนวณสิทธิ์ไม่ถูกต้อง');
     } finally {
       setLoading(false);
     }

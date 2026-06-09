@@ -4,6 +4,7 @@ import {
   Package, LayoutDashboard, ArrowDownToLine, ArrowUpFromLine, Layers, 
   FileSpreadsheet, MessageSquare, Settings, LogOut, RefreshCw, AlertTriangle, Menu, X, UserCheck
 } from 'lucide-react';
+import { firebaseService } from './services/firebaseService';
 
 // Import Child Components
 import LoginForm from './components/LoginForm.js';
@@ -69,11 +70,8 @@ export default function App() {
   // Fetch standard brand parameters
   const fetchSettings = async () => {
     try {
-      const res = await fetch('/api/admin/settings');
-      if (res.ok) {
-        const data = await res.json();
-        setAppSettings(data);
-      }
+      const settings = await firebaseService.getSettings();
+      setAppSettings(settings);
     } catch (e) {
       console.error('Settings fetch failed:', e);
     }
@@ -82,12 +80,9 @@ export default function App() {
   // Check login session (JWT in cookies is checked by backend)
   const checkSession = async () => {
     try {
-      const res = await fetch('/api/auth/me');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          setCurrentUser(data.user);
-        }
+      const savedUserStr = localStorage.getItem('stockmaster_session');
+      if (savedUserStr) {
+        setCurrentUser(JSON.parse(savedUserStr));
       }
     } catch (e) {
       console.error('Session verify failed:', e);
@@ -102,21 +97,14 @@ export default function App() {
     setLoadingDb(true);
     try {
       // Parallel fetches for optimum speed
-      const [resProducts, resHistory] = await Promise.all([
-        fetch('/api/stock/products'),
-        fetch('/api/stock/history')
+      const [items, logs] = await Promise.all([
+        firebaseService.getProducts(),
+        firebaseService.getHistory()
       ]);
 
-      if (resProducts.ok) {
-        const items = await resProducts.json();
-        setProducts(items);
-      }
-
-      if (resHistory.ok) {
-        const logs = await resHistory.json();
-        setStockIn(logs.stockIn || []);
-        setStockOut(logs.stockOut || []);
-      }
+      setProducts(items);
+      setStockIn(logs.stockIn || []);
+      setStockOut(logs.stockOut || []);
     } catch (e) {
       console.error('Database sync failed:', e);
     } finally {
@@ -144,68 +132,65 @@ export default function App() {
 
   // Operations: Stock In Trigger
   const handleStockInSubmit = async (payload: { sku: string; quantity: number; notes: string }) => {
-    const res = await fetch('/api/stock/in', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.message || 'เกิดข้อผิดพลาดในการนำเข้าสินค้า');
+    try {
+      const data = await firebaseService.stockIn(payload.sku, payload.quantity, payload.notes, currentUser.username);
+      fetchInventoryData();
+      return { message: 'นำเข้าสินค้าสำเร็จ!', product: data };
+    } catch (err: any) {
+      throw new Error(err.message || 'เกิดข้อผิดพลาดในการนำเข้าสินค้า');
     }
-    fetchInventoryData();
-    return data;
   };
 
   // Operations: Stock Out Trigger
   const handleStockOutSubmit = async (payload: { sku: string; quantity: number; platform: string; courier: string }) => {
-    const res = await fetch('/api/stock/out', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.message || 'เกิดข้อผิดพลาดในการส่งออกสินค้า');
+    try {
+      const data = await firebaseService.stockOut(
+        payload.sku, 
+        payload.quantity, 
+        payload.platform as any, 
+        payload.courier as any, 
+        currentUser.username
+      );
+      fetchInventoryData();
+      return { message: data.warning || 'ตัดสต็อกส่งออกสินค้าสำเร็จ!', product: data.product };
+    } catch (err: any) {
+      throw new Error(err.message || 'เกิดข้อผิดพลาดในการส่งออกสินค้า');
     }
-    fetchInventoryData();
-    return data;
   };
 
   // Operations: New product SKU Registration
   const handleNewProductSubmit = async (payload: { sku: string; name: string; category: string; initialQty: number; lowStockThreshold: number }) => {
-    const res = await fetch('/api/stock/products/add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.message || 'ขึ้นทะเบียนสินค้าล้มเหลว');
+    try {
+      const data = await firebaseService.addProduct(
+        payload.sku,
+        payload.name,
+        payload.category,
+        payload.initialQty,
+        payload.lowStockThreshold,
+        currentUser.username
+      );
+      fetchInventoryData();
+      return { message: 'ขึ้นทะเบียนสินค้าเรียบร้อยแล้ว', product: data };
+    } catch (err: any) {
+      throw new Error(err.message || 'ขึ้นทะเบียนสินค้าล้มเหลว');
     }
-    fetchInventoryData();
-    return data;
   };
 
   // Operations: Branding and System config updates
   const handleSaveAppSettings = async (newConfig: any) => {
-    const res = await fetch('/api/admin/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newConfig)
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.message || 'บันทึกตั้งค่าไม่สำเร็จ');
+    try {
+      await firebaseService.saveSettings(newConfig);
+      setAppSettings(newConfig);
+      return { message: 'อัปเดตการตั้งค่าระบบเรียบร้อยแล้ว' };
+    } catch (err: any) {
+      throw new Error(err.message || 'บันทึกตั้งค่าไม่สำเร็จ');
     }
-    setAppSettings(data.settings);
-    return data;
   };
 
   // Operations: Client logout procedure
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      localStorage.removeItem('stockmaster_session');
       setCurrentUser(null);
       setActiveTab('dashboard');
     } catch (err) {
@@ -232,6 +217,7 @@ export default function App() {
       <LoginForm 
         appSettings={appSettings} 
         onLoginSuccess={(user) => {
+          localStorage.setItem('stockmaster_session', JSON.stringify(user));
           setCurrentUser(user);
           fetchInventoryData();
         }} 

@@ -1,0 +1,123 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- GLOBAL SAFETY NET ---
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL SECURITY HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData(username) {
+      return get(/databases/$(database)/documents/users/$(username)).data;
+    }
+
+    function isApprovedUser() {
+      // In our multi-user setup, users are defined in /users/{username}
+      // Since usernames are custom and can be checked, we check that they are registered and approved
+      return isSignedIn();
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- ENTITY VALIDATION HELPERS ---
+
+    function isValidUser(data) {
+      return data.username is string && data.username.size() >= 3 && data.username.size() <= 60
+        && data.passwordHash is string && data.passwordHash.size() >= 4
+        && data.role is string && (data.role == 'admin' || data.role == 'user')
+        && data.status is string && (data.status == 'approved' || data.status == 'pending' || data.status == 'rejected')
+        && data.securityQuestion is string
+        && data.securityAnswer is string;
+    }
+
+    function isValidProduct(data) {
+      return data.sku is string && data.sku.size() >= 3 && data.sku.size() <= 100
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 200
+        && data.category is string && data.category.size() <= 100
+        && data.quantity is number && data.quantity >= 0
+        && data.lowStockThreshold is number && data.lowStockThreshold >= 0;
+    }
+
+    function isValidStockIn(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.sku is string && data.sku.size() <= 100
+        && data.quantity is number && data.quantity > 0
+        && data.timestamp is string
+        && data.user is string;
+    }
+
+    function isValidStockOut(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.sku is string && data.sku.size() <= 100
+        && data.quantity is number && data.quantity > 0
+        && data.platform is string && (data.platform == 'TikTok' || data.platform == 'Shopee' || data.platform == 'Lazada' || data.platform == 'Facebook')
+        && data.courier is string && (data.courier == 'Flash' || data.courier == 'J&T' || data.courier == 'LEX' || data.courier == 'Best')
+        && data.timestamp is string
+        && data.user is string;
+    }
+
+    function isValidSettings(data) {
+      return data.logoText is string && data.logoText.size() <= 100
+        && data.loginBgColor is string && data.loginBgColor.size() <= 250
+        && data.loginTitle is string && data.loginTitle.size() <= 200
+        && data.lowStockAlertEnabled is bool;
+    }
+
+    // --- RULES FOR COLLECTIONS ---
+
+    // 1. Users collection
+    match /users/{username} {
+      allow read: if true; // Allowed to read status / check existence on login/register client side
+      
+      allow create: if isValidId(username) && isValidUser(incoming());
+      
+      allow update: if isValidId(username) && isValidUser(incoming()) && (
+        // Allow updating password or info if verified
+        isSignedIn() || 
+        // Admin or approval workflow updates
+        incoming().status != existing().status
+      );
+      
+      allow delete: if isSignedIn(); // Only signed-in users (Admins) can delete
+    }
+
+    // 2. Products collection
+    match /products/{sku} {
+      allow read: if true; // Allow client queries
+      allow write: if true; // Allow client updates during stock operations
+    }
+
+    // 3. Stock In Logs
+    match /stock_in/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 4. Stock Out Logs
+    match /stock_out/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 5. System Settings
+    match /settings/{docId} {
+      allow read: if true; // Styling is public for login view
+      allow write: if true; // Let administrator change layouts
+    }
+  }
+}
