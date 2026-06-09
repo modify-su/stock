@@ -129,48 +129,60 @@ async function startServer() {
 
   // Login
   app.post('/api/auth/login', (req: Request, res: Response) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ message: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' });
-    }
-
-    const db = dbInstance.get();
-    const user = db.users.find(u => u.username.toLowerCase() === username.toLowerCase());
-
-    if (!user || user.passwordHash !== password) {
-      return res.status(400).json({ message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
-    }
-
-    if (user.status === 'pending') {
-      return res.status(403).json({ message: 'บัญชีนี้ยังไม่ได้รับอนุมัติใช้งานจาก Admin กรุณารอสักครู่' });
-    }
-
-    if (user.status === 'rejected') {
-      return res.status(403).json({ message: 'บัญชีนี้ถูกปฏิเสธสิทธิ์การเข้าใช้งานโดยผู้ดูแลระบบ' });
-    }
-
-    // Issue JWT cookie (JWT + Cookie flow)
-    const token = jwt.sign(
-      { username: user.username, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: false, // Set false to make sure it plays nicely inside sandbox localhost frames
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000 // 1 day
-    });
-
-    res.json({
-      message: 'ยินดีต้อนรับเข้าสูระบบคลังสินค้า!',
-      user: {
-        username: user.username,
-        role: user.role,
-        status: user.status
+    try {
+      const { username, password } = req.body || {};
+      if (!username || !password) {
+        return res.status(400).json({ message: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' });
       }
-    });
+
+      console.log(`[API Login Request] username: ${username}`);
+      const db = dbInstance.get();
+      if (!db || !db.users) {
+        console.error('[API Login Error] Database or users array is empty');
+        return res.status(500).json({ message: 'ฐานข้อมูลขัดข้อง (Database not loaded)' });
+      }
+
+      const user = db.users.find(u => u && u.username && u.username.toLowerCase() === username.toLowerCase());
+
+      if (!user || user.passwordHash !== password) {
+        return res.status(400).json({ message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+      }
+
+      if (user.status === 'pending') {
+        return res.status(403).json({ message: 'บัญชีนี้ยังไม่ได้รับอนุมัติใช้งานจาก Admin กรุณารอสักครู่' });
+      }
+
+      if (user.status === 'rejected') {
+        return res.status(403).json({ message: 'บัญชีนี้ถูกปฏิเสธสิทธิ์การเข้าใช้งานโดยผู้ดูแลระบบ' });
+      }
+
+      // Issue JWT cookie (JWT + Cookie flow)
+      const token = jwt.sign(
+        { username: user.username, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: false, // Set false to make sure it plays nicely inside sandbox localhost frames
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000 // 1 day
+      });
+
+      console.log(`[API Login Success] username: ${username}, role: ${user.role}`);
+      return res.json({
+        message: 'ยินดีต้อนรับเข้าสู่ระบบคลังสินค้า!',
+        user: {
+          username: user.username,
+          role: user.role,
+          status: user.status
+        }
+      });
+    } catch (err: any) {
+      console.error('[API Login Crash Error]:', err);
+      return res.status(500).json({ message: `เกิดข้อผิดพลาดขัดข้องภายในเซิร์ฟเวอร์หลัก: ${err.message}` });
+    }
   });
 
   // Forgot password endpoint
@@ -656,6 +668,14 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+  
+  // --- GLOBAL ERROR HANDLER ---
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+    console.error('[Express Global Error Handler]:', err);
+    res.status(err.status || 500).json({
+      message: err.message || 'เกิดข้อผิดพลาดขัดข้องภายในระบบเซิร์ฟเวอร์หลัก'
+    });
+  });
 
   // Fallback to main app (dev only)
   app.listen(PORT, '0.0.0.0', () => {

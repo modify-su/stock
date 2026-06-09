@@ -56,7 +56,16 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
-      const data = await res.json();
+      
+      let data: any;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่เป็น JSON (${res.status}): ${text.substring(0, 150)}`);
+      }
+
       if (!res.ok) {
         throw new Error(data.message || 'เกิดข้อผิดพลาดในการตรวจสอบข้อมูล');
       }
@@ -93,7 +102,16 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
           securityAnswer
         })
       });
-      const data = await res.json();
+      
+      let data: any;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่เป็น JSON (${res.status}): ${text.substring(0, 150)}`);
+      }
+
       if (!res.ok) {
         throw new Error(data.message || 'การลงทะเบียนล้มเหลว');
       }
