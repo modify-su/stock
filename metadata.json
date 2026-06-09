@@ -1,0 +1,6 @@
+{
+  "name": "Stock Management System",
+  "description": "ระบบจัดการสต็อกสินค้าอัจฉริยะ รองรับการรับเข้า-ส่งออก ควบคุมสิทธิ์ และ LINE Bot integration",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
