@@ -44,9 +44,35 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
       url = customUrl.trim().replace(/\/$/, '');
     } else {
       // Auto
-      const hostname = window.location.hostname;
-      if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.endsWith('.run.app')) {
-        url = 'https://ais-pre-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
+      // 1. Try to inspect environment variables first
+      let envUrl = '';
+      try {
+        const meta = import.meta as any;
+        envUrl = meta.env?.VITE_API_URL || 
+                 meta.env?.NEXT_PUBLIC_API_URL || 
+                 meta.env?.API_BASE_URL || '';
+      } catch (e) {
+        // ignore
+      }
+
+      if (!envUrl) {
+        try {
+          envUrl = process.env?.VITE_API_URL || 
+                   process.env?.NEXT_PUBLIC_API_URL || 
+                   process.env?.API_BASE_URL || '';
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      if (envUrl && envUrl.trim() !== '') {
+        url = envUrl.trim().replace(/\/$/, '');
+      } else {
+        // 2. Otherwise auto-detect via window.location.hostname
+        const hostname = window.location.hostname;
+        if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.endsWith('.run.app')) {
+          url = 'https://ais-pre-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
+        }
       }
     }
     

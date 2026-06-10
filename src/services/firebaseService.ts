@@ -62,6 +62,30 @@ export const getApiBaseUrl = (): string => {
   }
   
   // 'auto' mode
+  // Try to inspect multiple environment variables at build-time or compile-time (Vite/Next.js and process formats)
+  try {
+    const meta = import.meta as any;
+    const viteEnvUrl = meta.env?.VITE_API_URL || 
+                      meta.env?.NEXT_PUBLIC_API_URL || 
+                      meta.env?.API_BASE_URL;
+    if (viteEnvUrl && viteEnvUrl.trim() !== '') {
+      return viteEnvUrl.trim().replace(/\/$/, '');
+    }
+  } catch (e) {
+    // skip env errors
+  }
+
+  try {
+    const procEnvUrl = process.env?.VITE_API_URL || 
+                      process.env?.NEXT_PUBLIC_API_URL || 
+                      process.env?.API_BASE_URL;
+    if (procEnvUrl && procEnvUrl.trim() !== '') {
+      return procEnvUrl.trim().replace(/\/$/, '');
+    }
+  } catch (e) {
+    // skip process env errors
+  }
+  
   const hostname = window.location.hostname;
   if (
     hostname &&
@@ -69,6 +93,7 @@ export const getApiBaseUrl = (): string => {
     hostname !== '127.0.0.1' &&
     !hostname.endsWith('.run.app')
   ) {
+    // If running externally (e.g., from Vercel), fallback to our robust production Shared Cloud Run endpoint
     return 'https://ais-pre-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
   }
   return '';
@@ -105,7 +130,17 @@ async function fetchAPI(url: string, options: RequestInit = {}): Promise<any> {
       ...(options.headers || {})
     }
   };
-  const res = await fetch(fullUrl, mergedOptions);
+  
+  let res;
+  try {
+    res = await fetch(fullUrl, mergedOptions);
+  } catch (err: any) {
+    console.error('API Fetch Connection Failed:', err);
+    throw new Error(
+      'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ API ได้ (Failed to fetch) กรุณาตรวจสอบอินเทอร์เน็ตสะกดใจ หรือเปิดแท็บ "การเชื่อมต่อเซิร์ฟเวอร์คลาวด์ API" ด้านล่าง เพื่อทดสอบ/กำหนดเซิร์ฟเวอร์ใหม่'
+    );
+  }
+
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.message || `เกิดข้อผิดพลาดรหัส ${res.status}`);
