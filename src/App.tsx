@@ -4,7 +4,7 @@ import {
   Package, LayoutDashboard, ArrowDownToLine, ArrowUpFromLine, Layers, 
   FileSpreadsheet, MessageSquare, Settings, LogOut, RefreshCw, AlertTriangle, Menu, X, UserCheck
 } from 'lucide-react';
-import { firebaseService } from './services/firebaseService';
+import { firebaseService, getApiBaseUrl } from './services/firebaseService';
 
 // Import Child Components
 import LoginForm from './components/LoginForm.js';
@@ -87,7 +87,8 @@ export default function App() {
       if (savedUserStr) {
         const parsed = JSON.parse(savedUserStr);
         // Dispatch authentication check to local or remote port 3000 node session
-        const res = await fetch('/api/auth/me', {
+        const baseUrl = getApiBaseUrl();
+        const res = await fetch(`${baseUrl}/api/auth/me`, {
           headers: {
             'Authorization': `Bearer ${parsed.token || ''}`,
             'Content-Type': 'application/json'

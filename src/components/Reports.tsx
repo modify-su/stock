@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { FileSpreadsheet, FileDown, Search, ArrowDownToLine, ArrowUpFromLine, Calendar, User, ClipboardList, Filter } from 'lucide-react';
+import { getApiBaseUrl } from '../services/firebaseService';
 
 interface StockInEntry {
   id: string;
@@ -80,7 +81,7 @@ export default function Reports({ stockIn, stockOut }: ReportsProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3" id="export-actions-grid">
           
           <a 
-            href="/api/stock/report/csv" 
+            href={`${getApiBaseUrl()}/api/stock/report/csv`} 
             className="flex items-center justify-between p-3.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl font-medium text-xs text-slate-200 hover:text-white transition group"
             id="btn-export-totals"
           >
@@ -95,7 +96,7 @@ export default function Reports({ stockIn, stockOut }: ReportsProps) {
           </a>
 
           <a 
-            href="/api/stock/report/csv?type=products" 
+            href={`${getApiBaseUrl()}/api/stock/report/csv?type=products`} 
             className="flex items-center justify-between p-3.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl font-medium text-xs text-slate-200 hover:text-white transition group"
             id="btn-export-inventory"
           >
@@ -110,7 +111,7 @@ export default function Reports({ stockIn, stockOut }: ReportsProps) {
           </a>
 
           <a 
-            href="/api/stock/report/csv?type=stock_in" 
+            href={`${getApiBaseUrl()}/api/stock/report/csv?type=stock_in`} 
             className="flex items-center justify-between p-3.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl font-medium text-xs text-slate-200 hover:text-white transition group"
             id="btn-export-inwards"
           >
@@ -125,7 +126,7 @@ export default function Reports({ stockIn, stockOut }: ReportsProps) {
           </a>
 
           <a 
-            href="/api/stock/report/csv?type=stock_out" 
+            href={`${getApiBaseUrl()}/api/stock/report/csv?type=stock_out`} 
             className="flex items-center justify-between p-3.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl font-medium text-xs text-slate-200 hover:text-white transition group"
             id="btn-export-outwards"
           >

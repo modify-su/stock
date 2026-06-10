@@ -48,6 +48,24 @@ export interface AppSettings {
   categories?: string[];
 }
 
+export const getApiBaseUrl = (): string => {
+  const savedOverride = localStorage.getItem('stockmaster_api_url');
+  if (savedOverride) {
+    return savedOverride.replace(/\/$/, '');
+  }
+  
+  const hostname = window.location.hostname;
+  if (
+    hostname &&
+    hostname !== 'localhost' &&
+    hostname !== '127.0.0.1' &&
+    !hostname.endsWith('.run.app')
+  ) {
+    return 'https://ais-pre-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
+  }
+  return '';
+};
+
 const getToken = (): string | null => {
   try {
     const sessionStr = localStorage.getItem('stockmaster_session');
@@ -70,6 +88,8 @@ const getAuthHeaders = (): HeadersInit => {
 };
 
 async function fetchAPI(url: string, options: RequestInit = {}): Promise<any> {
+  const baseUrl = getApiBaseUrl();
+  const fullUrl = baseUrl ? `${baseUrl}${url}` : url;
   const mergedOptions = {
     ...options,
     headers: {
@@ -77,7 +97,7 @@ async function fetchAPI(url: string, options: RequestInit = {}): Promise<any> {
       ...(options.headers || {})
     }
   };
-  const res = await fetch(url, mergedOptions);
+  const res = await fetch(fullUrl, mergedOptions);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.message || `เกิดข้อผิดพลาดรหัส ${res.status}`);
