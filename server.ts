@@ -3,7 +3,7 @@ import path from 'path';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
-import { dbInstance, User, StockProduct, StockInEntry, StockOutEntry, AppSettings } from './src/server/database.js';
+import { dbInstance, User, StockProduct, StockInEntry, StockOutEntry, AppSettings, UserSession, hashPassword, verifyPassword } from './src/server/database.js';
 
 // Extend Express Request type to include currentUser
 declare global {
@@ -33,13 +33,24 @@ async function startServer() {
 
   // --- AUTHENTICATION MIDDLEWARE ---
   function authenticateToken(req: Request, res: Response, next: NextFunction) {
-    const token = req.cookies.token;
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    const token = req.cookies.token || (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
+
     if (!token) {
       return res.status(401).json({ message: 'กรุณาเข้าสู่ระบบก่อนทำรายการ' });
     }
 
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { username: string; role: 'admin' | 'user' };
+      const db = dbInstance.get();
+
+      // Check if session is stored and active in the database
+      const activeSession = db.sessions?.some(s => s.token === token);
+      if (!activeSession) {
+        res.clearCookie('token');
+        return res.status(401).json({ message: 'เซสชันไม่ถูกต้องหรือหมดอายุการใช้งานแล้ว กรุณาลงชื่อเข้าใช้อีกครั้ง' });
+      }
+
       req.currentUser = decoded;
       next();
     } catch (err) {
@@ -62,13 +73,22 @@ async function startServer() {
 
   // Me endpoint to verify session on app load
   app.get('/api/auth/me', (req: Request, res: Response) => {
-    const token = req.cookies.token;
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    const token = req.cookies.token || (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
+
     if (!token) {
       return res.json({ user: null });
     }
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { username: string; role: 'admin' | 'user' };
       const db = dbInstance.get();
+
+      const activeSession = db.sessions?.some(s => s.token === token);
+      if (!activeSession) {
+        res.clearCookie('token');
+        return res.json({ user: null });
+      }
+
       const user = db.users.find(u => u.username === decoded.username);
       if (!user) {
         res.clearCookie('token');
@@ -109,7 +129,7 @@ async function startServer() {
 
     const newUser: User = {
       username: username.trim(),
-      passwordHash: password, // For easy evaluation, stored as plaintext password or direct match
+      passwordHash: hashPassword(password), // Safely hash the password with bcrypt helper
       role,
       status,
       createdAt: new Date().toISOString(),
@@ -144,7 +164,7 @@ async function startServer() {
 
       const user = db.users.find(u => u && u.username && u.username.toLowerCase() === username.toLowerCase());
 
-      if (!user || user.passwordHash !== password) {
+      if (!user || !verifyPassword(password, user.passwordHash)) {
         return res.status(400).json({ message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
       }
 
@@ -170,9 +190,26 @@ async function startServer() {
         maxAge: 24 * 60 * 60 * 1000 // 1 day
       });
 
+      // Save user session to database
+      if (!db.sessions) {
+        db.sessions = [];
+      }
+      db.sessions.push({
+        token,
+        username: user.username,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      });
+
+      // Prune expired sessions from database to prevent bloated file sizes
+      db.sessions = db.sessions.filter(s => new Date(s.expiresAt).getTime() > Date.now());
+
+      dbInstance.save(db);
+
       console.log(`[API Login Success] username: ${username}, role: ${user.role}`);
       return res.json({
         message: 'ยินดีต้อนรับเข้าสู่ระบบคลังสินค้า!',
+        token,
         user: {
           username: user.username,
           role: user.role,
@@ -203,7 +240,7 @@ async function startServer() {
       return res.status(400).json({ message: 'คำตอบคำถามความปลอดภัยไม่ถูกต้อง' });
     }
 
-    user.passwordHash = newPassword;
+    user.passwordHash = hashPassword(newPassword); // Hash replacement password
     dbInstance.save(db);
 
     res.json({ message: 'เปลี่ยนรหัสผ่านใหม่สำเร็จแล้ว! กรุณาเข้าสู่ระบบด้วยรหัสผ่านใหม่' });
@@ -222,8 +259,43 @@ async function startServer() {
     res.json({ question: user.securityQuestion });
   });
 
+  // Profiling API requested directly by standard
+  app.get('/api/auth/profile', authenticateToken, (req: Request, res: Response) => {
+    if (!req.currentUser) {
+      return res.status(401).json({ message: 'กรุณาเข้าสู่ระบบเพื่อดำเนินการตรวจสอบโปรไฟล์' });
+    }
+    const db = dbInstance.get();
+    const user = db.users.find(u => u.username === req.currentUser?.username);
+    if (!user) {
+      return res.status(404).json({ message: 'ไม่พบผู้ใช้งานนี้ในระบบฐานข้อมูล' });
+    }
+    res.json({
+      username: user.username,
+      role: user.role,
+      status: user.status,
+      createdAt: user.createdAt,
+      securityQuestion: user.securityQuestion
+    });
+  });
+
+  // Private Settings Endpoint
+  app.get('/api/auth/settings', authenticateToken, (req: Request, res: Response) => {
+    const db = dbInstance.get();
+    res.json(db.settings);
+  });
+
   // Logout
   app.post('/api/auth/logout', (req: Request, res: Response) => {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    const token = req.cookies.token || (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
+
+    if (token) {
+      const db = dbInstance.get();
+      if (db.sessions) {
+        db.sessions = db.sessions.filter(s => s.token !== token);
+        dbInstance.save(db);
+      }
+    }
     res.clearCookie('token');
     res.json({ message: 'ออกจากระบบคลังสินค้าเรียบร้อยแล้ว' });
   });
@@ -444,6 +516,167 @@ async function startServer() {
       stockIn: db.stockInHistory,
       stockOut: db.stockOutHistory
     });
+  });
+
+  // --- CATEGORIES MANAGEMENT ENDPOINTS ---
+
+  app.post('/api/stock/categories/add', authenticateToken, (req: Request, res: Response) => {
+    const { name } = req.body;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ message: 'กรุณากรอกชื่อหมวดหมู่ที่เหมาะสม' });
+    }
+    const db = dbInstance.get();
+    if (!db.settings.categories) {
+      db.settings.categories = ['ทั่วไป', 'ความงาม', 'แฟชั่น', 'เครื่องใช้ไฟฟ้า', 'ไอที & อุปกรณ์เสริม'];
+    }
+    const cleanName = name.trim();
+    if (db.settings.categories.includes(cleanName)) {
+      return res.status(400).json({ message: 'มีชื่อหมวดหมู่นี้ในระบบคลังอยู่แล้ว' });
+    }
+    db.settings.categories.push(cleanName);
+    dbInstance.save(db);
+    res.json({ message: 'เพิ่มหมวดหมู่เรียบร้อยแล้ว!', categories: db.settings.categories });
+  });
+
+  app.post('/api/stock/categories/update', authenticateToken, (req: Request, res: Response) => {
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName) {
+      return res.status(400).json({ message: 'กรุณาระบุหมวดหมู่เดิมและหมวดหมู่ใหม่เพื่อดำเนินงานต่อ' });
+    }
+    const db = dbInstance.get();
+    if (!db.settings.categories) {
+      db.settings.categories = ['ทั่วไป', 'ความงาม', 'แฟชั่น', 'เครื่องใช้ไฟฟ้า', 'ไอที & อุปกรณ์เสริม'];
+    }
+    const idx = db.settings.categories.indexOf(oldName.trim());
+    if (idx === -1) {
+      return res.status(404).json({ message: 'ไม่พบหมวดหมู่ต้นทางในระบบ' });
+    }
+    const cleanNewName = newName.trim();
+    db.settings.categories[idx] = cleanNewName;
+
+    // Apply cascading category updates to products and history
+    db.products.forEach(p => {
+      if (p.category === oldName.trim()) {
+        p.category = cleanNewName;
+      }
+    });
+
+    db.stockInHistory.forEach(h => {
+      if (h.category === oldName.trim()) {
+        h.category = cleanNewName;
+      }
+    });
+
+    dbInstance.save(db);
+    res.json({ message: 'อัปเดตป้ายชื่อหมวดหมู่และสินค้าที่เกี่ยวข้องสำเร็จ!', categories: db.settings.categories });
+  });
+
+  app.post('/api/stock/categories/delete', authenticateToken, (req: Request, res: Response) => {
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ message: 'กรุณากรอกหมวดหมู่เป้าหมายที่จะเอาออก' });
+    }
+    const db = dbInstance.get();
+    if (!db.settings.categories) {
+      db.settings.categories = ['ทั่วไป', 'ความงาม', 'แฟชั่น', 'เครื่องใช้ไฟฟ้า', 'ไอที & อุปกรณ์เสริม'];
+    }
+    const idx = db.settings.categories.indexOf(name.trim());
+    if (idx === -1) {
+      return res.status(404).json({ message: 'ไม่พบหมวดหมู่ดังกล่าว' });
+    }
+    db.settings.categories.splice(idx, 1);
+
+    // Default products in the deleted category back to 'ทั่วไป' (General)
+    db.products.forEach(p => {
+      if (p.category === name.trim()) {
+        p.category = 'ทั่วไป';
+      }
+    });
+
+    db.stockInHistory.forEach(h => {
+      if (h.category === name.trim()) {
+        h.category = 'ทั่วไป';
+      }
+    });
+
+    dbInstance.save(db);
+    res.json({ message: 'ลบชื่อหมวดหมู่รวบรวมสินค้าสำเร็จ!', categories: db.settings.categories });
+  });
+
+  // --- GOOGLE SHEETS BULK SYNCHRONIZATION API ---
+
+  app.post('/api/stock/products/bulk-sync', authenticateToken, (req: Request, res: Response) => {
+    const { sheetProducts, userUsername, syncStrategy } = req.body;
+    if (!sheetProducts || !Array.isArray(sheetProducts)) {
+      return res.status(400).json({ message: 'รูปแบบไฟล์รายการนำเข้าไม่ถูกต้อง' });
+    }
+
+    const db = dbInstance.get();
+    let added = 0;
+    let updated = 0;
+
+    sheetProducts.forEach((sp: any) => {
+      const sku = String(sp.sku || sp.SKU || '').trim().toUpperCase();
+      if (!sku) return;
+
+      const idx = db.products.findIndex(p => p.sku === sku);
+      const isNew = idx === -1;
+
+      if (isNew) {
+        const initialQty = Number(sp.quantity ?? sp.quantityStr ?? sp.qty ?? sp['คงเหลือสะสม'] ?? 0);
+        const nameVal = String(sp.name || sp['ชื่อสินค้า'] || 'สินค้าใหม่').trim();
+        const catVal = String(sp.category || sp['หมวดหมู่สินค้า'] || 'ทั่วไป').trim();
+        const alertVal = Number(sp.lowStockThreshold || sp['จำนวนแจ้งเตือนขั้นต่ำ'] || 10);
+
+        const newP: StockProduct = {
+          sku,
+          name: nameVal,
+          category: catVal,
+          quantity: initialQty,
+          lowStockThreshold: alertVal,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        db.products.push(newP);
+        added++;
+
+        if (initialQty > 0) {
+          const logId = 'IN-' + Date.now().toString().slice(-6) + Math.floor(Math.random() * 100);
+          db.stockInHistory.push({
+            id: logId,
+            sku,
+            quantity: initialQty,
+            timestamp: new Date().toISOString(),
+            user: userUsername || req.currentUser?.username || 'admin',
+            category: catVal,
+            notes: 'ซิงค์นำเข้าจาก Google Sheets'
+          });
+        }
+      } else {
+        const existing = db.products[idx];
+        existing.name = String(sp.name || sp['ชื่อสินค้า'] || existing.name).trim();
+        existing.category = String(sp.category || sp['หมวดหมู่สินค้า'] || existing.category).trim();
+        existing.lowStockThreshold = Number(sp.lowStockThreshold || sp['จำนวนแจ้งเตือนขั้นต่ำ'] || existing.lowStockThreshold);
+
+        const sheetQty = Number(sp.quantity ?? sp.quantityStr ?? sp.qty ?? sp['คงเหลือสะสม'] ?? existing.quantity);
+
+        if (syncStrategy === 'overwrite') {
+          existing.quantity = sheetQty;
+        } else if (syncStrategy === 'accumulate') {
+          existing.quantity += sheetQty;
+        } else {
+          // Default Replace
+          existing.quantity = sheetQty;
+        }
+
+        existing.updatedAt = new Date().toISOString();
+        updated++;
+      }
+    });
+
+    dbInstance.save(db);
+    res.json({ added, updated });
   });
 
 

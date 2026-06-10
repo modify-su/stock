@@ -1,14 +1,22 @@
 import fs from 'fs';
 import path from 'path';
+import bcrypt from 'bcryptjs';
 
 export interface User {
   username: string;
-  passwordHash: string; // Stored as string, using simple hashing or secure comparison
+  passwordHash: string; // Hashed with bcrypt after upgrade
   role: 'admin' | 'user';
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
   securityQuestion: string;
   securityAnswer: string;
+}
+
+export interface UserSession {
+  token: string;
+  username: string;
+  createdAt: string;
+  expiresAt: string;
 }
 
 export interface StockProduct {
@@ -47,6 +55,7 @@ export interface AppSettings {
   loginBgColor: string;
   loginTitle: string;
   lowStockAlertEnabled: boolean;
+  categories?: string[];
 }
 
 export interface DBStructure {
@@ -55,6 +64,22 @@ export interface DBStructure {
   stockInHistory: StockInEntry[];
   stockOutHistory: StockOutEntry[];
   settings: AppSettings;
+  sessions?: UserSession[];
+}
+
+export function hashPassword(plain: string): string {
+  return bcrypt.hashSync(plain, 10);
+}
+
+export function verifyPassword(plain: string, hash: string): boolean {
+  try {
+    if (hash && (hash.startsWith('$2a$') || hash.startsWith('$2b$'))) {
+      return bcrypt.compareSync(plain, hash);
+    }
+  } catch (e) {
+    // fallback
+  }
+  return plain === hash;
 }
 
 const DB_FILE_PATH = path.join(process.cwd(), 'src', 'stock_db.json');
@@ -210,8 +235,10 @@ const INITIAL_DB: DBStructure = {
     logoText: 'STOCKMASTER',
     loginBgColor: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)',
     loginTitle: 'Stock Management System',
-    lowStockAlertEnabled: true
-  }
+    lowStockAlertEnabled: true,
+    categories: ['ทั่วไป', 'ความงาม', 'แฟชั่น', 'เครื่องใช้ไฟฟ้า', 'ไอที & อุปกรณ์เสริม']
+  },
+  sessions: []
 };
 
 class FileDatabase {
@@ -238,6 +265,9 @@ class FileDatabase {
             if (!this.cache.settings) {
               this.cache.settings = { ...INITIAL_DB.settings };
               changed = true;
+            } else if (!this.cache.settings.categories) {
+              this.cache.settings.categories = ['ทั่วไป', 'ความงาม', 'แฟชั่น', 'เครื่องใช้ไฟฟ้า', 'ไอที & อุปกรณ์เสริม'];
+              changed = true;
             }
             if (!this.cache.stockInHistory) {
               this.cache.stockInHistory = [];
@@ -245,6 +275,10 @@ class FileDatabase {
             }
             if (!this.cache.stockOutHistory) {
               this.cache.stockOutHistory = [];
+              changed = true;
+            }
+            if (!this.cache.sessions) {
+              this.cache.sessions = [];
               changed = true;
             }
             if (changed) {

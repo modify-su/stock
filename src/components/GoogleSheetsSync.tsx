@@ -18,7 +18,10 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Copy,
+  Download,
+  Info
 } from 'lucide-react';
 import { firebaseService, StockProduct } from '../services/firebaseService';
 
@@ -65,6 +68,45 @@ export default function GoogleSheetsSync({
   // Modals / Confirmation Gate States
   const [showConfirmExport, setShowConfirmExport] = useState(false);
   const [showConfirmImport, setShowConfirmImport] = useState(false);
+
+  // Template Copy & Download States
+  const [copied, setCopied] = useState(false);
+
+  // Download template CSV with UTF-8 BOM so Thai headings work beautifully in Excel and Sheets
+  const handleDownloadCsvTemplate = () => {
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + "\uFEFF" // UTF-8 BOM
+      + [
+          ['SKU', 'ชื่อสินค้า', 'หมวดหมู่สินค้า', 'คงเหลือสะสม', 'จำนวนแจ้งเตือนขั้นต่ำ'].join(','),
+          ['PROD-001', 'นมสดพาสเจอร์ไรส์ Meiji 450ml', 'เครื่องดื่ม', '120', '15'].join(','),
+          ['PROD-002', 'ข้าวหอมมะลิตราฉัตร 5kg', 'ข้าวสาร/อาหารแห้ง', '45', '10'].join(','),
+          ['PROD-003', 'น้ำยาล้างจาน ไลปอนเอฟ 500ml', 'น้ำยาทำความสะอาด', '85', '20'].join(',')
+        ].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "stockmaster_inventory_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    setSuccessText('ดาวน์โหลดไฟล์เทมเพลต CSV สต็อกสินค้าแล้ว! คุณสามารถเปิดใน Excel/Sheets หรือนำเทมเพลตไปวางได้ทันที');
+    setTimeout(() => setSuccessText(''), 4500);
+  };
+
+  // Copy standard tab-delimited headers directly to clipboard for instant pasting on Sheet
+  const handleCopyHeaders = () => {
+    const headers = 'SKU\tชื่อสินค้า\tหมวดหมู่สินค้า\tคงเหลือสะสม\tจำนวนแจ้งเตือนขั้นต่ำ';
+    navigator.clipboard.writeText(headers);
+    setCopied(true);
+    setSuccessText('คัดลอกส่วนหัว 5 คอลัมน์ลงคลิปบอร์ดแล้ว! สามารถกดวาง (Ctrl+V) บนช่อง A1 บน Google Sheets ได้ทันที');
+    setTimeout(() => {
+      setCopied(false);
+    }, 4500);
+    const t = setTimeout(() => {
+      setSuccessText('');
+    }, 5500);
+  };
 
   // Parse spreadsheet ID from potential full URL input
   const currentSpreadsheetId = useMemo(() => {
@@ -552,6 +594,159 @@ export default function GoogleSheetsSync({
           </div>
         </div>
 
+      </div>
+
+      {/* Google Sheets Template & Setup Guide Block */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-6" id="sheets-template-guide-block">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-105 pb-4">
+          <div className="space-y-1">
+            <h2 className="text-slate-900 text-sm font-black flex items-center gap-2 select-none">
+              <Info className="h-5 w-5 text-indigo-500 shrink-0" />
+              เทมเพลตและคู่มือการเชื่อมต่อคลังสินค้า (Google Sheets Template & Setup Guide)
+            </h2>
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              วิธีจัดวางข้อมูลโครงสร้างคอลัมน์ และดาวน์โหลดหรือคัดลอกไฟล์ต้นแบบสำหรับการนำข้อมูลสินค้าคงคลังเข้า-ออก
+            </p>
+          </div>
+          
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <button
+              onClick={handleCopyHeaders}
+              className={`px-3.5 py-2.5 rounded-xl border text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer select-none ${
+                copied 
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700' 
+                  : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-705 hover:border-slate-300'
+              }`}
+              id="btn-copy-template-headers"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copied ? 'คัดลอกส่วนหัวแล้ว!' : 'คัดลอกหัวคอลัมน์มาตรฐาน'}
+            </button>
+            
+            <button
+              onClick={handleDownloadCsvTemplate}
+              className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-550 border border-emerald-500 text-white font-bold text-[11px] rounded-xl transition flex items-center gap-1.5 cursor-pointer select-none shadow-sm"
+              id="btn-download-csv-template"
+            >
+              <Download className="h-4 w-4" />
+              ดาวน์โหลดเทมเพลต CSV
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          
+          {/* Left Column: Flow of Setup Steps */}
+          <div className="space-y-4">
+            <h3 className="text-slate-800 text-xs font-bold uppercase tracking-wider flex items-center gap-2 select-none">
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+              ขั้นตอนการเริ่มต้นเชื่อมระบบ (Easy 4-Step Sync Guide)
+            </h3>
+            <div className="space-y-3 relative before:absolute before:left-3.5 before:top-4 before:bottom-4 before:w-0.5 before:bg-slate-105">
+              
+              <div className="flex gap-4 relative">
+                <div className="h-7 w-7 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-mono text-xs font-black shrink-0 relative z-10 shadow-sm">
+                  1
+                </div>
+                <div>
+                  <h4 className="text-slate-900 text-xs font-bold">เตรียมชีตเปล่าหรือดาวน์โหลดเทมเพลต</h4>
+                  <p className="text-[11px] text-slate-500 leading-relaxed font-semibold mt-1">
+                    ใช้เครื่องมือปุ่มกดขวามือเพื่อดาวน์โหลดไฟล์เทมเพลต CSV ต้นแบบ นำไปอัปโหลดขึ้น Google Drive หรือกด <span className="text-indigo-600 font-bold hover:underline cursor-pointer" onClick={handleCopyHeaders}>"คัดลอกหัวคอลัมน์"</span> แล้วนำไปวางบนแผ่นงานเปล่าแถวแรก (A1)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-4 relative">
+                <div className="h-7 w-7 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-mono text-xs font-black shrink-0 relative z-10 shadow-sm font-semibold">
+                  2
+                </div>
+                <div>
+                  <h4 className="text-slate-900 text-xs font-bold">กรอกรายละเอียดสินค้าคงคลัง</h4>
+                  <p className="text-[11px] text-slate-500 leading-relaxed font-semibold mt-1">
+                    เขียน SKU รหัสสินค้า, ชื่อ, หมวดหมู่สินค้า, ยอดคงเหลือสะสม และจำนวนแจ้งเตือนขั้นต่ำลงทีละแถวให้เรียบร้อย (กรุณารักษาชื่อแท็บ เช่น <span className="font-mono bg-slate-100 rounded px-1.5 py-0.5 text-xs text-indigo-700 font-bold">{sheetName}</span> ให้ถูกต้อง)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-4 relative">
+                <div className="h-7 w-7 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-mono text-xs font-black shrink-0 relative z-10 shadow-sm font-semibold">
+                  3
+                </div>
+                <div>
+                  <h4 className="text-slate-900 text-xs font-bold">ปรับสิทธิ์เชิญแชร์ให้เป็น "แก้ไขได้"</h4>
+                  <p className="text-[11px] text-slate-500 leading-relaxed font-semibold mt-1">
+                    ที่มุมขวาบนของ Google Sheets เลือกแชร์ไฟล์และเปลี่ยนเป็นแบบ <span className="font-bold text-slate-800">"ทุกคนที่มีลิงก์ (Anyone with the link) มีสิทธิ์เป็นผู้แก้ไข (Editor)"</span> เพื่อให้ระบบเรียกหาและซิงก์ยอดข้อมูลสินค้าได้ทันที
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-4 relative">
+                <div className="h-7 w-7 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-mono text-xs font-black shrink-0 relative z-10 shadow-sm font-semibold">
+                  4
+                </div>
+                <div>
+                  <h4 className="text-slate-900 text-xs font-bold">เชื่อมสิทธิ์บัญชี ดึงรันวิเคราะห์พรีวิว</h4>
+                  <p className="text-[11px] text-slate-500 leading-relaxed font-semibold mt-1">
+                    คัดลอก URL ลิงก์ที่จัดเก็บ วางในบล็อกด้านบน แล้วกดเชื่อมต่อสิทธิ์กูเกิล จากนั้นคลิกปุ่ม <span className="text-emerald-600 font-bold">"ดึงข้อมูลตารางและรีวิว"</span> เพื่อตรวจทานความถูกต้องก่อนกดยอมรับเข้าฐานข้อมูลจริง
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* Right Column: Mini Interactive Table Columns Visualizer */}
+          <div className="space-y-4">
+            <h3 className="text-slate-800 text-xs font-bold uppercase tracking-wider flex items-center gap-2 select-none">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+              โครงสร้างตารางข้อมูลมาตรฐาน (Sheets Data Schema Definition)
+            </h3>
+            
+            <div className="border border-slate-150 rounded-xl overflow-hidden shadow-inner">
+              <table className="w-full text-left text-[11px] border-collapse bg-slate-50/20">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-150 font-sans font-black text-[10px] text-slate-500 uppercase tracking-wider">
+                    <th className="py-2.5 px-3">ชื่อคอลัมน์ (Header)</th>
+                    <th className="py-2.5 px-3">ประเภทข้อมูล (Type)</th>
+                    <th className="py-2.5 px-3">รายละเอียดความหมาย</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-650 font-sans font-medium">
+                  <tr>
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900">A: SKU</td>
+                    <td className="py-2.5 px-3"><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 text-[9px] font-black rounded">TEXT (รหัสสินค้า)</span></td>
+                    <td className="py-2.5 px-3">รหัสสินค้าแนะนำคลัง ต้องมีค่าห้ามเว้นว่าง (เช่น SKU-001)</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900">B: ชื่อสินค้า</td>
+                    <td className="py-2.5 px-3"><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 text-[9px] font-black rounded">TEXT (ข้อความ)</span></td>
+                    <td className="py-2.5 px-3">ชื่อรายการสินค้าที่จะแสดงและใช้ในคลังจริง</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900">C: หมวดหมู่สินค้า</td>
+                    <td className="py-2.5 px-3"><span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-100 text-[9px] font-black rounded">TEXT (ตัวหนังสือ)</span></td>
+                    <td className="py-2.5 px-3">หมวดหมู่คลังสินค้า หากเว้นว่างไว้ระบบจะตั้งค่าทั่วไปให้</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900">D: คงเหลือสะสม</td>
+                    <td className="py-2.5 px-3"><span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 text-[9px] font-black rounded">NUMBER (ตัวเลข)</span></td>
+                    <td className="py-2.5 px-3">ยอดรวมสินค้าที่มีอยู่ในสต็อก ณ ปัจจุบัน</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900">E: จำนวนแจ้งเตือนขั้นต่ำ</td>
+                    <td className="py-2.5 px-3"><span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-100 text-[9px] font-black rounded">NUMBER (ตัวเลข)</span></td>
+                    <td className="py-2.5 px-3">เกณฑ์สำหรับส่งข้อความเตือนเมื่อของหมด ค่านิยมเริ่มต้นคือ 10</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p className="text-[10px] text-slate-450 leading-relaxed font-semibold">
+              💡 แนะนำ: โครงสร้างตารางจะเชื่อมต่อสำเร็จและดึงง่ายที่สุดเมื่อชื่อแถวคอลัมน์ตรงตามแบบสะสม แต่ระบบคลัง Master มี AI คาดเดาหัวข้อที่ใกล้เคียงให้อย่างชาญฉลาดหมดห่วง
+            </p>
+          </div>
+
+        </div>
       </div>
 
       {/* Dynamic Notifications Feedback Box */}

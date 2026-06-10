@@ -80,15 +80,44 @@ export default function App() {
     }
   };
 
-  // Check login session (JWT in cookies is checked by backend)
+  // Check login session (Verifies session against the backend server)
   const checkSession = async () => {
     try {
       const savedUserStr = localStorage.getItem('stockmaster_session');
       if (savedUserStr) {
-        setCurrentUser(JSON.parse(savedUserStr));
+        const parsed = JSON.parse(savedUserStr);
+        // Dispatch authentication check to local or remote port 3000 node session
+        const res = await fetch('/api/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${parsed.token || ''}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.user) {
+            // Keep frontend reactive state in sync with latest changes on database
+            setCurrentUser({
+              ...parsed,
+              role: data.user.role,
+              status: data.user.status
+            });
+          } else {
+            // Token revoked or unregistered from backend sessions array
+            localStorage.removeItem('stockmaster_session');
+            localStorage.removeItem('stockmaster_token');
+            setCurrentUser(null);
+          }
+        } else {
+          // Failure response means cookie / token expired
+          localStorage.removeItem('stockmaster_session');
+          localStorage.removeItem('stockmaster_token');
+          setCurrentUser(null);
+        }
       }
     } catch (e) {
-      console.error('Session verify failed:', e);
+      console.error('Session server-verify failed:', e);
     } finally {
       setAppReady(true);
     }
@@ -263,10 +292,10 @@ export default function App() {
     }
   };
 
-  // Operations: Client logout procedure
+  // Operations: Client logout procedure to destroy session in db
   const handleLogout = async () => {
     try {
-      localStorage.removeItem('stockmaster_session');
+      await firebaseService.logout();
       setCurrentUser(null);
       setActiveTab('dashboard');
     } catch (err) {
