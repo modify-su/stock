@@ -247,7 +247,7 @@ class FileDatabase {
   private cache: DBStructure | null = null;
 
   constructor() {
-    this.init();
+    // Empty constructor to prevent eager filesystem access during module import / build phases on Vercel
   }
 
   private init() {

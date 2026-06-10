@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
-import { dbInstance, User, StockProduct, StockInEntry, StockOutEntry, AppSettings, UserSession, hashPassword, verifyPassword } from './src/server/database';
+import { dbInstance, User, StockProduct, StockInEntry, StockOutEntry, AppSettings, UserSession, hashPassword, verifyPassword } from './src/server/database.js';
 
 // Extend Express Request type to include currentUser
 declare global {
@@ -900,7 +900,8 @@ export async function startServer() {
 
   // --- VITE DEV / PRODUCTION MIDDLEWARE INTEGRATION ---
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-    const { createServer } = await import('vite');
+    const viteModule = 'vite';
+    const { createServer } = await import(viteModule);
     const vite = await createServer({
       server: { middlewareMode: true },
       appType: 'spa',
