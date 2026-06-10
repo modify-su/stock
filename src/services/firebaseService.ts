@@ -49,11 +49,19 @@ export interface AppSettings {
 }
 
 export const getApiBaseUrl = (): string => {
-  const savedOverride = localStorage.getItem('stockmaster_api_url');
-  if (savedOverride) {
-    return savedOverride.replace(/\/$/, '');
+  const savedMode = localStorage.getItem('stockmaster_api_mode') || 'auto';
+  
+  if (savedMode === 'dev') {
+    return 'https://ais-dev-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
+  }
+  if (savedMode === 'pre') {
+    return 'https://ais-pre-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
+  }
+  if (savedMode === 'custom') {
+    return (localStorage.getItem('stockmaster_api_custom_url') || '').trim().replace(/\/$/, '');
   }
   
+  // 'auto' mode
   const hostname = window.location.hostname;
   if (
     hostname &&

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Lock, User, HelpCircle, ArrowRight, ShieldCheck, RefreshCw, KeyRound, Check } from 'lucide-react';
-import { firebaseService } from '../services/firebaseService';
+import { Lock, User, HelpCircle, ArrowRight, ShieldCheck, RefreshCw, KeyRound, Check, Server, Wifi, WifiOff, ChevronDown, ChevronUp, Globe } from 'lucide-react';
+import { firebaseService, getApiBaseUrl } from '../services/firebaseService';
 
 interface LoginFormProps {
   onLoginSuccess: (user: any) => void;
@@ -17,6 +17,78 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
   const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  
+  // API Configuration States
+  const [showApiSettings, setShowApiSettings] = useState(false);
+  const [apiMode, setApiMode] = useState<'auto' | 'pre' | 'dev' | 'custom'>(
+    (localStorage.getItem('stockmaster_api_mode') as 'auto' | 'pre' | 'dev' | 'custom') || 'auto'
+  );
+  const [customApiUrl, setCustomApiUrl] = useState(
+    localStorage.getItem('stockmaster_api_custom_url') || ''
+  );
+  const [apiStatus, setApiStatus] = useState<'testing' | 'online' | 'offline'>('testing');
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  const checkConnection = async (targetMode?: string, targetCustomUrl?: string) => {
+    setApiStatus('testing');
+    setTestResult(null);
+    const mode = targetMode || apiMode;
+    const customUrl = targetCustomUrl !== undefined ? targetCustomUrl : customApiUrl;
+    
+    let url = '';
+    if (mode === 'dev') {
+      url = 'https://ais-dev-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
+    } else if (mode === 'pre') {
+      url = 'https://ais-pre-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
+    } else if (mode === 'custom') {
+      url = customUrl.trim().replace(/\/$/, '');
+    } else {
+      // Auto
+      const hostname = window.location.hostname;
+      if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.endsWith('.run.app')) {
+        url = 'https://ais-pre-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
+      }
+    }
+    
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 6000); // 6s timeout
+      
+      const res = await fetch(`${url || window.location.origin}/api/admin/settings`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal
+      });
+      clearTimeout(id);
+      
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setApiStatus('online');
+        setTestResult(`เชื่อมต่อสำเร็จ! เซิร์ฟเวอร์ตอบรับ (${data.logoText || 'STOCKMASTER'})`);
+        return true;
+      } else {
+        setApiStatus('offline');
+        setTestResult(`ล้มเหลว: เซิร์ฟเวอร์ปลายทางตอบกลับด้วยรหัส ${res.status}`);
+        return false;
+      }
+    } catch (err: any) {
+      setApiStatus('offline');
+      setTestResult(`ไม่สามารถเชื่อมต่อคลาวด์ได้ (เซิร์ฟเวอร์หลับหรือติดขัดอยู่)`);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    checkConnection();
+  }, []);
+
+  const handleSaveApiSettings = async (mode: 'auto' | 'pre' | 'dev' | 'custom', customUrl: string) => {
+    localStorage.setItem('stockmaster_api_mode', mode);
+    localStorage.setItem('stockmaster_api_custom_url', customUrl);
+    setApiMode(mode);
+    setCustomApiUrl(customUrl);
+    await checkConnection(mode, customUrl);
+  };
   
   // Registration States
   const [regUsername, setRegUsername] = useState('');
@@ -497,6 +569,156 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
                     </div>
                   </form>
                 )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* API Server connection configuration section */}
+        <div className="border-t border-slate-100 bg-slate-50 p-4 rounded-b-3xl text-xs space-y-3">
+          <button 
+            type="button"
+            onClick={() => setShowApiSettings(!showApiSettings)}
+            className="w-full flex items-center justify-between font-bold text-slate-700 hover:text-slate-900 transition focus:outline-none cursor-pointer"
+            id="btn-toggle-api-settings"
+          >
+            <div className="flex items-center gap-2">
+              <Server className="h-4 w-4 text-indigo-500 animate-pulse" />
+              <span>การเชื่อมต่อเซิร์ฟเวอร์คลาวด์ API</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {apiStatus === 'testing' && (
+                <span className="flex items-center gap-1 text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-medium">
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                  กำลังทดสอบ...
+                </span>
+              )}
+              {apiStatus === 'online' && (
+                <span className="flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                  <Wifi className="h-3 w-3 text-emerald-600" />
+                  เชื่อมต่อแล้ว
+                </span>
+              )}
+              {apiStatus === 'offline' && (
+                <span className="flex items-center gap-1 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+                  <WifiOff className="h-3 w-3 text-amber-600" />
+                  ไม่ได้เชื่อมต่อ
+                </span>
+              )}
+              {showApiSettings ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+            </div>
+          </button>
+
+          <AnimatePresence>
+            {showApiSettings && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-3 pt-2"
+                id="api-settings-panel"
+              >
+                <div className="text-[11px] text-slate-500 leading-relaxed font-normal">
+                  หากใช้งานผ่าน Vercel หรือเข้าหน้าเว็บภายนอกแล้วขึ้น "Failed to Fetch" กรุณาสลับเซิร์ฟเวอร์ด้านล่างให้ตอบรับกับเซิร์ฟเวอร์ที่คุณกำลังเปิดอยู่ (แนะนำ: <b>เซิร์ฟเวอร์นักพัฒนา</b>)
+                </div>
+
+                <div className="space-y-2">
+                  <label className="font-bold text-slate-600 block text-[11px]">เลือกเซิร์ฟเวอร์เป้าหมาย (API Destination)</label>
+                  <div className="grid grid-cols-2 gap-2" id="api-modes-grid">
+                    <button
+                      type="button"
+                      onClick={() => handleSaveApiSettings('auto', customApiUrl)}
+                      className={`p-2 rounded-xl text-left border text-[11px] font-bold transition flex flex-col justify-between h-14 cursor-pointer ${apiMode === 'auto' ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-extrabold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                      id="opt-api-auto"
+                    >
+                      <span>📂 อัตโนมัติ (Auto)</span>
+                      <span className="text-[9px] font-medium text-slate-400 block truncate">ตรวจจับด้วยระบบเว็บ</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSaveApiSettings('dev', customApiUrl)}
+                      className={`p-2 rounded-xl text-left border text-[11px] font-bold transition flex flex-col justify-between h-14 cursor-pointer ${apiMode === 'dev' ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-extrabold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                      id="opt-api-dev"
+                    >
+                      <span>🛠️ เซิร์ฟเวอร์นักพัฒนา (Sandbox)</span>
+                      <span className="text-[9px] font-medium text-slate-400 block truncate">ais-dev (ทำงานแบบเรียลไทม์)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSaveApiSettings('pre', customApiUrl)}
+                      className={`p-2 rounded-xl text-left border text-[11px] font-bold transition flex flex-col justify-between h-14 cursor-pointer ${apiMode === 'pre' ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-extrabold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                      id="opt-api-pre"
+                    >
+                      <span>🌐 เซิร์ฟเวอร์แชร์ (Production)</span>
+                      <span className="text-[9px] font-medium text-slate-400 block truncate">ais-pre (บันทึกทั่วไป)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSaveApiSettings('custom', customApiUrl)}
+                      className={`p-2 rounded-xl text-left border text-[11px] font-bold transition flex flex-col justify-between h-14 cursor-pointer ${apiMode === 'custom' ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-extrabold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                      id="opt-api-custom"
+                    >
+                      <span>🔗 กำหนดเอง (Custom URL)</span>
+                      <span className="text-[9px] font-medium text-slate-400 block truncate">ระบุไอพี/โดเมนตรง</span>
+                    </button>
+                  </div>
+                </div>
+
+                {apiMode === 'custom' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-1"
+                  >
+                    <label className="text-[11px] font-bold text-slate-600">ที่อยู่เซิร์ฟเวอร์ API ปลายทาง</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="url"
+                        value={customApiUrl}
+                        onChange={(e) => setCustomApiUrl(e.target.value)}
+                        placeholder="https://my-api-server.com"
+                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                        id="input-api-custom-url"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveApiSettings('custom', customApiUrl)}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer"
+                        id="btn-save-api-custom-url"
+                      >
+                        บันทึก
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
+                <div className="flex flex-col gap-2 pt-1.5 border-t border-slate-200 text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-slate-500">เซิร์ฟเวอร์ที่เลือกใช้:</span>
+                    <span className="font-mono text-[10px] text-slate-600 font-semibold max-w-[200px] truncate select-all">
+                      {getApiBaseUrl() || '(ตามโฮสติ้งปัจจุบัน)'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => checkConnection()}
+                    className="w-full flex items-center justify-center gap-1.5 bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 border border-slate-200 py-1.5 rounded-xl font-bold transition shadow-sm cursor-pointer"
+                    id="btn-trigger-api-test"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    ทดสอบการเชื่อมต่อใหม่ (Diagnostics)
+                  </button>
+
+                  {testResult && (
+                    <div className={`p-2.5 rounded-xl text-[11px] leading-snug font-medium select-text ${apiStatus === 'online' ? 'bg-emerald-50 border border-emerald-100 text-emerald-800' : 'bg-amber-50 border border-amber-100 text-amber-900'}`} id="api-diagnostics-output">
+                      {apiStatus === 'online' ? '✅' : '⚠️'} {testResult}
+                    </div>
+                  )}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
