@@ -900,7 +900,7 @@ export async function startServer() {
 
 
   // --- VITE DEV / PRODUCTION MIDDLEWARE INTEGRATION ---
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

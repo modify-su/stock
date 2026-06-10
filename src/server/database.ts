@@ -82,7 +82,9 @@ export function verifyPassword(plain: string, hash: string): boolean {
   return plain === hash;
 }
 
-const DB_FILE_PATH = path.join(process.cwd(), 'src', 'stock_db.json');
+const DB_FILE_PATH = process.env.VERCEL
+  ? path.join('/tmp', 'stock_db.json')
+  : path.join(process.cwd(), 'src', 'stock_db.json');
 
 // Helper to ensure parent folder exists
 function ensureDirectoryExistence(filePath: string) {
