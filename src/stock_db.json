@@ -1,0 +1,164 @@
+{
+  "users": [
+    {
+      "username": "admin",
+      "passwordHash": "admin123",
+      "role": "admin",
+      "status": "approved",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "securityQuestion": "ชื่อเมืองที่คุณเกิดคืออะไร?",
+      "securityAnswer": "bangkok"
+    },
+    {
+      "username": "staff",
+      "passwordHash": "staff123",
+      "role": "user",
+      "status": "approved",
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "securityQuestion": "สีที่คุณชอบที่สุดคืออะไร?",
+      "securityAnswer": "blue"
+    },
+    {
+      "username": "pending_user",
+      "passwordHash": "123456",
+      "role": "user",
+      "status": "pending",
+      "createdAt": "2026-06-01T00:00:00.000Z",
+      "securityQuestion": "ชื่อสัตว์เลี้ยงตัวแรกคืออะไร?",
+      "securityAnswer": "dog"
+    }
+  ],
+  "products": [
+    {
+      "sku": "SKU-TSHIRT-M-BLK",
+      "name": "T-Shirt Black (Size M)",
+      "category": "เสื้อผ้า (Apparel)",
+      "quantity": 25,
+      "lowStockThreshold": 10,
+      "createdAt": "2026-05-10T00:00:00.000Z",
+      "updatedAt": "2026-06-08T00:00:00.000Z"
+    },
+    {
+      "sku": "SKU-TSHIRT-L-WHT",
+      "name": "T-Shirt White (Size L)",
+      "category": "เสื้อผ้า (Apparel)",
+      "quantity": 8,
+      "lowStockThreshold": 15,
+      "createdAt": "2026-05-12T00:00:00.000Z",
+      "updatedAt": "2026-06-08T00:00:00.000Z"
+    },
+    {
+      "sku": "SKU-IPHONE15-PRO",
+      "name": "iPhone 15 Pro 256GB",
+      "category": "ไอทีและอิเล็กทรอนิกส์ (Electronics)",
+      "quantity": 4,
+      "lowStockThreshold": 5,
+      "createdAt": "2026-05-15T00:00:00.000Z",
+      "updatedAt": "2026-06-09T00:00:00.000Z"
+    },
+    {
+      "sku": "SKU-SAM-S24-ULTR",
+      "name": "Samsung Galaxy S24 Ultra",
+      "category": "ไอทีและอิเล็กทรอนิกส์ (Electronics)",
+      "quantity": 12,
+      "lowStockThreshold": 5,
+      "createdAt": "2026-05-18T00:00:00.000Z",
+      "updatedAt": "2026-06-09T00:00:00.000Z"
+    },
+    {
+      "sku": "SKU-PANTS-JEAN-32",
+      "name": "Denim Jeans Size 32",
+      "category": "เสื้อผ้า (Apparel)",
+      "quantity": 45,
+      "lowStockThreshold": 12,
+      "createdAt": "2026-05-20T00:00:00.000Z",
+      "updatedAt": "2026-06-09T00:00:00.000Z"
+    }
+  ],
+  "stockInHistory": [
+    {
+      "id": "IN-001",
+      "sku": "SKU-TSHIRT-M-BLK",
+      "quantity": 30,
+      "timestamp": "2026-06-01T10:00:00.000Z",
+      "user": "admin",
+      "category": "เสื้อผ้า (Apparel)",
+      "notes": "รับสินค้าเข้าล๊อตแรกเดือนมิถุนายน"
+    },
+    {
+      "id": "IN-002",
+      "sku": "SKU-IPHONE15-PRO",
+      "quantity": 6,
+      "timestamp": "2026-06-02T14:30:00.000Z",
+      "user": "staff",
+      "category": "ไอทีและอิเล็กทรอนิกส์ (Electronics)",
+      "notes": "รับจากซัพพลายเออร์หลัก"
+    },
+    {
+      "id": "IN-003",
+      "sku": "SKU-TSHIRT-L-WHT",
+      "quantity": 10,
+      "timestamp": "2026-06-03T11:15:00.000Z",
+      "user": "staff",
+      "category": "เสื้อผ้า (Apparel)",
+      "notes": "เติมสต็อกด่วน"
+    }
+  ],
+  "stockOutHistory": [
+    {
+      "id": "OUT-001",
+      "sku": "SKU-TSHIRT-M-BLK",
+      "quantity": 5,
+      "platform": "TikTok",
+      "courier": "Flash",
+      "timestamp": "2026-06-05T15:20:00.000Z",
+      "user": "admin"
+    },
+    {
+      "id": "OUT-002",
+      "sku": "SKU-IPHONE15-PRO",
+      "quantity": 2,
+      "platform": "Shopee",
+      "courier": "J&T",
+      "timestamp": "2026-06-06T09:40:00.000Z",
+      "user": "staff"
+    },
+    {
+      "id": "OUT-003",
+      "sku": "SKU-TSHIRT-L-WHT",
+      "quantity": 2,
+      "platform": "Lazada",
+      "courier": "LEX",
+      "timestamp": "2026-06-07T13:10:00.000Z",
+      "user": "staff"
+    }
+  ],
+  "settings": {
+    "logoUrl": "",
+    "logoText": "STOCKMASTER",
+    "loginBgColor": "linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)",
+    "loginTitle": "Stock Management System",
+    "lowStockAlertEnabled": true,
+    "categories": [
+      "ทั่วไป",
+      "ความงาม",
+      "แฟชั่น",
+      "เครื่องใช้ไฟฟ้า",
+      "ไอที & อุปกรณ์เสริม"
+    ]
+  },
+  "sessions": [
+    {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzgxMDc4MzUyLCJleHAiOjE3ODExNjQ3NTJ9.oRIYpcqoB2zcWBx_5cygI_RnyCjkWJlPduZpLUw6nCM",
+      "username": "admin",
+      "createdAt": "2026-06-10T07:59:12.242Z",
+      "expiresAt": "2026-06-11T07:59:12.242Z"
+    },
+    {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzgxMDc4MzY1LCJleHAiOjE3ODExNjQ3NjV9.NkaliCGMRlUWBXO1SGhTcyya8asBGeF7D7_856IgtaQ",
+      "username": "admin",
+      "createdAt": "2026-06-10T07:59:25.673Z",
+      "expiresAt": "2026-06-11T07:59:25.673Z"
+    }
+  ]
+}
