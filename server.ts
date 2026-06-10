@@ -43,6 +43,18 @@ export async function startServer() {
     next();
   });
 
+  // Ensure the database is fully loaded from Cloud Firestore for all API routes before they read/write state
+  app.use(async (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api/')) {
+      try {
+        await dbInstance.load();
+      } catch (err) {
+        console.error('Database pre-load from Cloud Firestore failed:', err);
+      }
+    }
+    next();
+  });
+
   // --- AUTHENTICATION MIDDLEWARE ---
   function authenticateToken(req: Request, res: Response, next: NextFunction) {
     const authHeader = req.headers['authorization'] || req.headers['Authorization'];
