@@ -70,7 +70,14 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
       } else {
         // 2. Otherwise auto-detect via window.location.hostname
         const hostname = window.location.hostname;
-        if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.endsWith('.run.app')) {
+        if (
+          hostname &&
+          hostname !== 'localhost' &&
+          hostname !== '127.0.0.1' &&
+          !hostname.endsWith('.run.app') &&
+          !hostname.endsWith('.vercel.app') &&
+          !hostname.endsWith('.vercel.dev')
+        ) {
           url = 'https://ais-pre-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
         }
       }
