@@ -20,7 +20,7 @@ declare global {
 const JWT_SECRET = process.env.JWT_SECRET || 'STOCKMASTER-SUPER-SECRET-JWT-KEY-2026';
 const PORT = 3000;
 
-async function startServer() {
+export async function startServer() {
   const app = express();
   app.use(express.json());
   app.use(cookieParser());
@@ -923,12 +923,18 @@ async function startServer() {
     });
   });
 
-  // Fallback to main app (dev only)
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server launched successfully at: http://localhost:${PORT}`);
-  });
+  // Only start listening in a non-serverless container environment
+  if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server launched successfully at: http://localhost:${PORT}`);
+    });
+  }
+
+  return app;
 }
 
-startServer().catch((err) => {
-  console.error('Server bootstrapping crashed:', err);
-});
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('Server bootstrapping crashed:', err);
+  });
+}

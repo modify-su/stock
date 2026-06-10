@@ -78,7 +78,7 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
     
     try {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 6000); // 6s timeout
+      const id = setTimeout(() => controller.abort(), 20000); // 20s timeout to allow Cloud Run Cold Start
       
       const res = await fetch(`${url || window.location.origin}/api/admin/settings`, {
         method: 'GET',
@@ -99,7 +99,11 @@ export default function LoginForm({ onLoginSuccess, appSettings }: LoginFormProp
       }
     } catch (err: any) {
       setApiStatus('offline');
-      setTestResult(`ไม่สามารถเชื่อมต่อคลาวด์ได้ (เซิร์ฟเวอร์หลับหรือติดขัดอยู่)`);
+      if (err.name === 'AbortError') {
+        setTestResult(`เซิร์ฟเวอร์หลักกำลังตื่นจากการประหยัดพลังงาน (Cold Start)... กรุณารอสักครู่แล้วกด "ทดสอบการเชื่อมต่อใหม่" อีกครั้งใน 5-10 วินาที`);
+      } else {
+        setTestResult(`ไม่สามารถเชื่อมต่อคลาวด์ได้ (เซิร์ฟเวอร์กำลังสตาร์ทหรืออินเทอร์เน็ตสะดุด)`);
+      }
       return false;
     }
   };
