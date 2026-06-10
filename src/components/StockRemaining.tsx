@@ -14,19 +14,20 @@ interface StockProduct {
 
 interface StockRemainingProps {
   products: StockProduct[];
+  categories?: string[];
 }
 
-export default function StockRemaining({ products }: StockRemainingProps) {
+export default function StockRemaining({ products, categories = [] }: StockRemainingProps) {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [filterThreshold, setFilterThreshold] = useState<'All' | 'Low' | 'Normal'>('All');
   const [sortBy, setSortBy] = useState<'sku' | 'qty_asc' | 'qty_desc'>('sku');
 
-  // Pull unique categories present in the products DB
-  const categories = useMemo(() => {
-    const list = new Set(products.map(p => p.category));
+  // Pull unique categories present in the products DB + settings categories
+  const categoriesList = useMemo(() => {
+    const list = new Set([...categories, ...products.map(p => p.category)]);
     return ['All', ...Array.from(list)];
-  }, [products]);
+  }, [products, categories]);
 
   // Compute remaining filter criteria
   const filteredProducts = useMemo(() => {
@@ -91,7 +92,7 @@ export default function StockRemaining({ products }: StockRemainingProps) {
               id="select-inventory-category-filter"
             >
               <option value="All">ทุกหมวดหมู่ (แสดงทั้งหมด)</option>
-              {categories.filter(c => c !== 'All').map(cat => (
+              {categoriesList.filter(c => c !== 'All').map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>

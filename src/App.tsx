@@ -15,6 +15,7 @@ import StockRemaining from './components/StockRemaining.js';
 import Reports from './components/Reports.js';
 import LineBotSandbox from './components/LineBotSandbox.js';
 import AdminPanel from './components/AdminPanel.js';
+import GoogleSheetsSync from './components/GoogleSheetsSync.js';
 
 interface StockProduct {
   sku: string;
@@ -51,6 +52,8 @@ export default function App() {
   const [appReady, setAppReady] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
 
   // System parameters
   const [appSettings, setAppSettings] = useState({
@@ -114,19 +117,61 @@ export default function App() {
 
   // Initial mount sequences
   useEffect(() => {
-    fetchSettings();
+    // Subscribe to settings in real-time so that login screen branding updates dynamically
+    const unsubSettings = firebaseService.subscribeSettings((settings) => {
+      setAppSettings(settings);
+    });
     checkSession();
+    return () => unsubSettings();
   }, []);
 
   // Update inventory upon user assignment matches
   useEffect(() => {
     if (currentUser) {
-      fetchInventoryData();
-      // Auto-updates every 8 seconds (Real-time sync representation)
-      const timer = setInterval(() => {
-        fetchInventoryData();
-      }, 8000);
-      return () => clearInterval(timer);
+      setLoadingDb(true);
+      
+      // Subscribe to Products list in real-time
+      const unsubProducts = firebaseService.subscribeProducts((items) => {
+        setProducts(items);
+        setLoadingDb(false);
+      }, (err) => {
+        setLoadingDb(false);
+      });
+
+      // Subscribe to Stock logs history in real-time
+      const unsubHistory = firebaseService.subscribeHistory((logs) => {
+        setStockIn(logs.stockIn || []);
+        setStockOut(logs.stockOut || []);
+      });
+
+      // Live subscription to user profile state
+      let unsubUser: (() => void) | null = null;
+      if (firebaseService.isCloudMode()) {
+        const keyName = currentUser.username.trim().toLowerCase();
+        unsubUser = firebaseService.subscribeUsers((usersList) => {
+          const freshUserObj = usersList.find(u => u.username.toLowerCase() === keyName);
+          if (freshUserObj) {
+            if (freshUserObj.role !== currentUser.role || freshUserObj.status !== currentUser.status) {
+              if (freshUserObj.status === 'rejected' || freshUserObj.status === 'pending') {
+                console.warn('Session status changed. Log out.');
+                localStorage.removeItem('stockmaster_session');
+                setCurrentUser(null);
+                alert('บัญชีเจ้าหน้าที่ของคุณถูกปรับเปลี่ยนสิทธิ์โดยผู้ดูแลระบบ กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+              } else {
+                const updatedUser = { ...currentUser, role: freshUserObj.role, status: freshUserObj.status };
+                localStorage.setItem('stockmaster_session', JSON.stringify(updatedUser));
+                setCurrentUser(updatedUser);
+              }
+            }
+          }
+        });
+      }
+
+      return () => {
+        unsubProducts();
+        unsubHistory();
+        if (unsubUser) unsubUser();
+      };
     }
   }, [currentUser]);
 
@@ -184,6 +229,37 @@ export default function App() {
       return { message: 'อัปเดตการตั้งค่าระบบเรียบร้อยแล้ว' };
     } catch (err: any) {
       throw new Error(err.message || 'บันทึกตั้งค่าไม่สำเร็จ');
+    }
+  };
+
+  // Operations: Manage categories
+  const handleAddCategory = async (newCat: string) => {
+    try {
+      await firebaseService.addCategory(newCat);
+      await fetchSettings();
+      return { message: 'เพิ่มหมวดหมู่สำเร็จ!' };
+    } catch (err: any) {
+      throw new Error(err.message || 'เพิ่มหมวดหมู่ไม่สำเร็จ');
+    }
+  };
+
+  const handleUpdateCategoryName = async (oldName: string, newName: string) => {
+    try {
+      await firebaseService.updateCategoryName(oldName, newName);
+      await Promise.all([fetchSettings(), fetchInventoryData()]);
+      return { message: 'แก้ไขชื่อหมวดหมู่สำเร็จ!' };
+    } catch (err: any) {
+      throw new Error(err.message || 'แก้ไขชื่อหมวดหมู่ไม่สำเร็จ');
+    }
+  };
+
+  const handleDeleteCategory = async (catName: string) => {
+    try {
+      await firebaseService.deleteCategory(catName);
+      await Promise.all([fetchSettings(), fetchInventoryData()]);
+      return { message: 'ลบหมวดหมู่สำเร็จ!' };
+    } catch (err: any) {
+      throw new Error(err.message || 'ลบหมวดหมู่ไม่สำเร็จ');
     }
   };
 
@@ -361,6 +437,18 @@ export default function App() {
             </button>
 
             <button 
+              onClick={() => { setActiveTab('google_sheets'); setSidebarOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-xl transition-all ${
+                activeTab === 'google_sheets' ? 'bg-slate-800 text-white border-l-4 border-emerald-500' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+              id="nav-google-sheets"
+            >
+              <span className="flex items-center gap-2.5">
+                <FileSpreadsheet className="h-4.5 w-4.5 text-emerald-400" /> จัดการผ่าน Google Sheet
+              </span>
+            </button>
+
+            <button 
               onClick={() => { setActiveTab('line_bot'); setSidebarOpen(false); }}
               className={`w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-xl transition-all ${
                 activeTab === 'line_bot' ? 'bg-slate-800 text-white border-l-4 border-emerald-500' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
@@ -474,6 +562,7 @@ export default function App() {
                 products={products} 
                 onStockIn={handleStockInSubmit} 
                 onAddNewProduct={handleNewProductSubmit} 
+                categories={appSettings.categories || []}
               />
             )}
 
@@ -487,6 +576,7 @@ export default function App() {
             {activeTab === 'stock_remaining' && (
               <StockRemaining 
                 products={products} 
+                categories={appSettings.categories || []}
               />
             )}
 
@@ -494,6 +584,18 @@ export default function App() {
               <Reports 
                 stockIn={stockIn} 
                 stockOut={stockOut} 
+              />
+            )}
+
+            {activeTab === 'google_sheets' && (
+              <GoogleSheetsSync
+                products={products}
+                userUsername={currentUser.username}
+                onRefreshProducts={fetchInventoryData}
+                googleToken={googleToken}
+                setGoogleToken={setGoogleToken}
+                googleEmail={googleEmail}
+                setGoogleEmail={setGoogleEmail}
               />
             )}
 
@@ -505,6 +607,10 @@ export default function App() {
               <AdminPanel 
                 appSettings={appSettings} 
                 onUpdateSettings={handleSaveAppSettings} 
+                products={products}
+                onAddCategory={handleAddCategory}
+                onUpdateCategory={handleUpdateCategoryName}
+                onDeleteCategory={handleDeleteCategory}
               />
             )}
           </motion.div>

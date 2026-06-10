@@ -14,11 +14,22 @@ interface StockInProps {
   products: StockProduct[];
   onStockIn: (payload: { sku: string; quantity: number; notes: string }) => Promise<any>;
   onAddNewProduct: (payload: { sku: string; name: string; category: string; initialQty: number; lowStockThreshold: number }) => Promise<any>;
+  categories?: string[];
 }
 
-export default function StockIn({ products, onStockIn, onAddNewProduct }: StockInProps) {
+export default function StockIn({ products, onStockIn, onAddNewProduct, categories = [] }: StockInProps) {
   // Toggle between adding stock to existing SKU or creating a new SKU
   const [formMode, setFormMode] = useState<'replenish' | 'create_sku'>('replenish');
+
+  // Active Category Sets
+  const categoriesList = categories.length > 0 ? categories : [
+    'เสื้อผ้า (Apparel)',
+    'ไอทีและอิเล็กทรอนิกส์ (Electronics)',
+    'เครื่องครัวและบ้าน (Home & Kitchen)',
+    'เครื่องสำอางและบิวตี้ (Beauty & Cosmetics)',
+    'อาหารและเครื่องดื่ม (Food & Beverages)',
+    'สินค้าอื่นๆ (General)'
+  ];
 
   // Replenish States
   const [replenishSku, setReplenishSku] = useState('');
@@ -28,23 +39,20 @@ export default function StockIn({ products, onStockIn, onAddNewProduct }: StockI
   // New SKU States
   const [newSku, setNewSku] = useState('');
   const [newName, setNewName] = useState('');
-  const [newCategory, setNewCategory] = useState('เสื้อผ้า (Apparel)');
+  const [newCategory, setNewCategory] = useState(categoriesList[0]);
   const [newInitialQty, setNewInitialQty] = useState('');
   const [newThreshold, setNewThreshold] = useState('10');
+
+  // Synchronize category selection if active categories change
+  React.useEffect(() => {
+    if (categoriesList.length > 0 && !categoriesList.includes(newCategory)) {
+      setNewCategory(categoriesList[0]);
+    }
+  }, [categoriesList]);
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Active Category Sets
-  const categoriesList = [
-    'เสื้อผ้า (Apparel)',
-    'ไอทีและอิเล็กทรอนิกส์ (Electronics)',
-    'เครื่องครัวและบ้าน (Home & Kitchen)',
-    'เครื่องสำอางและบิวตี้ (Beauty & Cosmetics)',
-    'อาหารและเครื่องดื่ม (Food & Beverages)',
-    'สินค้าอื่นๆ (General)'
-  ];
 
   const handleReplenishSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

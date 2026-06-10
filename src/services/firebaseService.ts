@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, getDoc, getDocs, collection, query, where } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, getDocs, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Interfaces mapping database schemas
@@ -49,6 +50,7 @@ export interface AppSettings {
   loginBgColor: string;
   loginTitle: string;
   lowStockAlertEnabled: boolean;
+  categories?: string[];
 }
 
 // Initial default database structure
@@ -57,7 +59,15 @@ const INITIAL_SETTINGS: AppSettings = {
   logoText: 'STOCKMASTER',
   loginBgColor: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)',
   loginTitle: 'Stock Management System',
-  lowStockAlertEnabled: true
+  lowStockAlertEnabled: true,
+  categories: [
+    'เสื้อผ้า (Apparel)',
+    'ไอทีและอิเล็กทรอนิกส์ (Electronics)',
+    'เครื่องครัวและบ้าน (Home & Kitchen)',
+    'เครื่องสำอางและบิวตี้ (Beauty & Cosmetics)',
+    'อาหารและเครื่องดื่ม (Food & Beverages)',
+    'สินค้าอื่นๆ (General)'
+  ]
 };
 
 const INITIAL_USERS: User[] = [
@@ -182,11 +192,13 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 const isFirebaseReady = !!(firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId);
 
 let db: any = null;
+let auth: any = null;
 
 if (isFirebaseReady) {
   try {
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     db = getFirestore(app);
+    auth = getAuth(app);
     console.log('Firebase initialized successfully. Using Firestore Cloud Database.');
   } catch (err) {
     console.warn('Firebase initialization failed, falling back to Local Database.', err);
@@ -233,7 +245,11 @@ export const firebaseService = {
         const docRef = doc(db, 'settings', 'app');
         const snap = await getDoc(docRef);
         if (snap.exists()) {
-          return snap.data() as AppSettings;
+          const data = snap.data() as AppSettings;
+          if (!data.categories || data.categories.length === 0) {
+            data.categories = INITIAL_SETTINGS.categories;
+          }
+          return data;
         }
         // Seed remote settings if missing
         await setDoc(docRef, INITIAL_SETTINGS);
@@ -243,7 +259,15 @@ export const firebaseService = {
       }
     }
     const val = localStorage.getItem(KEY_SETTINGS);
-    return val ? JSON.parse(val) : INITIAL_SETTINGS;
+    if (val) {
+      const data = JSON.parse(val);
+      if (!data.categories || data.categories.length === 0) {
+        data.categories = INITIAL_SETTINGS.categories;
+        localStorage.setItem(KEY_SETTINGS, JSON.stringify(data));
+      }
+      return data;
+    }
+    return INITIAL_SETTINGS;
   },
 
   async saveSettings(settings: AppSettings): Promise<void> {
@@ -860,5 +884,383 @@ export const firebaseService = {
     helpMsg += `----------------------------`;
     
     return { type: 'text', text: helpMsg };
+  },
+
+  async addCategory(newCategory: string): Promise<void> {
+    const settings = await this.getSettings();
+    if (!settings.categories) {
+      settings.categories = [];
+    }
+    const trimmed = newCategory.trim();
+    if (!trimmed) {
+      throw new Error('ชื่อหมวดหมู่ห้ามว่างเปล่า');
+    }
+    if (settings.categories.includes(trimmed)) {
+      throw new Error('มีหมวดหมู่นี้ในระบบแล้ว');
+    }
+    settings.categories.push(trimmed);
+    await this.saveSettings(settings);
+  },
+
+  async updateCategoryName(oldName: string, newName: string): Promise<void> {
+    const trimmedNew = newName.trim();
+    if (!trimmedNew) {
+      throw new Error('ชื่อหมวดหมู่ใหม่ห้ามว่างเปล่า');
+    }
+    const settings = await this.getSettings();
+    if (settings.categories) {
+      if (settings.categories.includes(trimmedNew) && trimmedNew !== oldName) {
+        throw new Error('มีหมวดหมู่นี้ในระบบแล้ว');
+      }
+      settings.categories = settings.categories.map(c => c === oldName ? trimmedNew : c);
+      await this.saveSettings(settings);
+    }
+
+    const products = await this.getProducts();
+    const updatedProducts = products.map(p => {
+      if (p.category === oldName) {
+        return { ...p, category: trimmedNew, updatedAt: new Date().toISOString() };
+      }
+      return p;
+    });
+
+    if (this.isCloudMode()) {
+      try {
+        const matches = products.filter(p => p.category === oldName);
+        for (const p of matches) {
+          const docRef = doc(db, 'products', p.sku);
+          await setDoc(docRef, { category: trimmedNew, updatedAt: new Date().toISOString() }, { merge: true });
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, 'products');
+      }
+    } else {
+      localStorage.setItem(KEY_PRODUCTS, JSON.stringify(updatedProducts));
+    }
+  },
+
+  async deleteCategory(categoryName: string, fallbackCategory: string = 'สินค้าอื่นๆ (General)'): Promise<void> {
+    const settings = await this.getSettings();
+    if (settings.categories) {
+      settings.categories = settings.categories.filter(c => c !== categoryName);
+      if (settings.categories.length === 0) {
+        settings.categories.push(fallbackCategory);
+      }
+      await this.saveSettings(settings);
+    }
+
+    const products = await this.getProducts();
+    const updatedProducts = products.map(p => {
+      if (p.category === categoryName) {
+        return { ...p, category: fallbackCategory, updatedAt: new Date().toISOString() };
+      }
+      return p;
+    });
+
+    if (this.isCloudMode()) {
+      try {
+        const matches = products.filter(p => p.category === categoryName);
+        for (const p of matches) {
+          const docRef = doc(db, 'products', p.sku);
+          await setDoc(docRef, { category: fallbackCategory, updatedAt: new Date().toISOString() }, { merge: true });
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, 'products');
+      }
+    } else {
+      localStorage.setItem(KEY_PRODUCTS, JSON.stringify(updatedProducts));
+    }
+  },
+
+  async googleSignInForSheets(): Promise<{ accessToken: string; userEmail: string }> {
+    if (!isFirebaseReady) {
+      throw new Error('ระบบเซิร์ฟเวอร์คลาวด์ยังไม่พร้อมใช้งาน กรุณาเปิดไฟล์และตรวจสอบ firebase-applet-config.json');
+    }
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    const currentAuth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+    
+    try {
+      const result = await signInWithPopup(currentAuth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (!credential || !credential.accessToken) {
+        throw new Error('ไม่พบ OAuth Access Token สำหรับ Google Sheets');
+      }
+      return {
+        accessToken: credential.accessToken,
+        userEmail: result.user.email || ''
+      };
+    } catch (err: any) {
+      console.error('Google Sheets Sign-in Error:', err);
+      throw new Error(err.message || 'การยืนยันตัวตนกับ Google Sheets ล้มเหลว');
+    }
+  },
+
+  async bulkSyncProducts(
+    productsToSync: Array<{sku: string; name: string; category: string; quantity: number; lowStockThreshold: number}>,
+    user: string,
+    strategy: 'overwrite' | 'add_only'
+  ): Promise<{ added: number; updated: number }> {
+    const existingProducts = await this.getProducts();
+    let added = 0;
+    let updated = 0;
+    
+    const dbInst = this.isCloudMode() ? db : null;
+    const settings = await this.getSettings();
+    const activeCategories = settings.categories || [];
+
+    const updatedProductsList = [...existingProducts];
+
+    for (const item of productsToSync) {
+      const cleanSku = item.sku.trim().toUpperCase();
+      if (!cleanSku) continue;
+
+      const cleanCategory = item.category.trim() || 'สินค้าอื่นๆ (General)';
+      // Dynamically register non-existent categories to Settings automatically
+      if (cleanCategory && !activeCategories.includes(cleanCategory)) {
+        activeCategories.push(cleanCategory);
+        
+        // Save dynamically using inner categories modification helper
+        settings.categories = activeCategories;
+        await this.saveSettings(settings);
+      }
+
+      const existingIdx = updatedProductsList.findIndex(p => p.sku === cleanSku);
+
+      if (existingIdx !== -1) {
+        if (strategy === 'add_only') {
+          continue; // Skip existing SKUs
+        }
+        
+        const oldP = updatedProductsList[existingIdx];
+        const newP: StockProduct = {
+          ...oldP,
+          name: item.name.trim() || oldP.name,
+          category: cleanCategory,
+          quantity: item.quantity >= 0 ? item.quantity : oldP.quantity,
+          lowStockThreshold: item.lowStockThreshold >= 0 ? item.lowStockThreshold : oldP.lowStockThreshold,
+          updatedAt: new Date().toISOString()
+        };
+
+        updatedProductsList[existingIdx] = newP;
+        updated++;
+
+        if (dbInst) {
+          try {
+            await setDoc(doc(dbInst, 'products', cleanSku), newP, { merge: true });
+          } catch (e) {
+            console.error('Firestore sync error for SKU ' + cleanSku, e);
+          }
+        }
+      } else {
+        // Register Newly found SKU
+        const newP: StockProduct = {
+          sku: cleanSku,
+          name: item.name.trim() || 'สินค้าผ่าน Google Sheet',
+          category: cleanCategory,
+          quantity: item.quantity >= 0 ? item.quantity : 0,
+          lowStockThreshold: item.lowStockThreshold >= 0 ? item.lowStockThreshold : 10,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        updatedProductsList.push(newP);
+        added++;
+
+        if (dbInst) {
+          try {
+            await setDoc(doc(dbInst, 'products', cleanSku), newP);
+            // Record inventory log
+            if (newP.quantity > 0) {
+              const logId = 'IN-' + Date.now().toString().slice(-6);
+              await setDoc(doc(dbInst, 'stock_in', logId), {
+                id: logId,
+                sku: cleanSku,
+                quantity: newP.quantity,
+                timestamp: new Date().toISOString(),
+                user,
+                category: cleanCategory,
+                notes: 'นำเข้าข้อมูลตั้งต้นผ่าน Google Sheets'
+              });
+            }
+          } catch (e) {
+            console.error('Firestore Error adding product via sheet:', e);
+          }
+        } else {
+          // Local storage logs
+          if (newP.quantity > 0) {
+            const logs = JSON.parse(localStorage.getItem(KEY_STOCK_IN) || '[]');
+            logs.push({
+              id: 'IN-' + Date.now().toString().slice(-6),
+              sku: cleanSku,
+              quantity: newP.quantity,
+              timestamp: new Date().toISOString(),
+              user,
+              category: cleanCategory,
+              notes: 'นำเข้าข้อมูลตั้งต้นผ่าน Google Sheets'
+            });
+            localStorage.setItem(KEY_STOCK_IN, JSON.stringify(logs));
+          }
+        }
+      }
+    }
+
+    if (!dbInst) {
+      localStorage.setItem(KEY_PRODUCTS, JSON.stringify(updatedProductsList));
+    }
+
+    return { added, updated };
+  },
+
+  // Real-time synchronization listeners
+  subscribeProducts(callback: (products: StockProduct[]) => void, onError?: (err: any) => void): () => void {
+    if (this.isCloudMode()) {
+      const colRef = collection(db, 'products');
+      return onSnapshot(colRef, (snap) => {
+        const array: StockProduct[] = [];
+        snap.forEach(doc => {
+          array.push(doc.data() as StockProduct);
+        });
+        callback(array);
+      }, (error) => {
+        console.error('Real-time products sync failed:', error);
+        if (onError) onError(error);
+        else handleFirestoreError(error, OperationType.GET, 'products');
+      });
+    }
+    // Fallback: local storage polling sync representation
+    const getLocal = () => {
+      const val = localStorage.getItem(KEY_PRODUCTS);
+      return val ? JSON.parse(val) : INITIAL_PRODUCTS;
+    };
+    callback(getLocal());
+    const interval = setInterval(() => {
+      callback(getLocal());
+    }, 4000);
+    return () => clearInterval(interval);
+  },
+
+  subscribeHistory(callback: (data: { stockIn: StockInEntry[], stockOut: StockOutEntry[] }) => void, onError?: (err: any) => void): () => void {
+    if (this.isCloudMode()) {
+      const inCol = collection(db, 'stock_in');
+      const outCol = collection(db, 'stock_out');
+      
+      let inLogs: StockInEntry[] = [];
+      let outLogs: StockOutEntry[] = [];
+      
+      const fireCallback = () => {
+        const sortedIn = [...inLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        const sortedOut = [...outLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        callback({ stockIn: sortedIn, stockOut: sortedOut });
+      };
+
+      const unsubIn = onSnapshot(inCol, (snap) => {
+        inLogs = [];
+        snap.forEach(doc => {
+          inLogs.push(doc.data() as StockInEntry);
+        });
+        fireCallback();
+      }, (error) => {
+        console.error('History stock-in sync failed:', error);
+        if (onError) onError(error);
+        else handleFirestoreError(error, OperationType.GET, 'stock_in');
+      });
+
+      const unsubOut = onSnapshot(outCol, (snap) => {
+        outLogs = [];
+        snap.forEach(doc => {
+          outLogs.push(doc.data() as StockOutEntry);
+        });
+        fireCallback();
+      }, (error) => {
+        console.error('History stock-out sync failed:', error);
+        if (onError) onError(error);
+        else handleFirestoreError(error, OperationType.GET, 'stock_out');
+      });
+
+      return () => {
+        unsubIn();
+        unsubOut();
+      };
+    }
+
+    const getLocal = () => {
+      const stockIn = JSON.parse(localStorage.getItem(KEY_STOCK_IN) || '[]');
+      const stockOut = JSON.parse(localStorage.getItem(KEY_STOCK_OUT) || '[]');
+      stockIn.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      stockOut.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return { stockIn, stockOut };
+    };
+
+    callback(getLocal());
+    const interval = setInterval(() => {
+      callback(getLocal());
+    }, 4000);
+    return () => clearInterval(interval);
+  },
+
+  subscribeUsers(callback: (users: User[]) => void, onError?: (err: any) => void): () => void {
+    if (this.isCloudMode()) {
+      const colRef = collection(db, 'users');
+      return onSnapshot(colRef, (snap) => {
+        const array: User[] = [];
+        snap.forEach(doc => {
+          array.push(doc.data() as User);
+        });
+        callback(array);
+      }, (error) => {
+        console.error('Real-time users sync failed:', error);
+        if (onError) onError(error);
+        else handleFirestoreError(error, OperationType.GET, 'users');
+      });
+    }
+
+    const getLocal = () => {
+      return JSON.parse(localStorage.getItem(KEY_USERS) || '[]');
+    };
+    callback(getLocal());
+    const interval = setInterval(() => {
+      callback(getLocal());
+    }, 4000);
+    return () => clearInterval(interval);
+  },
+
+  subscribeSettings(callback: (settings: AppSettings) => void, onError?: (err: any) => void): () => void {
+    if (this.isCloudMode()) {
+      const docRef = doc(db, 'settings', 'app');
+      return onSnapshot(docRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as AppSettings;
+          if (!data.categories || data.categories.length === 0) {
+            data.categories = INITIAL_SETTINGS.categories;
+          }
+          callback(data);
+        } else {
+          callback(INITIAL_SETTINGS);
+        }
+      }, (error) => {
+        console.error('Real-time settings sync failed:', error);
+        if (onError) onError(error);
+        else handleFirestoreError(error, OperationType.GET, 'settings/app');
+      });
+    }
+
+    const getLocal = () => {
+      const val = localStorage.getItem(KEY_SETTINGS);
+      if (val) {
+        const data = JSON.parse(val);
+        if (!data.categories || data.categories.length === 0) {
+          data.categories = INITIAL_SETTINGS.categories;
+        }
+        return data;
+      }
+      return INITIAL_SETTINGS;
+    };
+    callback(getLocal());
+    const interval = setInterval(() => {
+      callback(getLocal());
+    }, 4000);
+    return () => clearInterval(interval);
   }
 };
