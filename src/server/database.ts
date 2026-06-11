@@ -61,6 +61,16 @@ export interface AppSettings {
   categories?: string[];
 }
 
+export interface TransactionLog {
+  id: string;
+  timestamp: string;
+  operation: 'create' | 'update' | 'delete' | 'sync' | 'rollback' | 'auth';
+  details: string;
+  status: 'success' | 'failure';
+  error?: string;
+  user?: string;
+}
+
 export interface DBStructure {
   users: User[];
   products: StockProduct[];
@@ -68,6 +78,7 @@ export interface DBStructure {
   stockOutHistory: StockOutEntry[];
   settings: AppSettings;
   sessions?: UserSession[];
+  transactionLogs?: TransactionLog[];
 }
 
 export function hashPassword(plain: string): string {
@@ -243,7 +254,8 @@ const INITIAL_DB: DBStructure = {
     lowStockAlertEnabled: true,
     categories: ['ทั่วไป', 'ความงาม', 'แฟชั่น', 'เครื่องใช้ไฟฟ้า', 'ไอที & อุปกรณ์เสริม']
   },
-  sessions: []
+  sessions: [],
+  transactionLogs: []
 };
 
 let firestoreDb: Firestore | null = null;
@@ -274,8 +286,101 @@ class FileDatabase {
   public isCloudDataLoaded: boolean = false;
   public isConnectedToCloud: boolean = false;
 
+  // Secondary indexing maps for ultra-fast query and verification speeds (Optimize DB O(1) reads)
+  private productIndexMap: Map<string, StockProduct> = new Map();
+  private userIndexMap: Map<string, User> = new Map();
+
   constructor() {
     // Empty constructor to prevent eager filesystem access during module import / build phases on Vercel
+  }
+
+  public rebuildIndexes() {
+    if (!this.cache) return;
+    this.productIndexMap.clear();
+    for (const p of this.cache.products) {
+      if (p && p.sku) {
+        this.productIndexMap.set(p.sku.trim().toUpperCase(), p);
+      }
+    }
+    this.userIndexMap.clear();
+    for (const u of this.cache.users) {
+      if (u && u.username) {
+        this.userIndexMap.set(u.username.trim().toLowerCase(), u);
+      }
+    }
+    console.log(`[Database Optimization] Secondary maps rebuilt. Indexed ${this.productIndexMap.size} products and ${this.userIndexMap.size} users.`);
+  }
+
+  public findProductBySku(sku: string): StockProduct | undefined {
+    if (!this.cache) this.get();
+    return this.productIndexMap.get(sku.trim().toUpperCase());
+  }
+
+  public findUserByUsername(username: string): User | undefined {
+    if (!this.cache) this.get();
+    return this.userIndexMap.get(username.trim().toLowerCase());
+  }
+
+  public invalidateCache() {
+    console.log('[Cache Optimization] Invalidating db cache to force fresh fetch on next query.');
+    this.lastLoadTime = 0;
+  }
+
+  public async renewSession(token: string): Promise<void> {
+    const db = this.get();
+    const now = Date.now();
+    const newExpiry = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+
+    // Slide/Extend token session in O(1) memory map
+    if (this.memorySessions.has(token)) {
+      const sess = this.memorySessions.get(token);
+      if (sess) {
+        sess.expiresAt = newExpiry;
+      }
+    }
+
+    // Extend in main db structure
+    if (db.sessions) {
+      const sess = db.sessions.find(s => s.token === token);
+      if (sess) {
+        sess.expiresAt = newExpiry;
+        this.save(db).catch(err => {
+          console.error('[Session Optimization] Silent session extend save error:', err);
+        });
+      }
+    }
+  }
+
+  public async logTransaction(
+    operation: 'create' | 'update' | 'delete' | 'sync' | 'rollback' | 'auth',
+    details: string,
+    status: 'success' | 'failure',
+    error?: string,
+    user?: string
+  ) {
+    const db = this.get();
+    if (!db.transactionLogs) {
+      db.transactionLogs = [];
+    }
+    const newLog: TransactionLog = {
+      id: 'TL-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      timestamp: new Date().toISOString(),
+      operation,
+      details,
+      status,
+      error,
+      user
+    };
+    db.transactionLogs.unshift(newLog);
+
+    // Maintain a bounded cache of logs (last 100) to keep memory foot-print thin
+    if (db.transactionLogs.length > 100) {
+      db.transactionLogs = db.transactionLogs.slice(0, 100);
+    }
+
+    // Triggers local save + firestore sync
+    await this.save(db);
+    console.log(`[Trace Log - ${operation}] Status: ${status}. Details: ${details}`);
   }
 
   private fallbackInit() {
@@ -298,6 +403,7 @@ class FileDatabase {
       console.error('Failed to initialize local fallback database:', err);
       this.cache = JSON.parse(JSON.stringify(INITIAL_DB));
     }
+    this.rebuildIndexes();
   }
 
   public async verifySession(token: string): Promise<boolean> {
@@ -391,14 +497,16 @@ class FileDatabase {
           stockInSnap,
           stockOutSnap,
           settingsDoc,
-          sessionsSnap
+          sessionsSnap,
+          logsSnap
         ] = await Promise.all([
           fetchCollection('users'),
           fetchCollection('products'),
           fetchCollection('stock_in'),
           fetchCollection('stock_out'),
           fetchDoc('settings', 'app'),
-          fetchCollection('sessions')
+          fetchCollection('sessions'),
+          fetchCollection('transaction_logs')
         ]);
 
         const users: User[] = [];
@@ -420,6 +528,12 @@ class FileDatabase {
         stockOutSnap.forEach((d) => {
           stockOutHistory.push(d.data() as StockOutEntry);
         });
+
+        const transactionLogs: TransactionLog[] = [];
+        logsSnap.forEach((d) => {
+          transactionLogs.push(d.data() as TransactionLog);
+        });
+        transactionLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
         let settings: AppSettings;
         if (settingsDoc.exists()) {
@@ -468,12 +582,14 @@ class FileDatabase {
           stockInHistory,
           stockOutHistory,
           settings,
-          sessions
+          sessions,
+          transactionLogs
         };
         this.lastLoadTime = Date.now();
         this.isCloudDataLoaded = true;
         this.isConnectedToCloud = true;
-        console.log(`Cloud database loaded successfully. Found ${users.length} users, ${products.length} products, ${sessions.length} sessions.`);
+        this.rebuildIndexes();
+        console.log(`Cloud database loaded successfully. Found ${users.length} users, ${products.length} products, ${sessions.length} sessions, ${transactionLogs.length} transaction logs.`);
       } catch (err) {
         console.error('Error fetching database from Firestore. Falling back to local/tmp files...', err);
         this.isConnectedToCloud = false;
@@ -517,6 +633,9 @@ class FileDatabase {
     const previous = this.cache ? { ...this.cache } : null;
     this.cache = data;
     this.lastLoadTime = Date.now(); // Mark as recently updated so we don't reload from Firestore immediately!
+
+    // Ensure our high-performance indexes are aligned with current state
+    this.rebuildIndexes();
 
     // Save to local fallback file for redundancy/development offline speeds
     try {
@@ -637,6 +756,16 @@ class FileDatabase {
         if (!sessions.some(x => x.token === prevSess.token)) {
           const docId = crypto.createHash('sha256').update(prevSess.token).digest('hex');
           syncPromises.push(deleteDoc(doc(db, 'sessions', docId)));
+        }
+      }
+
+      // 7. Sync Transaction Logs (Incremental diff)
+      const logs = data.transactionLogs || [];
+      const prevLogs = previous?.transactionLogs || [];
+      for (const log of logs) {
+        const prevLog = prevLogs.find(x => x.id === log.id);
+        if (!prevLog) {
+          syncPromises.push(setDoc(doc(db, 'transaction_logs', log.id), log));
         }
       }
 

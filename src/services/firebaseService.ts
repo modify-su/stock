@@ -279,10 +279,16 @@ export const firebaseService = {
     });
   },
 
-  async stockIn(sku: string, quantity: number, notes: string, user: string): Promise<StockProduct> {
+  async stockIn(
+    sku: string, 
+    quantity: number, 
+    notes: string, 
+    user: string,
+    lastUpdatedAt?: string
+  ): Promise<StockProduct> {
     return fetchAPI('/api/stock/in', {
       method: 'POST',
-      body: JSON.stringify({ sku, quantity, notes, user })
+      body: JSON.stringify({ sku, quantity, notes, user, lastUpdatedAt })
     });
   },
 
@@ -291,11 +297,12 @@ export const firebaseService = {
     quantity: number,
     platform: 'TikTok' | 'Shopee' | 'Lazada' | 'Facebook',
     courier: 'Flash' | 'J&T' | 'LEX' | 'Best',
-    user: string
+    user: string,
+    lastUpdatedAt?: string
   ): Promise<{ product: StockProduct; warning?: string }> {
     return fetchAPI('/api/stock/out', {
       method: 'POST',
-      body: JSON.stringify({ sku, quantity, platform, courier, user })
+      body: JSON.stringify({ sku, quantity, platform, courier, user, lastUpdatedAt })
     });
   },
 

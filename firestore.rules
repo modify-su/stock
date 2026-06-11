@@ -122,5 +122,10 @@ service cloud.firestore {
       allow read, delete: if true;
       allow create, update: if isValidId(docId) && isValidSession(incoming());
     }
+
+    // 7. Transaction Logs
+    match /transaction_logs/{id} {
+      allow read, write: if true;
+    }
   }
 }

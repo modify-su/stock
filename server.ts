@@ -84,6 +84,16 @@ export async function startServer() {
       }
 
       req.currentUser = decoded;
+
+      // Adjust session timeout dynamically (auto-renew / slide active cookie expiration) on action to prevent sudden timeouts
+      await dbInstance.renewSession(token);
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: false, 
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000 // Sliding window auto-renewal
+      });
+
       next();
     } catch (err) {
       res.clearCookie('token');
@@ -172,6 +182,14 @@ export async function startServer() {
     db.users.push(newUser);
     await dbInstance.save(db);
 
+    await dbInstance.logTransaction(
+      'create',
+      `ลงทะเบียนผู้ใช้งานใหม่: @${newUser.username} (บทบาท: ${newUser.role}, สถานะ: ${newUser.status})`,
+      'success',
+      undefined,
+      newUser.username
+    );
+
     const message = isFirstUser 
       ? 'ยินดีด้วยครับ! คุณเป็นผู้สมัครใช้งานคนแรก จึงได้รับสิทธิ์ Admin และอนุมัติบัญชีทันที'
       : 'สมัครสมาชิกสำเร็จ! บัญชีของคุณอยู่ระหว่างรอผู้ดูแลระบบ (Admin) ตรวจสอบและอนุมัติสิทธิ์';
@@ -237,6 +255,14 @@ export async function startServer() {
       db.sessions = db.sessions.filter(s => new Date(s.expiresAt).getTime() > Date.now());
 
       await dbInstance.save(db);
+
+      await dbInstance.logTransaction(
+        'auth',
+        `เข้าสู่ระบบสำเร็จ: @${user.username} ยินดีต้อนรับกลับเข้าสู่ระบบคลังสินค้า`,
+        'success',
+        undefined,
+        user.username
+      );
 
       console.log(`[API Login Success] username: ${username}, role: ${user.role}`);
       return res.json({
@@ -334,6 +360,12 @@ export async function startServer() {
 
 
   // --- ADMIN PANEL API ---
+
+  // Get all transaction, sync and rollback logs (Admin only)
+  app.get('/api/admin/transaction-logs', authenticateToken, requireAdmin, (req: Request, res: Response) => {
+    const db = dbInstance.get();
+    res.json(db.transactionLogs || []);
+  });
 
   // Get all users
   app.get('/api/admin/users', authenticateToken, requireAdmin, (req: Request, res: Response) => {
@@ -485,8 +517,8 @@ export async function startServer() {
   });
 
   // Stock In Order
-  app.post('/api/stock/in', authenticateToken, (req: Request, res: Response) => {
-    const { sku, quantity, notes } = req.body;
+  app.post('/api/stock/in', authenticateToken, async (req: Request, res: Response) => {
+    const { sku, quantity, notes, lastUpdatedAt } = req.body;
     const qty = Number(quantity);
 
     if (!sku || isNaN(qty) || qty <= 0) {
@@ -498,6 +530,21 @@ export async function startServer() {
 
     if (!product) {
       return res.status(404).json({ message: `ไม่พบสินค้า SKU ${sku} ในะบบ กรุณาเพิ่มสินค้าก่อน` });
+    }
+
+    // ─── OPTIMISTIC LOCKING CHECK ───
+    if (lastUpdatedAt && product.updatedAt && new Date(product.updatedAt).getTime() > new Date(lastUpdatedAt).getTime()) {
+      await dbInstance.logTransaction(
+        'rollback',
+        `ระงับรายการนำเข้าสินค้า (Optimistic Locking) SKU: ${sku}. การแก้ชนกันกับผู้ใช้อื่น.`,
+        'failure',
+        'Outdated client timestamp',
+        req.currentUser?.username
+      );
+      return res.status(409).json({
+        message: `ข้อผิดพลาด (Conflict): ข้อมูลสินค้า SKU ${sku} มีการแก้ไขอัปเดตสต็อกโดยผู้ใช้คนอื่นไปก่อนหน้านี้แล้ว กรุณารีเฟรชเพื่อดึงข้อมูลล่าสุด และทำรายการม้วนตลับใหม่อีกครั้งเพื่อป้องกันสต็อกคลาดเคลื่อน`,
+        currentProduct: product
+      });
     }
 
     // Increment
@@ -516,7 +563,16 @@ export async function startServer() {
     };
 
     db.stockInHistory.push(newIn);
-    dbInstance.save(db);
+    await dbInstance.save(db);
+
+    // ─── LOG TRANSACTION ───
+    await dbInstance.logTransaction(
+      'update',
+      `นำเข้าสินค้าสำเร็จ: SKU: ${sku}, เพิ่มเติม: +${qty} ชิ้น, ยอดสต็อกล่าสุด: ${product.quantity} ชิ้น`,
+      'success',
+      undefined,
+      req.currentUser?.username
+    );
 
     res.json({
       message: `นำเข้าสินค้าสำเร้จ! SKU: ${sku}, เพิ่มเติม: +${qty} ชิ้น, ยอดคงเหลือล่าสุด: ${product.quantity} ชิ้น`,
@@ -526,8 +582,8 @@ export async function startServer() {
   });
 
   // Stock Out Order
-  app.post('/api/stock/out', authenticateToken, (req: Request, res: Response) => {
-    const { sku, quantity, platform, courier } = req.body;
+  app.post('/api/stock/out', authenticateToken, async (req: Request, res: Response) => {
+    const { sku, quantity, platform, courier, lastUpdatedAt } = req.body;
     const qty = Number(quantity);
 
     if (!sku || isNaN(qty) || qty <= 0 || !platform || !courier) {
@@ -539,6 +595,21 @@ export async function startServer() {
 
     if (!product) {
       return res.status(404).json({ message: 'ไม่พบสินค้า SKU นี้ในระบบคลังสินค้า' });
+    }
+
+    // ─── OPTIMISTIC LOCKING CHECK ───
+    if (lastUpdatedAt && product.updatedAt && new Date(product.updatedAt).getTime() > new Date(lastUpdatedAt).getTime()) {
+      await dbInstance.logTransaction(
+        'rollback',
+        `ระงับรายการตัดจ่ายสินค้า (Optimistic Locking) SKU: ${sku}. การแก้ชนกันกับผู้ใช้อื่น.`,
+        'failure',
+        'Outdated client timestamp',
+        req.currentUser?.username
+      );
+      return res.status(409).json({
+        message: `ข้อผิดพลาด (Conflict): ข้อมูลสินค้า SKU ${sku} มีการแก้ไขอัปเดตสต็อกโดยผู้ใช้คนอื่นไปก่อนหน้านี้แล้ว กรุณารีเฟรชเพื่อดึงข้อมูลล่าสุด และทำรายการใหม่อีกครั้งเพื่อป้องกันสต็อกคลาดเคลื่อน`,
+        currentProduct: product
+      });
     }
 
     if (product.quantity < qty) {
@@ -563,7 +634,16 @@ export async function startServer() {
     };
 
     db.stockOutHistory.push(newOut);
-    dbInstance.save(db);
+    await dbInstance.save(db);
+
+    // ─── LOG TRANSACTION ───
+    await dbInstance.logTransaction(
+      'update',
+      `ตัดสต็อกส่งออกสินค้าสำเร็จ: SKU: ${sku}, ตัดสุทธิ: -${qty} ชิ้น (ช่องทาง: ${platform}, ขนส่ง: ${courier}), ยอดสต็อกล่าสุด: ${product.quantity} ชิ้น`,
+      'success',
+      undefined,
+      req.currentUser?.username
+    );
 
     // Determine low stock notification triggers
     let lowStockWarning = null;

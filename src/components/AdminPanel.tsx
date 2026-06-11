@@ -37,6 +37,28 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // System Transaction logs audit states
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const fetchLogs = async () => {
+    try {
+      const response = await fetch('/api/admin/transaction-logs');
+      if (response.ok) {
+        const data = await response.json();
+        setLogs(data);
+      }
+    } catch (e) {
+      console.error('Failed to load transaction logs:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 12000); // Poll every 12 seconds
+    return () => clearInterval(interval);
+  }, []);
   
   // Custom brand states
   const [logoUrl, setLogoUrl] = useState(appSettings.logoUrl);
@@ -528,6 +550,85 @@ export default function AdminPanel({
 
           </form>
 
+        </div>
+      </div>
+
+      {/* 3. Real-time Transaction, Commit & Rollback Audit Logs (Spans Full Width) */}
+      <div className="lg:col-span-12" id="transaction-logs-panel">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4 select-none">
+            <h3 className="text-white text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 font-sans">
+              <RefreshCw className="h-4 w-4 text-indigo-400 animate-[spin_8s_linear_infinite]" /> บันทึกธุรกรรมระบบและการทำงานฐานข้อมูล (System Logs, Commits & Failures)
+            </h3>
+            <button
+              type="button"
+              onClick={fetchLogs}
+              className="px-2.5 py-1 text-[10px] text-indigo-400 hover:text-white bg-indigo-950/40 border border-indigo-905 rounded-lg flex items-center gap-1 transition"
+            >
+              <RefreshCw className="h-3 w-3" /> รีเฟรชข้อมูลล็อก
+            </button>
+          </div>
+
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1" id="log-list-scroll">
+            {logsLoading ? (
+              <p className="text-xs text-slate-500 py-10 text-center flex items-center justify-center gap-2">
+                <RefreshCw className="h-4 w-4 animate-spin text-indigo-400" /> กำลังตรวจสอบพิกัดดาต้าเบสทรานส์แอกชัน...
+              </p>
+            ) : logs.length === 0 ? (
+              <div className="text-center py-12" id="empty-logs-placeholder">
+                <p className="text-xs text-slate-500">พร้อมใช้งาน ทรานส์แอกชันของระบบจะปรากฏตรงนี้เมื่อระบบประมวลผลคำสั่งซื้อนำเข้า/ตัดจ่ายคลังสินค้า</p>
+              </div>
+            ) : (
+              logs.map((log: any) => {
+                const isFail = log.status === 'failure' || log.operation === 'rollback';
+                return (
+                  <div
+                    key={log.id}
+                    className={`p-3 rounded-xl border flex items-start justify-between gap-4 font-mono text-[10px] transition ${
+                      isFail
+                        ? 'bg-red-500/5 border-red-500/10 text-red-400'
+                        : log.operation === 'auth'
+                        ? 'bg-blue-500/5 border-blue-500/10 text-blue-400'
+                        : log.operation === 'create'
+                        ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-400'
+                        : 'bg-slate-950/60 border-slate-805 text-slate-300'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
+                          isFail
+                            ? 'bg-red-500/15 text-red-400 border border-red-500/10'
+                            : log.operation === 'auth'
+                            ? 'bg-blue-500/15 text-blue-400 border border-blue-500/10'
+                            : log.operation === 'create'
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/10'
+                            : 'bg-slate-900 text-slate-400 border border-slate-800'
+                        }`}>
+                          {log.operation.toUpperCase()}
+                        </span>
+                        <span className="text-[9px] font-bold">
+                          {log.status === 'success' ? '✅ COMMITTED' : '⚠️ REJECTED / ROLLBACK'}
+                        </span>
+                        {log.user && (
+                          <span className="text-slate-500 font-sans">by @{log.user}</span>
+                        )}
+                      </div>
+                      <p className="text-xs break-all font-sans text-slate-300 mt-1">{log.details}</p>
+                      {log.error && (
+                        <p className="text-[10px] text-red-500 bg-red-500/10 p-1 px-2 rounded mt-1 font-sans">
+                          รายละเอียดขัดข้อง: {log.error}
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-[9px] text-slate-500 shrink-0 select-none">
+                      {new Date(log.timestamp).toLocaleTimeString('th-TH')}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
 

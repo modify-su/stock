@@ -212,7 +212,16 @@ export default function App() {
   // Operations: Stock In Trigger
   const handleStockInSubmit = async (payload: { sku: string; quantity: number; notes: string }) => {
     try {
-      const data = await firebaseService.stockIn(payload.sku, payload.quantity, payload.notes, currentUser.username);
+      const activeProduct = products.find(p => p.sku === payload.sku);
+      const lastUpdatedAt = activeProduct?.updatedAt;
+
+      const data = await firebaseService.stockIn(
+        payload.sku, 
+        payload.quantity, 
+        payload.notes, 
+        currentUser.username,
+        lastUpdatedAt
+      );
       fetchInventoryData();
       return { message: 'นำเข้าสินค้าสำเร็จ!', product: data };
     } catch (err: any) {
@@ -223,12 +232,16 @@ export default function App() {
   // Operations: Stock Out Trigger
   const handleStockOutSubmit = async (payload: { sku: string; quantity: number; platform: string; courier: string }) => {
     try {
+      const activeProduct = products.find(p => p.sku === payload.sku);
+      const lastUpdatedAt = activeProduct?.updatedAt;
+
       const data = await firebaseService.stockOut(
         payload.sku, 
         payload.quantity, 
         payload.platform as any, 
         payload.courier as any, 
-        currentUser.username
+        currentUser.username,
+        lastUpdatedAt
       );
       fetchInventoryData();
       return { message: data.warning || 'ตัดสต็อกส่งออกสินค้าสำเร็จ!', product: data.product };
