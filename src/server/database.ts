@@ -268,6 +268,8 @@ function getFirestoreDb(): Firestore | null {
 class FileDatabase {
   private cache: DBStructure | null = null;
   private lastLoadTime: number = 0;
+  private memorySessions: Map<string, UserSession> = new Map();
+  private loadingPromise: Promise<void> | null = null;
 
   constructor() {
     // Empty constructor to prevent eager filesystem access during module import / build phases on Vercel
@@ -295,6 +297,26 @@ class FileDatabase {
     }
   }
 
+  public verifySession(token: string): boolean {
+    // Check local memory cache first for lighting-fast O(1) lookup speeds
+    if (this.memorySessions.has(token)) {
+      const sess = this.memorySessions.get(token);
+      if (sess && new Date(sess.expiresAt).getTime() > Date.now()) {
+        return true;
+      }
+    }
+    // Check from actual database cache
+    const db = this.get();
+    if (db.sessions) {
+      const activeSession = db.sessions.find(s => s.token === token);
+      if (activeSession && new Date(activeSession.expiresAt).getTime() > Date.now()) {
+        this.memorySessions.set(token, activeSession);
+        return true;
+      }
+    }
+    return false;
+  }
+
   public async load() {
     const db = getFirestoreDb();
     if (!db) {
@@ -305,102 +327,139 @@ class FileDatabase {
     }
 
     const now = Date.now();
-    // Throttle reads to once every 2 seconds to save Cloud Run/Vercel serverless request and database quota
-    if (this.cache && (now - this.lastLoadTime < 2000)) {
+    // Cache remains warm for 10 seconds to safeguard Firestore read quotas and optimize performance
+    if (this.cache && (now - this.lastLoadTime < 10000)) {
       return;
     }
 
-    try {
-      console.log('Loading database from Cloud Firestore...');
-      // 1. Fetch Users
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const users: User[] = [];
-      usersSnap.forEach((d) => {
-        users.push(d.data() as User);
-      });
+    // Unify concurrent overlapping in-flight loads to a single shared promise
+    if (this.loadingPromise) {
+      return this.loadingPromise;
+    }
 
-      // 2. Fetch Products
-      const productsSnap = await getDocs(collection(db, 'products'));
-      const products: StockProduct[] = [];
-      productsSnap.forEach((d) => {
-        products.push(d.data() as StockProduct);
-      });
-
-      // 3. Fetch Stock In logs
-      const stockInSnap = await getDocs(collection(db, 'stock_in'));
-      const stockInHistory: StockInEntry[] = [];
-      stockInSnap.forEach((d) => {
-        stockInHistory.push(d.data() as StockInEntry);
-      });
-
-      // 4. Fetch Stock Out logs
-      const stockOutSnap = await getDocs(collection(db, 'stock_out'));
-      const stockOutHistory: StockOutEntry[] = [];
-      stockOutSnap.forEach((d) => {
-        stockOutHistory.push(d.data() as StockOutEntry);
-      });
-
-      // 5. Fetch Settings
-      const settingsDoc = await getDoc(doc(db, 'settings', 'app'));
-      let settings: AppSettings;
-      if (settingsDoc.exists()) {
-        settings = settingsDoc.data() as AppSettings;
-      } else {
-        settings = INITIAL_DB.settings;
-        await setDoc(doc(db, 'settings', 'app'), settings);
-      }
-
-      // 6. Fetch Sessions
-      const sessionsSnap = await getDocs(collection(db, 'sessions'));
-      const sessions: UserSession[] = [];
-      sessionsSnap.forEach((d) => {
-        sessions.push(d.data() as UserSession);
-      });
-
-      // If database is blank on Firestore (e.g. first deploy/launch), seed initial data
-      if (users.length === 0 && products.length === 0) {
-        console.log('Cloud Firestore database is blank. Seeding initial database tables...');
+    this.loadingPromise = (async () => {
+      try {
+        console.log('Loading database from Cloud Firestore...');
         
-        // Seed Users
-        for (const u of INITIAL_DB.users) {
-          await setDoc(doc(db, 'users', u.username), u);
-          users.push(u);
+        // Define robust fetch operators with safety logs
+        const fetchCollection = async (collName: string) => {
+          try {
+            return await getDocs(collection(db, collName));
+          } catch (err) {
+            console.error(`[Firestore Server Load] Error fetching collection "${collName}":`, err);
+            throw err;
+          }
+        };
+
+        const fetchDoc = async (collName: string, docId: string) => {
+          try {
+            return await getDoc(doc(db, collName, docId));
+          } catch (err) {
+            console.error(`[Firestore Server Load] Error fetching document "${collName}/${docId}":`, err);
+            throw err;
+          }
+        };
+
+        // Query Firestore collections in parallel using Promise.all
+        const [
+          usersSnap,
+          productsSnap,
+          stockInSnap,
+          stockOutSnap,
+          settingsDoc,
+          sessionsSnap
+        ] = await Promise.all([
+          fetchCollection('users'),
+          fetchCollection('products'),
+          fetchCollection('stock_in'),
+          fetchCollection('stock_out'),
+          fetchDoc('settings', 'app'),
+          fetchCollection('sessions')
+        ]);
+
+        const users: User[] = [];
+        usersSnap.forEach((d) => {
+          users.push(d.data() as User);
+        });
+
+        const products: StockProduct[] = [];
+        productsSnap.forEach((d) => {
+          products.push(d.data() as StockProduct);
+        });
+
+        const stockInHistory: StockInEntry[] = [];
+        stockInSnap.forEach((d) => {
+          stockInHistory.push(d.data() as StockInEntry);
+        });
+
+        const stockOutHistory: StockOutEntry[] = [];
+        stockOutSnap.forEach((d) => {
+          stockOutHistory.push(d.data() as StockOutEntry);
+        });
+
+        let settings: AppSettings;
+        if (settingsDoc.exists()) {
+          settings = settingsDoc.data() as AppSettings;
+        } else {
+          settings = INITIAL_DB.settings;
+          await setDoc(doc(db, 'settings', 'app'), settings);
         }
 
-        // Seed Products
-        for (const p of INITIAL_DB.products) {
-          await setDoc(doc(db, 'products', p.sku), p);
-          products.push(p);
+        const sessions: UserSession[] = [];
+        sessionsSnap.forEach((d) => {
+          const sess = d.data() as UserSession;
+          sessions.push(sess);
+          // Sync with our robust local in-memory session map
+          this.memorySessions.set(sess.token, sess);
+        });
+
+        // Seed default dataset if database is blank
+        if (users.length === 0 && products.length === 0) {
+          console.log('Cloud Firestore database is blank. Seeding initial database tables...');
+          // Seed Users
+          for (const u of INITIAL_DB.users) {
+            await setDoc(doc(db, 'users', u.username), u);
+            users.push(u);
+          }
+          // Seed Products
+          for (const p of INITIAL_DB.products) {
+            await setDoc(doc(db, 'products', p.sku), p);
+            products.push(p);
+          }
+          // Seed Stock In
+          for (const si of INITIAL_DB.stockInHistory) {
+            await setDoc(doc(db, 'stock_in', si.id), si);
+            stockInHistory.push(si);
+          }
+          // Seed Stock Out
+          for (const so of INITIAL_DB.stockOutHistory) {
+            await setDoc(doc(db, 'stock_out', so.id), so);
+            stockOutHistory.push(so);
+          }
         }
 
-        // Seed Stock In
-        for (const si of INITIAL_DB.stockInHistory) {
-          await setDoc(doc(db, 'stock_in', si.id), si);
-          stockInHistory.push(si);
-        }
-
-        // Seed Stock Out
-        for (const so of INITIAL_DB.stockOutHistory) {
-          await setDoc(doc(db, 'stock_out', so.id), so);
-          stockOutHistory.push(so);
+        this.cache = {
+          users,
+          products,
+          stockInHistory,
+          stockOutHistory,
+          settings,
+          sessions
+        };
+        this.lastLoadTime = Date.now();
+        console.log(`Cloud database loaded successfully. Found ${users.length} users, ${products.length} products, ${sessions.length} sessions.`);
+      } catch (err) {
+        console.error('Error fetching database from Firestore. Falling back to local/tmp files...', err);
+        if (!this.cache) {
+          this.fallbackInit();
         }
       }
+    })();
 
-      this.cache = {
-        users,
-        products,
-        stockInHistory,
-        stockOutHistory,
-        settings,
-        sessions
-      };
-      this.lastLoadTime = now;
-      console.log(`Cloud database loaded successfully. Found ${users.length} users, ${products.length} products.`);
-    } catch (err) {
-      console.error('Error fetching database from Firestore. Falling back to local/tmp files...', err);
-      if (!this.cache) {
-        this.fallbackInit();
-      }
+    try {
+      await this.loadingPromise;
+    } finally {
+      this.loadingPromise = null;
     }
   }
 
@@ -409,6 +468,16 @@ class FileDatabase {
       this.fallbackInit();
       // Load dynamically in background on first synchronous get
       this.load().catch(err => console.error('Silent background database fetch failed:', err));
+    }
+    // Synchronize sessions list of Cache on-the-fly with valid active memory sessions
+    if (this.cache) {
+      const activeList: UserSession[] = [];
+      this.memorySessions.forEach(sess => {
+        if (sess && sess.expiresAt && new Date(sess.expiresAt).getTime() > Date.now()) {
+          activeList.push(sess);
+        }
+      });
+      this.cache.sessions = activeList;
     }
     return this.cache || INITIAL_DB;
   }
@@ -513,6 +582,19 @@ class FileDatabase {
       // 6. Sync Sessions
       const sessions = data.sessions || [];
       const prevSessions = previous?.sessions || [];
+      
+      // Sync memory sessions map online
+      for (const sess of sessions) {
+        this.memorySessions.set(sess.token, sess);
+      }
+      if (previous) {
+        for (const prevSess of prevSessions) {
+          if (!sessions.some(x => x.token === prevSess.token)) {
+            this.memorySessions.delete(prevSess.token);
+          }
+        }
+      }
+
       for (const sess of sessions) {
         const prevSess = prevSessions.find(x => x.token === sess.token);
         if (!prevSess) {

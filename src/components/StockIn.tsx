@@ -39,16 +39,17 @@ export default function StockIn({ products, onStockIn, onAddNewProduct, categori
   // New SKU States
   const [newSku, setNewSku] = useState('');
   const [newName, setNewName] = useState('');
-  const [newCategory, setNewCategory] = useState(categoriesList[0]);
+  const [newCategory, setNewCategory] = useState(categoriesList[0] || 'ทั่วไป');
+  const [customCategory, setCustomCategory] = useState('');
   const [newInitialQty, setNewInitialQty] = useState('');
   const [newThreshold, setNewThreshold] = useState('10');
 
   // Synchronize category selection if active categories change
   React.useEffect(() => {
-    if (categoriesList.length > 0 && !categoriesList.includes(newCategory)) {
+    if (categoriesList.length > 0 && !categoriesList.includes(newCategory) && newCategory !== '__custom__') {
       setNewCategory(categoriesList[0]);
     }
-  }, [categoriesList]);
+  }, [categoriesList, newCategory]);
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -88,7 +89,8 @@ export default function StockIn({ products, onStockIn, onAddNewProduct, categori
 
   const handleCreateSkuSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSku || !newName || !newCategory) {
+    const finalCategory = newCategory === '__custom__' ? customCategory.trim() : newCategory;
+    if (!newSku || !newName || !finalCategory) {
       setError('กรุณากรอกข้อมูล SKU, ชื่อสินค้า และ หมวดหมู่สินค้า');
       return;
     }
@@ -100,7 +102,7 @@ export default function StockIn({ products, onStockIn, onAddNewProduct, categori
       const response = await onAddNewProduct({
         sku: newSku.toUpperCase().trim(),
         name: newName.trim(),
-        category: newCategory,
+        category: finalCategory,
         initialQty: Number(newInitialQty) || 0,
         lowStockThreshold: Number(newThreshold) || 10
       });
@@ -110,6 +112,8 @@ export default function StockIn({ products, onStockIn, onAddNewProduct, categori
       setNewName('');
       setNewInitialQty('');
       setNewThreshold('10');
+      setCustomCategory('');
+      setNewCategory(finalCategory);
     } catch (err: any) {
       setError(err.message || 'จดทะเบียน SKU ไม่สำเร็จ');
     } finally {
@@ -244,7 +248,21 @@ export default function StockIn({ products, onStockIn, onAddNewProduct, categori
                     {categoriesList.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
+                    <option value="__custom__">➕ กำหนดหมวดหมู่เอง (Custom Category)...</option>
                   </select>
+
+                  {newCategory === '__custom__' && (
+                    <div className="mt-2" id="custom-cat-input-container">
+                      <input 
+                        type="text"
+                        className="w-full bg-slate-950 border border-indigo-550 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition"
+                        placeholder="พิมพ์ระบุหมวดหมู่ใหม่ที่นี่..."
+                        value={customCategory}
+                        onChange={e => setCustomCategory(e.target.value)}
+                        id="input-newsku-custom-cat"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 

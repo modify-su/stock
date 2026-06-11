@@ -66,10 +66,9 @@ export async function startServer() {
 
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { username: string; role: 'admin' | 'user' };
-      const db = dbInstance.get();
 
-      // Check if session is stored and active in the database
-      const activeSession = db.sessions?.some(s => s.token === token);
+      // Check if session is stored and active in the database (efficient memory cache first)
+      const activeSession = dbInstance.verifySession(token);
       if (!activeSession) {
         res.clearCookie('token');
         return res.status(401).json({ message: 'เซสชันไม่ถูกต้องหรือหมดอายุการใช้งานแล้ว กรุณาลงชื่อเข้าใช้อีกครั้ง' });
@@ -105,14 +104,14 @@ export async function startServer() {
     }
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { username: string; role: 'admin' | 'user' };
-      const db = dbInstance.get();
 
-      const activeSession = db.sessions?.some(s => s.token === token);
+      const activeSession = dbInstance.verifySession(token);
       if (!activeSession) {
         res.clearCookie('token');
         return res.json({ user: null });
       }
 
+      const db = dbInstance.get();
       const user = db.users.find(u => u.username === decoded.username);
       if (!user) {
         res.clearCookie('token');
@@ -438,10 +437,18 @@ export async function startServer() {
       return res.status(400).json({ message: `มีสินค้า SKU ${parsedSku} อยู่ในระบบแล้ว` });
     }
 
+    const cleanCategory = category.trim();
+    if (!db.settings.categories) {
+      db.settings.categories = ['ทั่วไป', 'ความงาม', 'แฟชั่น', 'เครื่องใช้ไฟฟ้า', 'ไอที & อุปกรณ์เสริม'];
+    }
+    if (!db.settings.categories.map(c => c.toLowerCase()).includes(cleanCategory.toLowerCase())) {
+      db.settings.categories.push(cleanCategory);
+    }
+
     const newProduct: StockProduct = {
       sku: parsedSku,
       name: name.trim(),
-      category: category.trim(),
+      category: cleanCategory,
       quantity: Number(initialQty) || 0,
       lowStockThreshold: Number(lowStockThreshold) || 10,
       createdAt: new Date().toISOString(),
@@ -726,6 +733,19 @@ export async function startServer() {
 
         existing.updatedAt = new Date().toISOString();
         updated++;
+      }
+    });
+
+    // Auto-register any brand new unique categories found in the synced product database on-the-fly
+    if (!db.settings.categories) {
+      db.settings.categories = ['ทั่วไป', 'ความงาม', 'แฟชั่น', 'เครื่องใช้ไฟฟ้า', 'ไอที & อุปกรณ์เสริม'];
+    }
+    const categoriesLower = db.settings.categories.map(c => c.toLowerCase());
+    db.products.forEach(p => {
+      const cat = p.category ? p.category.trim() : '';
+      if (cat && !categoriesLower.includes(cat.toLowerCase())) {
+        db.settings.categories.push(cat);
+        categoriesLower.push(cat.toLowerCase());
       }
     });
 
