@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, Firestore } from 'firebase/firestore';
 
@@ -514,13 +515,13 @@ class FileDatabase {
       for (const sess of sessions) {
         const prevSess = prevSessions.find(x => x.token === sess.token);
         if (!prevSess) {
-          const docId = sess.token.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+          const docId = crypto.createHash('sha256').update(sess.token).digest('hex');
           await setDoc(doc(db, 'sessions', docId), sess);
         }
       }
       for (const prevSess of prevSessions) {
         if (!sessions.some(x => x.token === prevSess.token)) {
-          const docId = prevSess.token.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+          const docId = crypto.createHash('sha256').update(prevSess.token).digest('hex');
           await deleteDoc(doc(db, 'sessions', docId));
         }
       }
