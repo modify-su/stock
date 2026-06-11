@@ -234,6 +234,27 @@ export const firebaseService = {
     return fetchAPI('/api/admin/users');
   },
 
+  async adminCreateUser(
+    username: string,
+    passwordHash: string,
+    role: 'admin' | 'user',
+    status: 'pending' | 'approved' | 'rejected',
+    securityQuestion: string,
+    securityAnswer: string
+  ): Promise<{ message: string; username: string }> {
+    return fetchAPI('/api/admin/users/create', {
+      method: 'POST',
+      body: JSON.stringify({
+        username,
+        password: passwordHash,
+        role,
+        status,
+        securityQuestion,
+        securityAnswer
+      })
+    });
+  },
+
   async updateUserStatus(
     tgtUsername: string,
     status: 'pending' | 'approved' | 'rejected',

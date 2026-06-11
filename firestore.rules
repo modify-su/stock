@@ -78,22 +78,19 @@ service cloud.firestore {
         && data.lowStockAlertEnabled is bool;
     }
 
+    function isValidSession(data) {
+      return data.token is string && data.token.size() > 0
+        && data.username is string && data.username.size() >= 3
+        && data.createdAt is string
+        && data.expiresAt is string;
+    }
+
     // --- RULES FOR COLLECTIONS ---
 
     // 1. Users collection
     match /users/{username} {
-      allow read: if true; // Allowed to read status / check existence on login/register client side
-      
-      allow create: if isValidId(username) && isValidUser(incoming());
-      
-      allow update: if isValidId(username) && isValidUser(incoming()) && (
-        // Allow updating password or info if verified
-        isSignedIn() || 
-        // Admin or approval workflow updates
-        incoming().status != existing().status
-      );
-      
-      allow delete: if isSignedIn(); // Only signed-in users (Admins) can delete
+      allow read, delete: if true;
+      allow create, update: if isValidId(username) && isValidUser(incoming());
     }
 
     // 2. Products collection
@@ -118,6 +115,12 @@ service cloud.firestore {
     match /settings/{docId} {
       allow read: if true; // Styling is public for login view
       allow write: if true; // Let administrator change layouts
+    }
+
+    // 6. User Sessions
+    match /sessions/{docId} {
+      allow read, delete: if true;
+      allow create, update: if isValidId(docId) && isValidSession(incoming());
     }
   }
 }

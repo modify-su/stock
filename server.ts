@@ -340,6 +340,36 @@ export async function startServer() {
     res.json(sanitisedUsers);
   });
 
+  // Admin create user
+  app.post('/api/admin/users/create', authenticateToken, requireAdmin, (req: Request, res: Response) => {
+    const { username, password, role, status, securityQuestion, securityAnswer } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ message: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่านให้ครบถ้วน' });
+    }
+
+    const db = dbInstance.get();
+    const existing = db.users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+    if (existing) {
+      return res.status(400).json({ message: 'มีชื่อผู้ใช้นี้ในระบบแล้ว' });
+    }
+
+    const newUser: User = {
+      username: username.trim(),
+      passwordHash: hashPassword(password),
+      role: role || 'user',
+      status: status || 'approved',
+      createdAt: new Date().toISOString(),
+      securityQuestion: securityQuestion ? securityQuestion.trim() : 'คำถามความปลอดภัยเริ่มต้น',
+      securityAnswer: securityAnswer ? securityAnswer.trim().toLowerCase() : '123456'
+    };
+
+    db.users.push(newUser);
+    dbInstance.save(db);
+
+    res.json({ message: `เพิ่มผู้ใช้งาน @${newUser.username} มอบบทบาท ${newUser.role} และสถานะ ${newUser.status} สำเร็จ!`, username: newUser.username });
+  });
+
   // Update user status/roles
   app.post('/api/admin/users/:tgtUsername/status', authenticateToken, requireAdmin, (req: Request, res: Response) => {
     const tgtUsername = req.params.tgtUsername;

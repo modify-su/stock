@@ -144,6 +144,26 @@
         }
       },
       "required": ["logoText", "loginBgColor", "loginTitle"]
+    },
+    "UserSession": {
+      "title": "UserSession",
+      "description": "Logged in user session details",
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        }
+      },
+      "required": ["token", "username", "createdAt", "expiresAt"]
     }
   },
   "firestore": {
@@ -166,6 +186,10 @@
     "settings/app": {
       "schema": "AppSettings",
       "description": "Configure dashboard logo or title values"
+    },
+    "sessions/{docId}": {
+      "schema": "UserSession",
+      "description": "Active web user login session tokens"
     }
   }
 }

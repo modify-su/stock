@@ -49,6 +49,16 @@ export default function AdminPanel({
   const [feedback, setFeedback] = useState('');
   const [errorFeedback, setErrorFeedback] = useState('');
 
+  // Add User Form States
+  const [showAddUserForm, setShowAddUserForm] = useState(false);
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState<'admin' | 'user'>('user');
+  const [newStatus, setNewStatus] = useState<'pending' | 'approved' | 'rejected'>('approved');
+  const [newSecurityQuestion, setNewSecurityQuestion] = useState('สัตว์เลี้ยงตัวแรกของคุณชื่ออะไร?');
+  const [newSecurityAnswer, setNewSecurityAnswer] = useState('');
+  const [userCreationLoading, setUserCreationLoading] = useState(false);
+
   // Category management dynamic state
   const [newCatName, setNewCatName] = useState('');
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
@@ -75,6 +85,59 @@ export default function AdminPanel({
     });
     return () => unsubUsers();
   }, []);
+
+  // Admin Create User manually
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUsername.trim()) {
+      setErrorFeedback('กรุณากรอกชื่อผู้ใช้งาน');
+      return;
+    }
+    if (newUsername.trim().length < 3) {
+      setErrorFeedback('ชื่อผู้ใช้งานต้องมีความยาวอย่างน้อย 3 ตัวอักษร');
+      return;
+    }
+    if (!newPassword.trim()) {
+      setErrorFeedback('กรุณากรอกรหัสผ่าน');
+      return;
+    }
+    if (newPassword.trim().length < 4) {
+      setErrorFeedback('รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร');
+      return;
+    }
+    if (!newSecurityAnswer.trim()) {
+      setErrorFeedback('กรุณากรอกคำตอบคำถามความปลอดภัยเพื่อใช้กู้คืนรหัสผ่าน');
+      return;
+    }
+
+    setUserCreationLoading(true);
+    setFeedback('');
+    setErrorFeedback('');
+
+    try {
+      const res = await firebaseService.adminCreateUser(
+        newUsername.trim(),
+        newPassword.trim(),
+        newRole,
+        newStatus,
+        newSecurityQuestion,
+        newSecurityAnswer.trim()
+      );
+      setFeedback(res.message);
+      
+      // Reset State Form
+      setNewUsername('');
+      setNewPassword('');
+      setNewRole('user');
+      setNewStatus('approved');
+      setNewSecurityAnswer('');
+      setShowAddUserForm(false);
+    } catch (err: any) {
+      setErrorFeedback(err.message || 'ไม่สามารถสร้างผู้ใช้ได้');
+    } finally {
+      setUserCreationLoading(false);
+    }
+  };
 
   // Update staff status
   const handleUserStatusUpdate = async (tgtUsername: string, fields: { status?: 'approved' | 'rejected' | 'pending'; role?: 'admin' | 'user' }) => {
@@ -202,18 +265,157 @@ export default function AdminPanel({
             <h3 className="text-white text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 font-sans">
               <Users className="h-4.5 w-4.5 text-indigo-400" /> ควบคุมและอนุมัติสิทธิ์ผู้ใช้งาน ({users.length})
             </h3>
-            <button 
-              onClick={fetchUsers}
-              className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 font-semibold"
-              id="btn-refresh-users"
-            >
-              <RefreshCw className="h-3 w-3" /> รีเฟรชรายชื่อ
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowAddUserForm(!showAddUserForm)}
+                className="text-[10px] bg-indigo-600/15 border border-indigo-500/20 hover:bg-indigo-600/25 text-indigo-400 px-2 py-1 rounded-md flex items-center gap-1 font-bold transition"
+                id="btn-toggle-add-user"
+              >
+                <Plus className="h-3 w-3" /> เพิ่มผู้ใช้งานใหม่
+              </button>
+              <button 
+                onClick={fetchUsers}
+                className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 font-semibold"
+                id="btn-refresh-users"
+              >
+                <RefreshCw className="h-3 w-3" /> รีเฟรชรายชื่อ
+              </button>
+            </div>
           </div>
 
           {/* Feedback banners */}
           {feedback && <div className="p-3 bg-emerald-950/40 border border-emerald-800 text-emerald-200 text-xs rounded-xl mb-4">{feedback}</div>}
           {errorFeedback && <div className="p-3 bg-red-950/40 border border-red-800 text-red-200 text-xs rounded-xl mb-4">{errorFeedback}</div>}
+
+          {/* Add User collapsible form component */}
+          <AnimatePresence>
+            {showAddUserForm && (
+              <motion.form 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                onSubmit={handleCreateUser}
+                className="bg-slate-950/70 border border-indigo-950 p-4 rounded-xl mb-5 space-y-3.5 overflow-hidden"
+                id="form-add-new-user"
+              >
+                <div className="flex items-center justify-between border-b border-slate-850 pb-2 mb-1 select-none">
+                  <span className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
+                    <Plus className="h-3.5 w-3.5 text-indigo-500" /> กรอกข้อมูลเพื่อสร้างสิทธิ์เข้าถึงใหม่
+                  </span>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowAddUserForm(false)}
+                    className="text-[10px] text-slate-500 hover:text-slate-350"
+                  >
+                    ปิดฟอร์ม
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-semibold mb-1">ชื่อผู้ใช้งาน (Username) *</label>
+                    <input 
+                      type="text"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition"
+                      placeholder="เช่น user_staff (ห้ามใช้เครื่องหมายพิเศษ)"
+                      value={newUsername}
+                      onChange={e => setNewUsername(e.target.value)}
+                      required
+                      id="input-new-user-username"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-semibold mb-1">รหัสผ่าน (Password) *</label>
+                    <input 
+                      type="password"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition"
+                      placeholder="ความยาวอย่างน้อย 4 ตัวอักษร"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      required
+                      id="input-new-user-password"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-semibold mb-1">สิทธิ์เข้าถึงระบบ (Role) *</label>
+                    <select
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      value={newRole}
+                      onChange={e => setNewRole(e.target.value as 'user' | 'admin')}
+                      id="select-new-user-role"
+                    >
+                      <option value="user">USER (สิทธิ์ผู้ใช้ทั่วไป / สแกนรับ-จ่ายสินค้า)</option>
+                      <option value="admin">ADMIN (สิทธิ์ผู้ดูแลระบบหลัก)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-semibold mb-1">สถานะสิทธิ์เริ่มต้น (Status) *</label>
+                    <select
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      value={newStatus}
+                      onChange={e => setNewStatus(e.target.value as 'approved' | 'pending' | 'rejected')}
+                      id="select-new-user-status"
+                    >
+                      <option value="approved">APPROVED (เปิดสิทธิ์ใช้งานทันที)</option>
+                      <option value="pending">PENDING (รอยืนยันเพื่อล็อกสิทธิ์ชั่วคราว)</option>
+                      <option value="rejected">REJECTED (ระงับการเข้าสู่ระบบ)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-slate-850/60 pt-3">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-semibold mb-1">เลือกคำถามความสำคัญเพื่อกู้รหัสผ่าน *</label>
+                    <select
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      value={newSecurityQuestion}
+                      onChange={e => setNewSecurityQuestion(e.target.value)}
+                      id="select-new-user-question"
+                    >
+                      <option value="สัตว์เลี้ยงตัวแรกของคุณชื่ออะไร?">สัตว์เลี้ยงตัวแรกของคุณชื่ออะไร?</option>
+                      <option value="คุณเกิดที่จังหวัดใด?">คุณเกิดที่จังหวัดใด?</option>
+                      <option value="โรงเรียนประถมของคุณชื่ออะไร?">โรงเรียนประถมของคุณชื่ออะไร?</option>
+                      <option value="สีที่คุณชอบที่สุดคือสีอะไร?">สีที่คุณชอบที่สุดคือสีอะไร?</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-semibold mb-1">ระบุคีย์คำตอบ (Security Answer) *</label>
+                    <input 
+                      type="text"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition"
+                      placeholder="ป้อนคำตอบสำหรับกู้รหัสผ่าน"
+                      value={newSecurityAnswer}
+                      onChange={e => setNewSecurityAnswer(e.target.value)}
+                      required
+                      id="input-new-user-answer"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end pt-1">
+                  <button 
+                    type="button"
+                    onClick={() => setShowAddUserForm(false)}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 text-slate-400 text-xs font-semibold rounded-lg transition"
+                    id="btn-cancel-create"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={userCreationLoading}
+                    className="px-4.5 py-1.5 bg-indigo-600 hover:bg-indigo-550 text-white font-bold text-xs rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    id="btn-submit-create"
+                  >
+                    {userCreationLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-4 w-4" />} ยืนยันเพิ่มบัญชีผู้ใช้
+                  </button>
+                </div>
+              </motion.form>
+            )}
+          </AnimatePresence>
 
           <div className="space-y-3" id="staff-user-cards">
             {loadingUsers ? (
