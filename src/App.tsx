@@ -110,11 +110,15 @@ export default function App() {
             localStorage.removeItem('stockmaster_token');
             setCurrentUser(null);
           }
-        } else {
-          // Failure response means cookie / token expired
+        } else if (res.status === 401 || res.status === 403) {
+          // Token is definitively stale or deleted on server
           localStorage.removeItem('stockmaster_session');
           localStorage.removeItem('stockmaster_token');
           setCurrentUser(null);
+        } else {
+          // Keep current state if server is experiencing transient gateway error (like 502/503/504)
+          console.warn(`Temporary API response issue detected during startup: status ${res.status}. Keeping local session state.`);
+          setCurrentUser(parsed);
         }
       }
     } catch (e) {
@@ -620,6 +624,8 @@ export default function App() {
             {activeTab === 'google_sheets' && (
               <GoogleSheetsSync
                 products={products}
+                stockIn={stockIn}
+                stockOut={stockOut}
                 userUsername={currentUser.username}
                 onRefreshProducts={fetchInventoryData}
                 googleToken={googleToken}

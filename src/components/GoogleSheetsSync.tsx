@@ -23,10 +23,12 @@ import {
   Download,
   Info
 } from 'lucide-react';
-import { firebaseService, StockProduct } from '../services/firebaseService';
+import { firebaseService, StockProduct, StockInEntry, StockOutEntry } from '../services/firebaseService';
 
 interface GoogleSheetsSyncProps {
   products: StockProduct[];
+  stockIn?: StockInEntry[];
+  stockOut?: StockOutEntry[];
   userUsername: string;
   onRefreshProducts: () => Promise<void>;
   googleToken: string | null;
@@ -45,6 +47,8 @@ interface ParsedSheetProduct {
 
 export default function GoogleSheetsSync({
   products,
+  stockIn,
+  stockOut,
   userUsername,
   onRefreshProducts,
   googleToken,
@@ -166,7 +170,13 @@ export default function GoogleSheetsSync({
         body: JSON.stringify({
           properties: {
             title: `STOCKMASTER คลังสินค้าดิจิทัล - ${new Date().toLocaleDateString('th-TH')}`
-          }
+          },
+          sheets: [
+            { properties: { title: 'สินค้าคงคลัง' } },
+            { properties: { title: 'สินค้ารับเข้า' } },
+            { properties: { title: 'สินค้าส่งออก' } },
+            { properties: { title: 'การจัดโหมดสินค้า' } }
+          ]
         })
       });
 
@@ -178,35 +188,105 @@ export default function GoogleSheetsSync({
       const newId = resData.spreadsheetId;
       const newUrl = resData.spreadsheetUrl;
 
-      // Automatically fill the new sheet with initial template headings + existing products
-      const range = `${sheetName}!A1:E`;
-      const exportBody = {
-        range: range,
-        majorDimension: 'ROWS',
-        values: [
-          ['SKU', 'ชื่อสินค้า', 'หมวดหมู่สินค้า', 'คงเหลือสะสม', 'จำนวนแจ้งเตือนขั้นต่ำ'],
-          ...products.map(p => [p.sku, p.name, p.category, p.quantity, p.lowStockThreshold])
+      // Compute category distribution
+      const categoriesMap = new Map<string, { count: number; totalQty: number }>();
+      products.forEach(p => {
+        const cat = p.category || 'สินค้าอื่นๆ (General)';
+        const current = categoriesMap.get(cat) || { count: 0, totalQty: 0 };
+        current.count += 1;
+        current.totalQty += p.quantity;
+        categoriesMap.set(cat, current);
+      });
+
+      const categoriesData = Array.from(categoriesMap.entries()).map(([cat, stats]) => [
+        cat,
+        stats.count,
+        stats.totalQty
+      ]);
+
+      const inventoryValues = [
+        ['SKU', 'ชื่อสินค้า', 'หมวดหมู่สินค้า', 'คงเหลือสะสม', 'จำนวนแจ้งเตือนขั้นต่ำ'],
+        ...products.map(p => [p.sku, p.name, p.category, p.quantity, p.lowStockThreshold])
+      ];
+
+      const stockInValues = [
+        ['รหัสทำรายการ (ID)', 'วันที่และเวลาดำเนินการ', 'รหัสสินค้า (SKU)', 'ชื่อสินค้า', 'จำนวนรับข้าว', 'ผู้ทำรายการ', 'หมายเหตุ'],
+        ...(stockIn || []).map(entry => {
+          const p = products.find(x => x.sku === entry.sku);
+          return [
+            entry.id,
+            entry.timestamp ? new Date(entry.timestamp).toLocaleString('th-TH') : '',
+            entry.sku,
+            p ? p.name : '',
+            entry.quantity,
+            entry.user,
+            entry.notes || ''
+          ];
+        })
+      ];
+
+      const stockOutValues = [
+        ['รหัสทำรายการ (ID)', 'วันที่และเวลาดำเนินการ', 'รหัสสินค้า (SKU)', 'ชื่อสินค้า', 'จำนวนจำหน่าย', 'แพลตฟอร์ม', 'ผู้ส่งพัสดุ (Courier)', 'ผู้บันทึก'],
+        ...(stockOut || []).map(entry => {
+          const p = products.find(x => x.sku === entry.sku);
+          return [
+            entry.id,
+            entry.timestamp ? new Date(entry.timestamp).toLocaleString('th-TH') : '',
+            entry.sku,
+            p ? p.name : '',
+            entry.quantity,
+            entry.platform || '',
+            entry.courier || '',
+            entry.user
+          ];
+        })
+      ];
+
+      const categoryAnalysisValues = [
+        ['หมวดหมู่สินค้า (Category)', 'จำนวนรายการประเภท (Product Types)', 'ยอดสต็อกคงคลังรวม (Total Quantity)'],
+        ...categoriesData
+      ];
+
+      const batchBody = {
+        valueInputOption: 'USER_ENTERED',
+        data: [
+          {
+            range: 'สินค้าคงคลัง!A1:E10000',
+            values: inventoryValues
+          },
+          {
+            range: 'สินค้ารับเข้า!A1:G10000',
+            values: stockInValues
+          },
+          {
+            range: 'สินค้าส่งออก!A1:H10000',
+            values: stockOutValues
+          },
+          {
+            range: 'การจัดโหมดสินค้า!A1:C1000',
+            values: categoryAnalysisValues
+          }
         ]
       };
 
       const writeRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${newId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${newId}/values:batchUpdate`,
         {
-          method: 'PUT',
+          method: 'POST',
           headers: {
             Authorization: `Bearer ${googleToken}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(exportBody)
+          body: JSON.stringify(batchBody)
         }
       );
 
       if (!writeRes.ok) {
-        console.warn('สร้างประเภทสำเร็จ แต่ไม่สามารถบันทึกตารางข้อมูลตั้งต้นลงสเปรดชีตได้');
+        console.warn('สร้างสเปรดชีตสำเร็จ แต่ไม่สามารถเขียนข้อมูลชุดแรกได้');
       }
 
       setSpreadsheetInput(newId);
-      setSuccessText('สร้างเทมเพลตสต็อกใหม่สำเร็จ! คัดลอกและบันทึกอัปเดตลง Google Sheets ได้เลย');
+      setSuccessText('ระบบจัดเตรียมไฟล์ Google Sheets แยกเป็นสัดส่วน สินค้าคงคลัง, สินค้ารับเข้า, สินค้าส่งออก พร้อมโครงสร้าง การจัดโหมดสินค้า บนคลาวด์เรียบร้อยแล้ว!');
       
       // Open in a new tab if supported
       if (newUrl) {
@@ -320,6 +400,44 @@ export default function GoogleSheetsSync({
     }
   };
 
+  // Helper to ensure target sheets are provisioned within the Google Spreadsheet
+  const ensureSheetsExist = async (spreadsheetId: string, token: string) => {
+    // 1. Fetch spreadsheet metadata to check existing sheets
+    const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!metaRes.ok) {
+      throw new Error('ไม่สามารถเข้าถึงข้อมูลสเปรดชีตได้ กรุณาตรวจสอบลิงก์หรือสิทธิ์การเข้าถึง');
+    }
+    const metaData = await metaRes.json();
+    const existingTitles = (metaData.sheets || []).map((s: any) => s.properties.title);
+
+    const targetTitles = ['สินค้าคงคลัง', 'สินค้ารับเข้า', 'สินค้าส่งออก', 'การจัดโหมดสินค้า'];
+    const missingTitles = targetTitles.filter(t => !existingTitles.includes(t));
+
+    // 2. If there are missing sheets, create them via batchUpdate
+    if (missingTitles.length > 0) {
+      const requests = missingTitles.map(title => ({
+        addSheet: {
+          properties: { title }
+        }
+      }));
+
+      const updateRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ requests })
+      });
+
+      if (!updateRes.ok) {
+        throw new Error('ไม่สามารถสร้างแท็บแผ่นงานใหม่ใน Google Sheets ได้');
+      }
+    }
+  };
+
   // 4. Overwrite Google Sheet with current local/cloud DB products
   const handleCommitExport = async () => {
     setShowConfirmExport(false);
@@ -337,32 +455,109 @@ export default function GoogleSheetsSync({
     setSuccessText('');
 
     try {
-      const exportBody = {
-        range: defaultRange,
-        majorDimension: 'ROWS',
-        values: [
-          ['SKU', 'ชื่อสินค้า', 'หมวดหมู่สินค้า', 'คงเหลือสะสม', 'จำนวนแจ้งเตือนขั้นต่ำ'],
-          ...products.map(p => [p.sku, p.name, p.category, p.quantity, p.lowStockThreshold])
+      // Step 1: Ensure all required sheets exist
+      await ensureSheetsExist(currentSpreadsheetId, googleToken);
+
+      // Step 2: Compute category analysis (การจัดโหมดสินค้า)
+      const categoriesMap = new Map<string, { count: number; totalQty: number }>();
+      products.forEach(p => {
+        const cat = p.category || 'สินค้าอื่นๆ (General)';
+        const current = categoriesMap.get(cat) || { count: 0, totalQty: 0 };
+        current.count += 1;
+        current.totalQty += p.quantity;
+        categoriesMap.set(cat, current);
+      });
+
+      const categoriesData = Array.from(categoriesMap.entries()).map(([cat, stats]) => [
+        cat,
+        stats.count,
+        stats.totalQty
+      ]);
+
+      // Step 3: Format the values array for each sheet tab
+      const inventoryValues = [
+        ['SKU', 'ชื่อสินค้า', 'หมวดหมู่สินค้า', 'คงเหลือสะสม', 'จำนวนแจ้งเตือนขั้นต่ำ'],
+        ...products.map(p => [p.sku, p.name, p.category, p.quantity, p.lowStockThreshold])
+      ];
+
+      const stockInValues = [
+        ['รหัสทำรายการ (ID)', 'วันที่และเวลาดำเนินการ', 'รหัสสินค้า (SKU)', 'ชื่อสินค้า', 'จำนวนรับข้าว', 'ผู้ทำรายการ', 'หมายเหตุ'],
+        ...(stockIn || []).map(entry => {
+          const p = products.find(x => x.sku === entry.sku);
+          return [
+            entry.id,
+            entry.timestamp ? new Date(entry.timestamp).toLocaleString('th-TH') : '',
+            entry.sku,
+            p ? p.name : '',
+            entry.quantity,
+            entry.user,
+            entry.notes || ''
+          ];
+        })
+      ];
+
+      const stockOutValues = [
+        ['รหัสทำรายการ (ID)', 'วันที่และเวลาดำเนินการ', 'รหัสสินค้า (SKU)', 'ชื่อสินค้า', 'จำนวนจำหน่าย', 'แพลตฟอร์ม', 'ผู้ส่งพัสดุ (Courier)', 'ผู้บันทึก'],
+        ...(stockOut || []).map(entry => {
+          const p = products.find(x => x.sku === entry.sku);
+          return [
+            entry.id,
+            entry.timestamp ? new Date(entry.timestamp).toLocaleString('th-TH') : '',
+            entry.sku,
+            p ? p.name : '',
+            entry.quantity,
+            entry.platform || '',
+            entry.courier || '',
+            entry.user
+          ];
+        })
+      ];
+
+      const categoryAnalysisValues = [
+        ['หมวดหมู่สินค้า (Category)', 'จำนวนรายการประเภท (Product Types)', 'ยอดสต็อกคงคลังรวม (Total Quantity)'],
+        ...categoriesData
+      ];
+
+      // Step 4: Call values:batchUpdate to update all sheets in one clean query
+      const batchBody = {
+        valueInputOption: 'USER_ENTERED',
+        data: [
+          {
+            range: 'สินค้าคงคลัง!A1:E10000',
+            values: inventoryValues
+          },
+          {
+            range: 'สินค้ารับเข้า!A1:G10000',
+            values: stockInValues
+          },
+          {
+            range: 'สินค้าส่งออก!A1:H10000',
+            values: stockOutValues
+          },
+          {
+            range: 'การจัดโหมดสินค้า!A1:C1000',
+            values: categoryAnalysisValues
+          }
         ]
       };
 
       const response = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/${encodeURIComponent(defaultRange)}?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values:batchUpdate`,
         {
-          method: 'PUT',
+          method: 'POST',
           headers: {
             Authorization: `Bearer ${googleToken}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(exportBody)
+          body: JSON.stringify(batchBody)
         }
       );
 
       if (!response.ok) {
-        throw new Error('ไม่สามารถเขียนทับข้อมูลลงในสเปรดชีตได้ กรุณาเปิดสิทธิ์ชีตเป็น "เข้าถึงได้ทุกคนที่มีลิงก์แล้วแก้ไขได้" หรือเชื่อมบัญชีเจ้าของไฟล์');
+        throw new Error('ไม่สามารถบันทึกข้อมูลร่วมกันได้ กรุณาตรวจสอบว่ามีสิทธิ์การเขียนและแชร์สิทธิ์เป็น "แก้ไขได้"');
       }
 
-      setSuccessText(`ส่งออกสินค้าคงคลังปัจจุบันจำนวนชิ้น ${products.length} รายการ ไปยัง Google Sheets สำเร็จแล้ว!`);
+      setSuccessText('ส่งออกข้อมูลร่วมกันเสร็จสิ้น! บันทึก สินค้าคงคลัง, สินค้ารับเข้า, สินค้าส่งออก และ การจัดโหมดสินค้า แยกสัดส่วนเป็นแท็บเรียบร้อยแล้ว');
       setTimeout(() => setSuccessText(''), 5500);
     } catch (err: any) {
       setErrorText(err.message || 'เขียนทับข้อมูลชีตล้มเหลว ลิงก์ไฟล์อาจไม่ถูกต้องหรือขาดสิทธิ์การเข้าถึง');

@@ -297,7 +297,17 @@ class FileDatabase {
     }
   }
 
-  public verifySession(token: string): boolean {
+  public async verifySession(token: string): Promise<boolean> {
+    if (!this.cache) {
+      await this.load();
+    }
+    if (this.loadingPromise) {
+      try {
+        await this.loadingPromise;
+      } catch (e) {
+        // ignore background load errors
+      }
+    }
     // Check local memory cache first for lighting-fast O(1) lookup speeds
     if (this.memorySessions.has(token)) {
       const sess = this.memorySessions.get(token);
@@ -327,8 +337,8 @@ class FileDatabase {
     }
 
     const now = Date.now();
-    // Cache remains warm for 10 seconds to safeguard Firestore read quotas and optimize performance
-    if (this.cache && (now - this.lastLoadTime < 10000)) {
+    // Cache remains warm for 5 minutes (300000ms) to safeguard Firestore read quotas and optimize performance
+    if (this.cache && (now - this.lastLoadTime < 300000)) {
       return;
     }
 
@@ -501,6 +511,8 @@ class FileDatabase {
     if (!db) return;
 
     try {
+      const syncPromises: Promise<void>[] = [];
+
       // 1. Sync Users (Diff write)
       for (const u of data.users) {
         const prevUser = previous?.users.find(x => x.username === u.username);
@@ -511,7 +523,7 @@ class FileDatabase {
             prevUser.securityQuestion !== u.securityQuestion ||
             prevUser.securityAnswer !== u.securityAnswer) {
           console.log(`[Firestore Sync] Setting user: ${u.username}`);
-          await setDoc(doc(db, 'users', u.username), u);
+          syncPromises.push(setDoc(doc(db, 'users', u.username), u));
         }
       }
       // Delete deleted users
@@ -519,7 +531,7 @@ class FileDatabase {
         for (const prevUser of previous.users) {
           if (!data.users.some(x => x.username === prevUser.username)) {
             console.log(`[Firestore Sync] Deleting user: ${prevUser.username}`);
-            await deleteDoc(doc(db, 'users', prevUser.username));
+            syncPromises.push(deleteDoc(doc(db, 'users', prevUser.username)));
           }
         }
       }
@@ -534,7 +546,7 @@ class FileDatabase {
             prevProduct.lowStockThreshold !== p.lowStockThreshold ||
             prevProduct.updatedAt !== p.updatedAt) {
           console.log(`[Firestore Sync] Setting product: ${p.sku}`);
-          await setDoc(doc(db, 'products', p.sku), p);
+          syncPromises.push(setDoc(doc(db, 'products', p.sku), p));
         }
       }
       // Delete deleted products
@@ -542,7 +554,7 @@ class FileDatabase {
         for (const prevProduct of previous.products) {
           if (!data.products.some(x => x.sku === prevProduct.sku)) {
             console.log(`[Firestore Sync] Deleting product: ${prevProduct.sku}`);
-            await deleteDoc(doc(db, 'products', prevProduct.sku));
+            syncPromises.push(deleteDoc(doc(db, 'products', prevProduct.sku)));
           }
         }
       }
@@ -552,7 +564,7 @@ class FileDatabase {
         const prevIn = previous?.stockInHistory.find(x => x.id === si.id);
         if (!prevIn) {
           console.log(`[Firestore Sync] Adding stock_in log: ${si.id}`);
-          await setDoc(doc(db, 'stock_in', si.id), si);
+          syncPromises.push(setDoc(doc(db, 'stock_in', si.id), si));
         }
       }
 
@@ -561,7 +573,7 @@ class FileDatabase {
         const prevOut = previous?.stockOutHistory.find(x => x.id === so.id);
         if (!prevOut) {
           console.log(`[Firestore Sync] Adding stock_out log: ${so.id}`);
-          await setDoc(doc(db, 'stock_out', so.id), so);
+          syncPromises.push(setDoc(doc(db, 'stock_out', so.id), so));
         }
       }
 
@@ -576,7 +588,7 @@ class FileDatabase {
           prevSettings.lowStockAlertEnabled !== s.lowStockAlertEnabled ||
           JSON.stringify(prevSettings.categories) !== JSON.stringify(s.categories)) {
         console.log('[Firestore Sync] Saving app settings');
-        await setDoc(doc(db, 'settings', 'app'), s);
+        syncPromises.push(setDoc(doc(db, 'settings', 'app'), s));
       }
 
       // 6. Sync Sessions
@@ -599,14 +611,19 @@ class FileDatabase {
         const prevSess = prevSessions.find(x => x.token === sess.token);
         if (!prevSess) {
           const docId = crypto.createHash('sha256').update(sess.token).digest('hex');
-          await setDoc(doc(db, 'sessions', docId), sess);
+          syncPromises.push(setDoc(doc(db, 'sessions', docId), sess));
         }
       }
       for (const prevSess of prevSessions) {
         if (!sessions.some(x => x.token === prevSess.token)) {
           const docId = crypto.createHash('sha256').update(prevSess.token).digest('hex');
-          await deleteDoc(doc(db, 'sessions', docId));
+          syncPromises.push(deleteDoc(doc(db, 'sessions', docId)));
         }
+      }
+
+      // Run parallel triggers
+      if (syncPromises.length > 0) {
+        await Promise.all(syncPromises);
       }
 
       console.log('Changes successfully synchronized to Cloud Firestore database.');

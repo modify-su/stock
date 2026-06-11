@@ -56,7 +56,7 @@ export async function startServer() {
   });
 
   // --- AUTHENTICATION MIDDLEWARE ---
-  function authenticateToken(req: Request, res: Response, next: NextFunction) {
+  async function authenticateToken(req: Request, res: Response, next: NextFunction) {
     const authHeader = req.headers['authorization'] || req.headers['Authorization'];
     const token = req.cookies.token || (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
 
@@ -68,7 +68,7 @@ export async function startServer() {
       const decoded = jwt.verify(token, JWT_SECRET) as { username: string; role: 'admin' | 'user' };
 
       // Check if session is stored and active in the database (efficient memory cache first)
-      const activeSession = dbInstance.verifySession(token);
+      const activeSession = await dbInstance.verifySession(token);
       if (!activeSession) {
         res.clearCookie('token');
         return res.status(401).json({ message: 'เซสชันไม่ถูกต้องหรือหมดอายุการใช้งานแล้ว กรุณาลงชื่อเข้าใช้อีกครั้ง' });
@@ -95,7 +95,7 @@ export async function startServer() {
   // --- AUTH API ---
 
   // Me endpoint to verify session on app load
-  app.get('/api/auth/me', (req: Request, res: Response) => {
+  app.get('/api/auth/me', async (req: Request, res: Response) => {
     const authHeader = req.headers['authorization'] || req.headers['Authorization'];
     const token = req.cookies.token || (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
 
@@ -105,7 +105,7 @@ export async function startServer() {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { username: string; role: 'admin' | 'user' };
 
-      const activeSession = dbInstance.verifySession(token);
+      const activeSession = await dbInstance.verifySession(token);
       if (!activeSession) {
         res.clearCookie('token');
         return res.json({ user: null });
