@@ -86,18 +86,6 @@ export const getApiBaseUrl = (): string => {
     // skip process env errors
   }
   
-  const hostname = window.location.hostname;
-  if (
-    hostname &&
-    hostname !== 'localhost' &&
-    hostname !== '127.0.0.1' &&
-    !hostname.endsWith('.run.app') &&
-    !hostname.endsWith('.vercel.app') &&
-    !hostname.endsWith('.vercel.dev')
-  ) {
-    // If running externally (e.g., non-Vercel static cloud hosting), fallback to our robust production Shared Cloud Run endpoint
-    return 'https://ais-pre-czjfkeolpbroqxebmgxag3-713032521366.asia-southeast1.run.app';
-  }
   return '';
 };
 

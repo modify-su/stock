@@ -418,6 +418,7 @@ class FileDatabase {
 
     const previous = this.cache ? { ...this.cache } : null;
     this.cache = data;
+    this.lastLoadTime = Date.now(); // Mark as recently updated so we don't reload from Firestore immediately!
 
     // Save to local fallback file for redundancy/development offline speeds
     try {

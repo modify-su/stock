@@ -133,7 +133,7 @@ export async function startServer() {
   });
 
   // Register
-  app.post('/api/auth/register', (req: Request, res: Response) => {
+  app.post('/api/auth/register', async (req: Request, res: Response) => {
     const { username, password, securityQuestion, securityAnswer } = req.body;
 
     if (!username || !password || !securityQuestion || !securityAnswer) {
@@ -162,7 +162,7 @@ export async function startServer() {
     };
 
     db.users.push(newUser);
-    dbInstance.save(db);
+    await dbInstance.save(db);
 
     const message = isFirstUser 
       ? 'ยินดีด้วยครับ! คุณเป็นผู้สมัครใช้งานคนแรก จึงได้รับสิทธิ์ Admin และอนุมัติบัญชีทันที'
@@ -172,7 +172,7 @@ export async function startServer() {
   });
 
   // Login
-  app.post('/api/auth/login', (req: Request, res: Response) => {
+  app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body || {};
       if (!username || !password) {
@@ -228,7 +228,7 @@ export async function startServer() {
       // Prune expired sessions from database to prevent bloated file sizes
       db.sessions = db.sessions.filter(s => new Date(s.expiresAt).getTime() > Date.now());
 
-      dbInstance.save(db);
+      await dbInstance.save(db);
 
       console.log(`[API Login Success] username: ${username}, role: ${user.role}`);
       return res.json({
@@ -309,7 +309,7 @@ export async function startServer() {
   });
 
   // Logout
-  app.post('/api/auth/logout', (req: Request, res: Response) => {
+  app.post('/api/auth/logout', async (req: Request, res: Response) => {
     const authHeader = req.headers['authorization'] || req.headers['Authorization'];
     const token = req.cookies.token || (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
 
@@ -317,7 +317,7 @@ export async function startServer() {
       const db = dbInstance.get();
       if (db.sessions) {
         db.sessions = db.sessions.filter(s => s.token !== token);
-        dbInstance.save(db);
+        await dbInstance.save(db);
       }
     }
     res.clearCookie('token');
@@ -341,7 +341,7 @@ export async function startServer() {
   });
 
   // Admin create user
-  app.post('/api/admin/users/create', authenticateToken, requireAdmin, (req: Request, res: Response) => {
+  app.post('/api/admin/users/create', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
     const { username, password, role, status, securityQuestion, securityAnswer } = req.body;
 
     if (!username || !password) {
@@ -365,13 +365,13 @@ export async function startServer() {
     };
 
     db.users.push(newUser);
-    dbInstance.save(db);
+    await dbInstance.save(db);
 
     res.json({ message: `เพิ่มผู้ใช้งาน @${newUser.username} มอบบทบาท ${newUser.role} และสถานะ ${newUser.status} สำเร็จ!`, username: newUser.username });
   });
 
   // Update user status/roles
-  app.post('/api/admin/users/:tgtUsername/status', authenticateToken, requireAdmin, (req: Request, res: Response) => {
+  app.post('/api/admin/users/:tgtUsername/status', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
     const tgtUsername = req.params.tgtUsername;
     const { status, role } = req.body;
 
@@ -389,7 +389,7 @@ export async function startServer() {
     if (status) user.status = status;
     if (role) user.role = role;
 
-    dbInstance.save(db);
+    await dbInstance.save(db);
     res.json({ message: `อัปเดตสิทธิ์ ${tgtUsername} เป็น ${status || ''} ${role || ''} เรียบร้อยแล้ว`, user });
   });
 
