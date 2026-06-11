@@ -270,6 +270,9 @@ class FileDatabase {
   private lastLoadTime: number = 0;
   private memorySessions: Map<string, UserSession> = new Map();
   private loadingPromise: Promise<void> | null = null;
+  private lastLoadAttempt: number = 0;
+  public isCloudDataLoaded: boolean = false;
+  public isConnectedToCloud: boolean = false;
 
   constructor() {
     // Empty constructor to prevent eager filesystem access during module import / build phases on Vercel
@@ -330,6 +333,7 @@ class FileDatabase {
   public async load() {
     const db = getFirestoreDb();
     if (!db) {
+      this.isConnectedToCloud = false;
       if (!this.cache) {
         this.fallbackInit();
       }
@@ -341,6 +345,16 @@ class FileDatabase {
     if (this.cache && (now - this.lastLoadTime < 300000)) {
       return;
     }
+
+    // Cooldown: to prevent infinite blocking loops on network failures, do not retry loading from Firestore more than once every 30 seconds
+    if (now - this.lastLoadAttempt < 30000) {
+      if (!this.cache) {
+        this.fallbackInit();
+      }
+      return;
+    }
+
+    this.lastLoadAttempt = now;
 
     // Unify concurrent overlapping in-flight loads to a single shared promise
     if (this.loadingPromise) {
@@ -457,9 +471,14 @@ class FileDatabase {
           sessions
         };
         this.lastLoadTime = Date.now();
+        this.isCloudDataLoaded = true;
+        this.isConnectedToCloud = true;
         console.log(`Cloud database loaded successfully. Found ${users.length} users, ${products.length} products, ${sessions.length} sessions.`);
       } catch (err) {
         console.error('Error fetching database from Firestore. Falling back to local/tmp files...', err);
+        this.isConnectedToCloud = false;
+        // Adjust lastLoadTime to force a retry only after 30 seconds instead of immediately on next request
+        this.lastLoadTime = Date.now() - 300000 + 30000;
         if (!this.cache) {
           this.fallbackInit();
         }

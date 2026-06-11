@@ -365,7 +365,7 @@ export const firebaseService = {
       }
     };
     poll();
-    const interval = setInterval(poll, 4000);
+    const interval = setInterval(poll, 12000);
     return () => {
       active = false;
       clearInterval(interval);
@@ -383,7 +383,7 @@ export const firebaseService = {
       }
     };
     poll();
-    const interval = setInterval(poll, 3000);
+    const interval = setInterval(poll, 8000);
     return () => {
       active = false;
       clearInterval(interval);
@@ -401,7 +401,7 @@ export const firebaseService = {
       }
     };
     poll();
-    const interval = setInterval(poll, 3000);
+    const interval = setInterval(poll, 10000);
     return () => {
       active = false;
       clearInterval(interval);
@@ -419,7 +419,7 @@ export const firebaseService = {
       }
     };
     poll();
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, 15000);
     return () => {
       active = false;
       clearInterval(interval);

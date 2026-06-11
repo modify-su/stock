@@ -70,6 +70,15 @@ export async function startServer() {
       // Check if session is stored and active in the database (efficient memory cache first)
       const activeSession = await dbInstance.verifySession(token);
       if (!activeSession) {
+        // Safe Grace Fallback: If verification fails but we are currently failing to contact the Cloud Firestore database
+        // (offline mode, startup delay, transient sync latency), we will trust our strong cryptographic JWT signature
+        // rather than kicking out registered users! This eliminates session-expiry friction entirely during transient losses.
+        if (!dbInstance.isConnectedToCloud) {
+          console.warn(`[Safe Auth Fallback] Cloud Firestore offline or loading. Authed user ${decoded.username} via cryptographic JWT signature.`);
+          req.currentUser = decoded;
+          return next();
+        }
+
         res.clearCookie('token');
         return res.status(401).json({ message: 'เซสชันไม่ถูกต้องหรือหมดอายุการใช้งานแล้ว กรุณาลงชื่อเข้าใช้อีกครั้ง' });
       }
