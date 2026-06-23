@@ -1,0 +1,1021 @@
+import { useState, useEffect } from 'react';
+import { 
+  PackageOpen, 
+  Sparkles, 
+  LayoutDashboard, 
+  History, 
+  ShoppingBag, 
+  Truck, 
+  Info, 
+  RefreshCcw,
+  Settings as SettingsIcon,
+  Users,
+  Lock,
+  Boxes,
+  Layers,
+  Database,
+  Shield,
+  FileSpreadsheet
+} from 'lucide-react';
+import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category } from './types';
+import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS } from './mockData';
+import DashboardStats from './components/DashboardStats';
+import InventoryTable from './components/InventoryTable';
+import ActionForms from './components/ActionForms';
+import TransactionLogs from './components/TransactionLogs';
+import SystemSettings from './components/SystemSettings';
+import SyncAndBackup from './components/SyncAndBackup';
+import LoginScreen from './components/LoginScreen';
+import { getCachedToken, syncProductsToSpreadsheet } from './googleSheetsService';
+
+// Import Firebase
+import { db } from './firebase';
+import { 
+  collection, 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  deleteDoc, 
+  updateDoc, 
+  writeBatch, 
+  getDocs 
+} from 'firebase/firestore';
+
+// Dynamic icon renderer
+function AppLogoIcon({ name, className = "w-6 h-6" }: { name: string; className?: string }) {
+  switch (name) {
+    case 'PackageOpen': return <PackageOpen className={className} />;
+    case 'Boxes': return <Boxes className={className} />;
+    case 'ShoppingBag': return <ShoppingBag className={className} />;
+    case 'Truck': return <Truck className={className} />;
+    case 'Layers': return <Layers className={className} />;
+    case 'Database': return <Database className={className} />;
+    case 'Shield': return <Shield className={className} />;
+    default: return <PackageOpen className={className} />;
+  }
+}
+
+// Initial User account setups
+const INITIAL_USERS: UserProfile[] = [
+  { 
+    id: 'usr-1', 
+    name: 'modify (ผู้ดูแลระบบหลัก)', 
+    username: 'modify', 
+    role: 'ADMIN', 
+    isActive: true,
+    password: '1234',
+    securityQuestion: 'จังหวัดที่คุณเกิดคือจังหวัดอะไร? (เช่น กรุงเทพ)',
+    securityAnswer: 'กรุงเทพ'
+  },
+  { 
+    id: 'usr-2', 
+    name: 'วิภา แสนสุข (เจ้าหน้าที่คลัง)', 
+    username: 'wipa_keeper', 
+    role: 'KEEPER', 
+    isActive: true,
+    password: 'keeper',
+    securityQuestion: 'จังหวัดที่คุณเกิดคือจังหวัดอะไร? (เช่น กรุงเทพ)',
+    securityAnswer: 'กรุงเทพ'
+  },
+  { 
+    id: 'usr-3', 
+    name: 'ปกรณ์ มีบุญ (ผู้ตรวจสอบบัญชี)', 
+    username: 'pakorn_auditor', 
+    role: 'AUDITOR', 
+    isActive: true,
+    password: 'auditor',
+    securityQuestion: 'จังหวัดที่คุณเกิดคือจังหวัดอะไร? (เช่น กรุงเทพ)',
+    securityAnswer: 'กรุงเทพ'
+  }
+];
+
+const DEFAULT_SETTINGS: AppSettings = {
+  appName: 'ระบบจัดการสต๊อกสินค้า',
+  appSubtitle: 'Professional Edition',
+  appLogo: 'PackageOpen',
+  googleSheetsId: '',
+  googleSheetsUrl: '',
+  googleSheetsAutoSync: false,
+  googleSheetsLastSyncedAt: ''
+};
+
+const DEFAULT_ROLE_PERMISSIONS: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions> = {
+  ADMIN: {
+    manageProducts: true,
+    recordTransactions: true,
+    manageSettings: true,
+    resetSystem: true
+  },
+  KEEPER: {
+    manageProducts: true,
+    recordTransactions: true,
+    manageSettings: false,
+    resetSystem: false
+  },
+  AUDITOR: {
+    manageProducts: false,
+    recordTransactions: false,
+    manageSettings: false,
+    resetSystem: false
+  }
+};
+
+export default function App() {
+  // --- Auto-Wipe stale mock cache on initial load for fresh v3 deploy ---
+  if (typeof window !== 'undefined' && !localStorage.getItem('inventory_modify_v3_cleared')) {
+    localStorage.removeItem('inventory_products');
+    localStorage.removeItem('inventory_transactions');
+    localStorage.removeItem('inventory_users');
+    localStorage.removeItem('inventory_settings');
+    localStorage.removeItem('inventory_role_perm');
+    localStorage.removeItem('inventory_current_user');
+    localStorage.removeItem('inventory_is_authenticated');
+    localStorage.setItem('inventory_modify_v3_cleared', 'true');
+  }
+
+  // --- Real-time Collections loading status ---
+  const [loadingCollections, setLoadingCollections] = useState({
+    users: true,
+    products: true,
+    transactions: true,
+    settings: true,
+    rolePermissions: true,
+    categories: true
+  });
+
+  const dbLoading = loadingCollections.users || 
+                    loadingCollections.products || 
+                    loadingCollections.transactions || 
+                    loadingCollections.settings || 
+                    loadingCollections.rolePermissions ||
+                    loadingCollections.categories;
+
+  // --- Real-time Sync States from Firestore ---
+  const [products, setProducts] = useState<Product[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [rolePermissions, setRolePermissions] = useState<Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>>(DEFAULT_ROLE_PERMISSIONS);
+
+  // --- Device-specific local states ---
+  const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
+    const local = localStorage.getItem('inventory_current_user');
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        return parsed;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return INITIAL_USERS[0];
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('inventory_is_authenticated') === 'true';
+  });
+
+  // --- Sync with Firestore onSnapshot on Mount ---
+  useEffect(() => {
+    // 1. Users real-time listener
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (snapshot.empty) {
+        // First-run seed with default users
+        INITIAL_USERS.forEach(async (u) => {
+          await setDoc(doc(db, 'users', u.id), u);
+        });
+      } else {
+        const list: UserProfile[] = [];
+        snapshot.forEach((snap) => {
+          list.push(snap.data() as UserProfile);
+        });
+        setUsers(list);
+      }
+      setLoadingCollections(prev => ({ ...prev, users: false }));
+    }, (error) => {
+      console.error("users sync error", error);
+      setLoadingCollections(prev => ({ ...prev, users: false }));
+    });
+
+    // 2. Products real-time listener
+    const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
+      const list: Product[] = [];
+      snapshot.forEach((snap) => {
+        list.push(snap.data() as Product);
+      });
+      // Sort: newest updated first
+      list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      setProducts(list);
+      setLoadingCollections(prev => ({ ...prev, products: false }));
+    }, (error) => {
+      console.error("products sync error", error);
+      setLoadingCollections(prev => ({ ...prev, products: false }));
+    });
+
+    // 3. Transactions real-time listener
+    const unsubTx = onSnapshot(collection(db, 'transactions'), (snapshot) => {
+      const list: Transaction[] = [];
+      snapshot.forEach((snap) => {
+        list.push(snap.data() as Transaction);
+      });
+      // Sort: newest date first
+      list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setTransactions(list);
+      setLoadingCollections(prev => ({ ...prev, transactions: false }));
+    }, (error) => {
+      console.error("transactions sync error", error);
+      setLoadingCollections(prev => ({ ...prev, transactions: false }));
+    });
+
+    // 4. Settings real-time listener
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'appSettings'), (snap) => {
+      if (snap.exists()) {
+        setSettings(snap.data() as AppSettings);
+      } else {
+        // Seed Settings doc
+        setDoc(doc(db, 'settings', 'appSettings'), DEFAULT_SETTINGS);
+      }
+      setLoadingCollections(prev => ({ ...prev, settings: false }));
+    }, (error) => {
+      console.error("settings sync error", error);
+      setLoadingCollections(prev => ({ ...prev, settings: false }));
+    });
+
+    // 5. Role Permissions real-time listener
+    const unsubRolePerms = onSnapshot(doc(db, 'settings', 'rolePermissions'), (snap) => {
+      if (snap.exists()) {
+        setRolePermissions(snap.data() as Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>);
+      } else {
+        // Seed Role Permissions doc
+        setDoc(doc(db, 'settings', 'rolePermissions'), DEFAULT_ROLE_PERMISSIONS);
+      }
+      setLoadingCollections(prev => ({ ...prev, rolePermissions: false }));
+    }, (error) => {
+      console.error("role permissions sync error", error);
+      setLoadingCollections(prev => ({ ...prev, rolePermissions: false }));
+    });
+
+    // 6. Categories real-time listener
+    const unsubCategories = onSnapshot(collection(db, 'categories'), (snapshot) => {
+      const list: Category[] = [];
+      snapshot.forEach((snap) => {
+        list.push(snap.data() as Category);
+      });
+      list.sort((a, b) => a.name.localeCompare(b.name, 'th'));
+      setCategories(list);
+      setLoadingCollections(prev => ({ ...prev, categories: false }));
+    }, (error) => {
+      console.error("categories sync error", error);
+      setLoadingCollections(prev => ({ ...prev, categories: false }));
+    });
+
+    return () => {
+      unsubUsers();
+      unsubProducts();
+      unsubTx();
+      unsubSettings();
+      unsubRolePerms();
+      unsubCategories();
+    };
+  }, []);
+
+  // Sync device session state
+  useEffect(() => {
+    localStorage.setItem('inventory_current_user', JSON.stringify(currentUser));
+  }, [currentUser]);
+
+  // Real-time Background Auto-Sync to Google Sheets when products modify
+  useEffect(() => {
+    if (products.length > 0 && settings.googleSheetsId && settings.googleSheetsAutoSync) {
+      const token = getCachedToken();
+      if (token) {
+        syncProductsToSpreadsheet(token, settings.googleSheetsId, products)
+          .then(() => {
+            console.log('Google Sheets Live Auto-Synced successfully.');
+          })
+          .catch((err) => {
+            console.error('Auto-Sync to Sheets failed:', err);
+          });
+      }
+    }
+  }, [products, settings.googleSheetsId, settings.googleSheetsAutoSync]);
+
+  useEffect(() => {
+    localStorage.setItem('inventory_is_authenticated', String(isAuthenticated));
+  }, [isAuthenticated]);
+
+  // --- Filter states ---
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [isLowStockOnly, setIsLowStockOnly] = useState(false);
+  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC'>('OVERVIEW');
+
+  // Redirect non-ADMIN users away from admin-only tabs
+  useEffect(() => {
+    if (currentUser?.role !== 'ADMIN' && (activeMenuTab === 'SETTINGS' || activeMenuTab === 'SYNC')) {
+      setActiveMenuTab('OVERVIEW');
+    }
+  }, [currentUser, activeMenuTab]);
+
+  // --- Quick-Action Transfer States ---
+  const [preSelectedProductId, setPreSelectedProductId] = useState<string | null>(null);
+  const [preSelectedType, setPreSelectedType] = useState<TransactionType | null>(null);
+
+  // --- System Custom Handlers ---
+  const handleAddUser = async (newUserData: Omit<UserProfile, 'id' | 'isActive'>) => {
+    const id = `usr-${Date.now()}`;
+    const newUser: UserProfile = {
+      ...newUserData,
+      id,
+      isActive: true
+    };
+    await setDoc(doc(db, 'users', id), newUser);
+  };
+
+  const handleUpdateUser = async (updatedUser: UserProfile) => {
+    await setDoc(doc(db, 'users', updatedUser.id), updatedUser);
+    if (currentUser.id === updatedUser.id) {
+      setCurrentUser(updatedUser);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    await deleteDoc(doc(db, 'users', userId));
+    // Fallback if deleted current user
+    if (currentUser.id === userId) {
+      const fallback = users.find((u) => u.id !== userId && u.role === 'ADMIN') || users.find((u) => u.id !== userId);
+      if (fallback) setCurrentUser(fallback);
+    }
+  };
+
+  const handleUpdateSettings = async (newSettings: AppSettings) => {
+    await setDoc(doc(db, 'settings', 'appSettings'), newSettings);
+  };
+
+  const handleAddCategory = async (name: string) => {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    const exists = categories.some(cat => cat.name.toLowerCase() === cleanName.toLowerCase());
+    if (exists) {
+      throw new Error(`หมวดหมู่ "${cleanName}" มีในระบบคลังเรียบร้อยแล้ว`);
+    }
+    const id = `cat-${Date.now()}`;
+    await setDoc(doc(db, 'categories', id), {
+      id,
+      name: cleanName
+    });
+  };
+
+  const handleUpdateCategory = async (id: string, newName: string) => {
+    const cleanName = newName.trim();
+    if (!cleanName) return;
+    const exists = categories.some(cat => cat.name.toLowerCase() === cleanName.toLowerCase() && cat.id !== id);
+    if (exists) {
+      throw new Error(`หมวดหมู่ "${cleanName}" มีในระบบคลังเรียบร้อยแล้ว`);
+    }
+    await updateDoc(doc(db, 'categories', id), {
+      name: cleanName
+    });
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    await deleteDoc(doc(db, 'categories', id));
+  };
+
+  const handleUpdateRolePermissions = async (role: 'ADMIN' | 'KEEPER' | 'AUDITOR', perms: RolePermissions) => {
+    const updated = {
+      ...rolePermissions,
+      [role]: perms
+    };
+    await setDoc(doc(db, 'settings', 'rolePermissions'), updated);
+  };
+
+  const handleRegisterUser = async (newUserData: Omit<UserProfile, 'id' | 'isActive'> & { password?: string; securityQuestion?: string; securityAnswer?: string }): Promise<{ success: boolean; message: string }> => {
+    const cleanUsername = newUserData.username.trim().toLowerCase();
+    
+    // Check duplicate
+    const duplicate = users.find(u => u.username === cleanUsername);
+    if (duplicate) {
+      return { success: false, message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาระบุชื่อผู้ใช้อื่น' };
+    }
+
+    const id = `usr-${Date.now()}`;
+    const newUser: UserProfile = {
+      ...newUserData,
+      username: cleanUsername,
+      id,
+      isActive: true
+    };
+
+    await setDoc(doc(db, 'users', id), newUser);
+    return { success: true, message: 'สมัครสมาชิกเสร็จสมบูรณ์! ระบบอนุมัติบัญชีพร้อมให้ท่านเข้าสู่ระบบแล้ว' };
+  };
+
+  const handleResetPassword = async (username: string, securityAnswer: string, newPass: string): Promise<{ success: boolean; message: string }> => {
+    const cleanUsername = username.trim().toLowerCase();
+    const cleanAnswer = securityAnswer.trim();
+    
+    const user = users.find(u => u.username === cleanUsername);
+    if (!user) {
+      return { success: false, message: 'ไม่พบชื่อผู้ใช้ในระบบ' };
+    }
+
+    const systemAnswer = user.securityAnswer || 'กรุงเทพ';
+
+    if (cleanAnswer.toLowerCase() !== systemAnswer.toLowerCase()) {
+      return { success: false, message: 'คำตอบเพื่อการยืนยันความปลอดภัยไม่ถูกต้อง พยายามอีกครั้ง' };
+    }
+
+    // Update password
+    await updateDoc(doc(db, 'users', user.id), {
+      password: newPass
+    });
+
+    // Make sure we also sync current user if they reset themselves
+    if (currentUser.username === cleanUsername) {
+      setCurrentUser(prev => ({ ...prev, password: newPass }));
+    }
+
+    return { success: true, message: 'รีเซ็ตรหัสผ่านสำเร็จ เปลี่ยนรหัสผ่านเข้าคลังสินค้าของท่านเรียบร้อย' };
+  };
+
+  // --- Core Methods ---
+  
+  // Add new dynamic product
+  const handleAddProduct = async (newProductData: Omit<Product, 'id' | 'updatedAt'>) => {
+    const id = `prod-${Date.now()}`;
+    const newProduct: Product = {
+      ...newProductData,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, 'products', id), newProduct);
+  };
+
+  // Update existing product meta properties
+  const handleUpdateProduct = async (updatedProduct: Product) => {
+    await setDoc(doc(db, 'products', updatedProduct.id), {
+      ...updatedProduct,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  // Delete product
+  const handleDeleteProduct = async (productId: string) => {
+    await deleteDoc(doc(db, 'products', productId));
+  };
+
+  // Clear all products in the database
+  const handleClearAllProducts = async () => {
+    const batch = writeBatch(db);
+    const pSnapshot = await getDocs(collection(db, 'products'));
+    pSnapshot.forEach((snapDoc) => {
+      batch.delete(snapDoc.ref);
+    });
+    await batch.commit();
+  };
+
+  // Trigger quick transaction prefill
+  const handleTriggerQuickAction = (productId: string, actionType: 'IN' | 'OUT' | 'RETURN') => {
+    setPreSelectedProductId(productId);
+    setPreSelectedType(actionType);
+    setActiveMenuTab('OPERATIONS');
+  };
+
+  // Clear prefilled transfers
+  const handleClearPreSelection = () => {
+    setPreSelectedProductId(null);
+    setPreSelectedType(null);
+  };
+
+  // Process transaction execution (mutates product counts in Firestore batch)
+  const handleRecordTransaction = async (txData: Omit<Transaction, 'id' | 'date'>) => {
+    const txId = `tx-${Date.now()}`;
+    const newTx: Transaction = {
+      ...txData,
+      id: txId,
+      date: new Date().toISOString(),
+    };
+
+    const p = products.find(prod => prod.id === txData.productId);
+    if (p) {
+      let adjustedQty = p.quantity;
+
+      if (txData.type === 'IN') {
+        adjustedQty += txData.quantity;
+      } else if (txData.type === 'OUT') {
+        adjustedQty = Math.max(0, adjustedQty - txData.quantity);
+      } else if (txData.type === 'RETURN') {
+        if (txData.returnStatus === 'RE_STOCK') {
+          adjustedQty += txData.quantity;
+        }
+      }
+
+      const batch = writeBatch(db);
+      // Write transaction doc
+      batch.set(doc(db, 'transactions', txId), newTx);
+      // Update product qty and updatedAt
+      batch.update(doc(db, 'products', p.id), {
+        quantity: adjustedQty,
+        updatedAt: new Date().toISOString()
+      });
+      await batch.commit();
+    } else {
+      await setDoc(doc(db, 'transactions', txId), newTx);
+    }
+  };
+
+  // Reset Logs / Clear All
+  const handleResetLogs = async () => {
+    try {
+      const pSnapshot = await getDocs(collection(db, 'products'));
+      const tSnapshot = await getDocs(collection(db, 'transactions'));
+      
+      const batch = writeBatch(db);
+      pSnapshot.forEach((snapDoc) => {
+        batch.delete(snapDoc.ref);
+      });
+      tSnapshot.forEach((snapDoc) => {
+        batch.delete(snapDoc.ref);
+      });
+      await batch.commit();
+      handleClearPreSelection();
+    } catch (err) {
+      console.error("reset error", err);
+    }
+  };
+
+  // Import products from Google Sheets / CSV parsed items
+  const handleImportProducts = async (parsedProducts: Omit<Product, 'id' | 'updatedAt'>[], overwrite: boolean) => {
+    try {
+      const batch = writeBatch(db);
+
+      if (overwrite) {
+        const pSnapshot = await getDocs(collection(db, 'products'));
+        pSnapshot.forEach((snapDoc) => {
+          batch.delete(snapDoc.ref);
+        });
+      }
+
+      parsedProducts.forEach((p) => {
+        const existing = overwrite ? null : products.find(prod => prod.sku.trim().toLowerCase() === p.sku.trim().toLowerCase());
+        const id = existing ? existing.id : `prod-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+        
+        batch.set(doc(db, 'products', id), {
+          ...p,
+          id,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      });
+
+      await batch.commit();
+    } catch (err) {
+      console.error("import items error", err);
+    }
+  };
+
+  // Filter actions
+  const handleFilterLowStock = () => {
+    setIsLowStockOnly(true);
+    setSelectedCategory('');
+  };
+
+  const handleClearFilters = () => {
+    setIsLowStockOnly(false);
+    setSelectedCategory('');
+  };
+
+  if (dbLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 text-slate-800 font-sans">
+        <div className="bg-white rounded-3xl p-8 shadow-xl max-w-sm w-full mx-auto border border-slate-100 flex flex-col items-center text-center space-y-6">
+          <div className="relative">
+            <div className="w-16 h-16 rounded-full border-4 border-blue-50 border-t-blue-600 animate-spin" />
+            <RefreshCcw className="w-6 h-6 text-blue-600 absolute inset-0 m-auto animate-pulse" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800 text-sm">กำลังซิงก์คลังสินค้าคลาวด์</h3>
+            <p className="text-xs text-slate-400 mt-1">กำลังเชื่อมต่อคลาวน์แบบเรียลไทม์เพื่อซิงก์ข้อมูลข้ามระบบของคุณให้ไร้รอยต่อ...</p>
+          </div>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+            <div className="bg-blue-600 h-full w-[45%] animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <LoginScreen
+        settings={settings}
+        users={users}
+        onLogin={(user) => {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+        }}
+        onRegister={handleRegisterUser}
+        onResetPassword={handleResetPassword}
+      />
+    );
+  }
+
+  return (
+    <div id="app-wrapper" className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
+      {/* 1. Header Navigation Bar */}
+      <nav id="app-navbar" className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16 items-center gap-4">
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="p-2 bg-blue-600 rounded-lg text-white shadow-xs shrink-0">
+                <AppLogoIcon name={settings.appLogo} className="w-6 h-6" />
+              </div>
+              <div className="overflow-hidden">
+                <span className="text-md sm:text-lg font-bold text-slate-800 tracking-tight flex items-center gap-1.5 leading-none truncate">
+                  {settings.appName}
+                  <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] bg-blue-50 text-blue-700 rounded-full font-mono border border-blue-105 uppercase tracking-wider font-bold">
+                    {settings.appSubtitle}
+                  </span>
+                </span>
+                <span className="text-[10px] sm:text-xs text-slate-400 block mt-0.5 truncate">
+                  Virtual Stock Controller • รับเข้า • ส่งออก • ตีกลับสินค้า
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              {/* Authenticated User Badge & Log Out */}
+              <div className="flex items-center gap-2 pt-0.5">
+                <div className="hidden md:flex flex-col text-right">
+                  <span className="text-xs font-bold text-slate-700">{currentUser.name}</span>
+                  <span className="text-[10px] font-mono font-bold text-slate-400">
+                    @{currentUser.username} • {currentUser.role === 'ADMIN' ? '👑 Admin' : currentUser.role === 'KEEPER' ? '📦 เจ้าหน้าที่คลัง' : '🔍 ตรวจสอบบัญชี'}
+                  </span>
+                </div>
+                
+                <button 
+                  onClick={() => setIsAuthenticated(false)}
+                  className="px-2.5 py-1.5 text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50/50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-lg transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                  title="ออกจากระบบ เพื่อความปลอดภัย"
+                >
+                  <span>🔓 ออกจากระบบ</span>
+                </button>
+              </div>
+
+              {/* Version indicators */}
+              <div className="hidden lg:flex items-center gap-2 text-[10px] font-mono">
+                <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2 py-1 rounded-sm border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>ONLINE</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* 2. Main Container */}
+      <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        
+        {/* Banner Announcement / Welcoming Block */}
+        <div id="welcome-banner" className="bg-white text-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-1 text-blue-600 font-semibold text-xs tracking-wider uppercase">
+              <Sparkles className="w-4 h-4 text-blue-600" />
+              <span>แดชบอร์ดศูนย์ควบคุมคลังสินค้า</span>
+            </div>
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800">
+              ยินดีต้อนรับสู่ระบบตรวจสต๊อกคลังและจัดการสินค้า 📦
+            </h1>
+            <p className="text-xs text-slate-500 font-normal">
+              ช่วยให้ร้านค้าควบคุมจำนวนสินค้า รับเข้า-ส่งออกคลัง และบันทึกสินค้าเคลมตัดชำรุดจากการตีกลับได้แบบเรียลไทม์
+            </p>
+          </div>
+
+          <div className="bg-slate-50 px-4 py-3 rounded-lg border border-slate-200 text-xs flex flex-col gap-1 shrink-0">
+            <div className="flex items-center gap-2 text-slate-500">
+              <span className="font-semibold text-[10px] uppercase tracking-widest text-slate-400">พิกัดระบบหลัก:</span>
+              <span className="font-mono bg-slate-200 px-1.5 py-0.5 rounded text-[10px] text-slate-700">GMT+7 THAILAND</span>
+            </div>
+            <div className="flex items-center gap-2 text-slate-600">
+              <span>เวลาปัจจุบัน:</span>
+              <span className="font-mono text-slate-900 font-semibold">{new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation Tabs Bar */}
+        <div className="bg-white border border-slate-200 rounded-xl p-1.5 flex flex-wrap gap-1 shadow-sm">
+          <button
+            onClick={() => setActiveMenuTab('OVERVIEW')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
+              activeMenuTab === 'OVERVIEW'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>ภาพรวม & แดชบอร์ด</span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveMenuTab('INVENTORY');
+              handleClearFilters();
+            }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
+              activeMenuTab === 'INVENTORY'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <ShoppingBag className="w-4 h-4" />
+            <span>จัดการสต๊อกสินค้า</span>
+            {products.filter(p => p.quantity <= p.minStock).length > 0 && (
+              <span className={`px-1.5 py-0.2 text-[10px] rounded-full [line-height:1] ${
+                activeMenuTab === 'INVENTORY' ? 'bg-white text-blue-600 font-bold' : 'bg-orange-100 text-orange-705 font-bold border border-orange-200'
+              }`}>
+                {products.filter(p => p.quantity <= p.minStock).length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveMenuTab('OPERATIONS')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
+              activeMenuTab === 'OPERATIONS'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <RefreshCcw className="w-4 h-4" />
+            <span>บันทึกความเคลื่อนไหว</span>
+            {preSelectedProductId && (
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveMenuTab('LOGS')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
+              activeMenuTab === 'LOGS'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            <span>ประวัติทำรายการ (Ledger)</span>
+            <span className={`px-1.5 py-0.2 text-[10px] rounded-full [line-height:1] ${
+              activeMenuTab === 'LOGS' ? 'bg-white text-blue-600' : 'bg-slate-100 text-slate-600 font-medium border border-slate-200'
+            }`}>
+              {transactions.length}
+            </span>
+          </button>
+          {currentUser.role === 'ADMIN' && (
+            <>
+              <button
+                onClick={() => setActiveMenuTab('SYNC')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
+                  activeMenuTab === 'SYNC'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>ซิงค์ & สำรองข้อมูล (Google Sheets)</span>
+              </button>
+              <button
+                onClick={() => setActiveMenuTab('SETTINGS')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
+                  activeMenuTab === 'SETTINGS'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <SettingsIcon className="w-4 h-4" />
+                <span>ตั้งค่า & สิทธิ์ผู้ใช้</span>
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Tab Contents */}
+        {activeMenuTab === 'OVERVIEW' && (
+          <div className="space-y-6">
+            {/* KPI stats section */}
+            <DashboardStats
+              products={products}
+              transactions={transactions}
+              onLowStockFilter={() => {
+                setActiveMenuTab('INVENTORY');
+                handleFilterLowStock();
+              }}
+              onClearFilters={handleClearFilters}
+              isLowStockFiltered={false}
+            />
+
+            {/* Overview Grid Summary */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Alert Card */}
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse"></span>
+                    รายการสินค้าใกล้หมดเกณฑ์ ({products.filter((p) => p.quantity <= p.minStock).length} รายการ)
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setActiveMenuTab('INVENTORY');
+                      handleFilterLowStock();
+                    }}
+                    className="text-xs text-blue-600 font-semibold hover:underline cursor-pointer"
+                  >
+                    ดูสินค้าสต๊อกต่ำทั้งหมด →
+                  </button>
+                </div>
+
+                <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
+                  {products.filter((p) => p.quantity <= p.minStock).length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 text-xs font-normal">
+                      ✔️ ทุกรายการสินค้ามีสต๊อกเพียงพอ ไม่จำเป็นต้องนำเข้าขณะนี้
+                    </div>
+                  ) : (
+                    products
+                      .filter((p) => p.quantity <= p.minStock)
+                      .slice(0, 5)
+                      .map((p) => (
+                        <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs hover:bg-slate-100/50 transition-colors">
+                          <div className="space-y-0.5">
+                            <span className="font-mono text-blue-600 font-semibold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-100 text-[10px]">{p.sku}</span>
+                            <p className="font-semibold text-slate-800 mt-1">{p.name}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-slate-400 font-sans block text-[10px]">คงเหลือปัจจุบัน</span>
+                            <span className="text-orange-600 font-bold font-mono text-sm">{p.quantity} / {p.minStock} ชิ้น</span>
+                          </div>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+
+              {/* Latest transactions stream */}
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <History className="w-4 h-4 text-slate-450" />
+                    ประวัติเล็ดเจอร์ด่วนล่าสุด (4 รายการล่าสุด)
+                  </h3>
+                  <button
+                    onClick={() => setActiveMenuTab('LOGS')}
+                    className="text-xs text-blue-600 font-semibold hover:underline cursor-pointer"
+                  >
+                    ดูประวัติทั้งหมด →
+                  </button>
+                </div>
+
+                <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
+                  {transactions.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 text-xs">
+                      ยังไม่มีรายการเคลื่อนไหวใดๆ ในระบบขณะนี้
+                    </div>
+                  ) : (
+                    transactions.slice(0, 4).map((tx) => {
+                      return (
+                        <div key={tx.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex items-center justify-between hover:bg-slate-100/50 transition-colors">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`inline-block px-1.5 py-0.2 rounded font-mono font-bold text-[9px] ${
+                                tx.type === 'IN'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : tx.type === 'OUT'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+                              }`}>
+                                {tx.type === 'IN' ? 'RECEIVE' : tx.type === 'OUT' ? 'DISPATCH' : 'RETURN'}
+                              </span>
+                              <span className="font-mono text-slate-400 text-[10px]">{new Date(tx.date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</span>
+                            </div>
+                            <p className="font-semibold text-slate-800 truncate max-w-[200px] sm:max-w-xs">{tx.productName}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className={`font-bold font-mono text-xs ${
+                              tx.type === 'IN' ? 'text-emerald-700' : tx.type === 'OUT' ? 'text-rose-700' : 'text-blue-700'
+                            }`}>
+                              {tx.type === 'IN' ? '+' : tx.type === 'OUT' ? '-' : '↩️ '}{tx.quantity}
+                            </span>
+                            <span className="text-[10px] text-slate-400 block mt-0.5 font-sans">โดย {tx.operator}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Helpful quick guide layout for real-world scenarios */}
+            <div className="bg-blue-50/50 p-5 rounded-xl border border-blue-100/70 flex flex-col sm:flex-row items-start gap-4">
+              <div className="p-3 bg-blue-100 text-blue-700 rounded-lg shrink-0">
+                <Info className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-blue-900">แนะนำการบริหารระดับคลัง (Smart Operations Flow Tracking)</h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  เมื่อตรวจสอบหากพบสินค้า <span className="text-orange-600 font-bold font-semibold">ใกล้หมดระดับเกณฑ์คุมเข้ม</span> แนะนำให้สลับไปยังเมนู <span className="font-bold underline text-blue-700 cursor-pointer" onClick={() => setActiveMenuTab('OPERATIONS')}>"บันทึกความเคลื่อนไหว"</span> เพื่อรับเข้าสินค้าใหม่และกำหนดรหัสใบสั่งซื้อ (PO No.) ในทันที เพื่อให้ข้อมูลคลังจัดเก็บบันทึกได้อย่างเป็นระบบเสมอดังความตั้งใจ
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeMenuTab === 'INVENTORY' && (
+          <InventoryTable
+            products={products}
+            categories={categories}
+            onAddCategory={handleAddCategory}
+            onUpdateCategory={handleUpdateCategory}
+            onDeleteCategory={handleDeleteCategory}
+            onAddProduct={handleAddProduct}
+            onUpdateProduct={handleUpdateProduct}
+            onDeleteProduct={handleDeleteProduct}
+            onClearAllProducts={handleClearAllProducts}
+            selectedCategory={selectedCategory}
+            setSelectedCategory={setSelectedCategory}
+            isLowStockOnly={isLowStockOnly}
+            setIsLowStockOnly={setIsLowStockOnly}
+            onTriggerQuickAction={handleTriggerQuickAction}
+            canManageProducts={rolePermissions[currentUser.role].manageProducts}
+            canRecordTransactions={rolePermissions[currentUser.role].recordTransactions}
+            canDeleteProducts={rolePermissions[currentUser.role].manageProducts}
+          />
+        )}
+
+        {activeMenuTab === 'OPERATIONS' && (
+          <ActionForms
+            products={products}
+            onRecordTransaction={handleRecordTransaction}
+            preSelectedProductId={preSelectedProductId}
+            preSelectedType={preSelectedType}
+            onClearPreSelection={handleClearPreSelection}
+            canRecordTransactions={rolePermissions[currentUser.role].recordTransactions}
+            currentUser={currentUser}
+          />
+        )}
+
+        {activeMenuTab === 'LOGS' && (
+          <TransactionLogs
+            transactions={transactions}
+            onResetLogs={handleResetLogs}
+            canResetLogs={rolePermissions[currentUser.role].resetSystem}
+          />
+        )}
+
+        {activeMenuTab === 'SYNC' && (
+          <SyncAndBackup
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            products={products}
+            transactions={transactions}
+            onImportProducts={handleImportProducts}
+            currentUser={currentUser}
+            rolePermissions={rolePermissions}
+          />
+        )}
+
+        {activeMenuTab === 'SETTINGS' && (
+          <SystemSettings
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            users={users}
+            onAddUser={handleAddUser}
+            onUpdateUser={handleUpdateUser}
+            onDeleteUser={handleDeleteUser}
+            rolePermissions={rolePermissions}
+            onUpdateRolePermissions={handleUpdateRolePermissions}
+            currentUser={currentUser}
+            products={products}
+            transactions={transactions}
+            onImportProducts={handleImportProducts}
+          />
+        )}
+
+      </main>
+
+      {/* 7. Footer Accent */}
+      <footer id="app-footer" className="bg-slate-900 text-slate-400 py-8 border-t border-slate-800 text-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="font-bold text-slate-300">ระบบคลังสินค้าเสมือนจริง (Virtual Inventory Tracker)</p>
+            <p className="text-[11px] text-slate-500">
+              พัฒนาขึ้นเพื่ออำนวยความสะดวกในการบริหารสต๊อกอย่างโปร่งใส ไร้กังวลเรื่องข้อมูลสูญหายด้วยการบันทึกระดับ LocalStorage ของเบราว์เซอร์
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-[11px]">
+            <span className="text-slate-600">|</span>
+            <span>ความปลอดภัยระดับสูง</span>
+            <span className="text-slate-600">|</span>
+            <span>ไม่มีค่าใช้จ่ายลิขสิทธิ์</span>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
