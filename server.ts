@@ -41,68 +41,75 @@ async function startServer() {
       const rawBody = req.body.toString("utf8");
       const signature = req.headers["x-line-signature"] as string;
 
-      // 1. Retrieve settings from Firestore
-      const settingsDoc = await getDoc(doc(db, "settings", "appSettings"));
-      if (!settingsDoc.exists()) {
-        console.warn("AppSettings does not exist in Firestore.");
-        return res.status(200).send("OK");
-      }
-      const settings = settingsDoc.data();
-      const accessToken = settings.lineChannelAccessToken;
-      const channelSecret = settings.lineChannelSecret;
-      const isEnabled = settings.lineBotEnabled;
+      // 1. Immediately send 200 OK back to LINE to close the connection and avoid timeouts (Verify button & normal messages)
+      res.status(200).send("OK");
 
-      if (!isEnabled || !accessToken) {
-        console.log("LINE Bot is disabled or access token is missing.");
-        return res.status(200).send("LINE Bot Disabled");
-      }
+      // 2. Process all message/ping events asynchronously in the background
+      Promise.resolve().then(async () => {
+        try {
+          // Parse request body safely
+          let payload;
+          try {
+            payload = JSON.parse(rawBody);
+          } catch (e) {
+            return; // Non-JSON test payloads, ignore safely
+          }
 
-      // 2. Validate signature if a secret is provided
-      if (channelSecret && signature) {
-        const hash = crypto
-          .createHmac("SHA256", channelSecret)
-          .update(rawBody)
-          .digest("base64");
-        if (hash !== signature) {
-          console.warn("Invalid LINE Signature. Rejecting request.");
-          return res.status(401).send("Invalid signature");
-        }
-      }
+          const events = payload.events || [];
+          if (events.length === 0) {
+            return; // Empty ping / LINE verify test - already returned 200 OK above!
+          }
 
-      // 3. Parse and process events
-      // LINE sometimes sends an empty request or a dummy test payload without events
-      let payload;
-      try {
-        payload = JSON.parse(rawBody);
-      } catch (e) {
-        // Return 200 for non-JSON tests
-        return res.status(200).send("OK");
-      }
-      
-      const events = payload.events || [];
+          // Fetch settings from Firestore for processing real messages
+          const settingsDoc = await getDoc(doc(db, "settings", "appSettings"));
+          if (!settingsDoc.exists()) {
+            console.warn("AppSettings does not exist in Firestore.");
+            return;
+          }
+          const settings = settingsDoc.data();
+          const accessToken = settings.lineChannelAccessToken;
+          const channelSecret = settings.lineChannelSecret;
+          const isEnabled = settings.lineBotEnabled;
 
-      for (const event of events) {
-        if (event.type === "message" && event.message && event.message.type === "text") {
-          const text = event.message.text.trim();
-          const replyToken = event.replyToken;
+          if (!isEnabled || !accessToken) {
+            console.log("LINE Bot is disabled or access token is missing.");
+            return;
+          }
 
-          if (!replyToken) continue;
+          // Validate signature (Optional security layer)
+          if (channelSecret && signature) {
+            const hash = crypto
+              .createHmac("SHA256", channelSecret)
+              .update(rawBody)
+              .digest("base64");
+            if (hash !== signature) {
+              console.warn("Invalid LINE Signature in background. Ignoring events.");
+              return;
+            }
+          }
 
-          console.log(`Received LINE Message: "${text}" from ${event.source?.userId}`);
+          for (const event of events) {
+            if (event.type === "message" && event.message && event.message.type === "text") {
+              const text = event.message.text.trim();
+              const replyToken = event.replyToken;
 
-          // Query live inventory snapshot
-          const productsSnap = await getDocs(collection(db, "products"));
-          const productsList: any[] = [];
-          productsSnap.forEach((doc) => {
-            productsList.push(doc.data());
-          });
+              if (!replyToken) continue;
 
-          // Format context for Gemini
-          const productsContext = productsList.map(p => 
-            `- SKU: ${p.sku}, ชื่อ: ${p.name}, หมวดหมู่: ${p.category || 'ทั่วไป'}, คงเหลือ: ${p.quantity} ${p.unit || 'ชิ้น'}, จุดแจ้งเตือน: ${p.minStock} ${p.unit || 'ชิ้น'}, พิกัดหน่วยเก็บ: ${p.location || 'ไม่ได้ระบุ'}`
-          ).join("\n");
+              console.log(`Received LINE Message (Background): "${text}" from ${event.source?.userId}`);
 
-          const systemPrompt = `คุณคือผู้ดูแลบอร์ดจัดการคลังสินค้าอัจฉริยะประมวลผลด้วย AI (Warehouse Stock Assistant Bot) สื่อสารผ่านแอพ LINE ด้วยภาษาไทยที่กระชับ ชัดเจน เปี่ยมความช่วยเหลือ และเป็นมิตร
+              // Query live inventory snapshot
+              const productsSnap = await getDocs(collection(db, "products"));
+              const productsList: any[] = [];
+              productsSnap.forEach((doc) => {
+                productsList.push(doc.data());
+              });
+
+              // Format context for Gemini
+              const productsContext = productsList.map(p => 
+                `- SKU: ${p.sku}, ชื่อ: ${p.name}, หมวดหมู่: ${p.category || 'ทั่วไป'}, คงเหลือ: ${p.quantity} ${p.unit || 'ชิ้น'}, จุดแจ้งเตือน: ${p.minStock} ${p.unit || 'ชิ้น'}, พิกัดหน่วยเก็บ: ${p.location || 'ไม่ได้ระบุ'}`
+              ).join("\n");
+
+              const systemPrompt = `คุณคือผู้ดูแลบอร์ดจัดการคลังสินค้าอัจฉริยะประมวลผลด้วย AI (Warehouse Stock Assistant Bot) สื่อสารผ่านแอพ LINE ด้วยภาษาไทยที่กระชับ ชัดเจน เปี่ยมความช่วยเหลือ และเป็นมิตร
 
 นี่คือข้อมูลคงคลังสินค้าล่าสุดจริงภายในระบบ (เรียลไทม์):
 ${productsContext}
@@ -116,50 +123,54 @@ ${productsContext}
 4. หากถามสินค้าบางชิ้นที่ไม่มีในรายการข้างต้นเลย ให้ระบุว่า "ขออภัยครับ ไม่พบรายการที่ตรงกับคีย์เวิร์ดนี้ในระบบคลังปัจจุบันครับ" อย่างสุภาพพร้อมบอกให้ลองพิมพ์ค้นหาด้วยรหัสหรือชื่ออื่น
 5. พยายามตอบเรียงเป็นข้อๆ (Bullet points) วงเล็บ และตัวหนาเพื่อให้แสดงผลผ่านหน้าจอแชต LINE บนมือถือได้งดงามและประหยัดพื้นที่มากที่สุด`;
 
-          let replyText = "";
-          try {
-            const geminiResponse = await ai.models.generateContent({
-              model: 'gemini-3.5-flash',
-              contents: systemPrompt
-            });
-            replyText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
-          } catch (geminiError) {
-            console.error("Gemini Content Generation Error:", geminiError);
-            replyText = `ขออภัยครับ ระบบวิเคราะห์ AI ขัดข้องชั่วคราว: ${geminiError instanceof Error ? geminiError.message : String(geminiError)}`;
-          }
+              let replyText = "";
+              try {
+                const geminiResponse = await ai.models.generateContent({
+                  model: 'gemini-3.5-flash',
+                  contents: systemPrompt
+                });
+                replyText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
+              } catch (geminiError) {
+                console.error("Gemini Content Generation Error:", geminiError);
+                replyText = `ขออภัยครับ ระบบวิเคราะห์ AI ขัดข้องชั่วคราว: ${geminiError instanceof Error ? geminiError.message : String(geminiError)}`;
+              }
 
-          // Reply back to LINE using native fetch API
-          const lineReplyUrl = "https://api.line.me/v2/bot/message/reply";
-          const resLine = await fetch(lineReplyUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${accessToken}`
-            },
-            body: JSON.stringify({
-              replyToken,
-              messages: [
-                {
-                  type: "text",
-                  text: replyText
-                }
-              ]
-            })
-          });
+              // Reply back to LINE using native fetch API
+              const lineReplyUrl = "https://api.line.me/v2/bot/message/reply";
+              const resLine = await fetch(lineReplyUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${accessToken}`
+                },
+                body: JSON.stringify({
+                  replyToken,
+                  messages: [
+                    {
+                      type: "text",
+                      text: replyText
+                    }
+                  ]
+                })
+              });
 
-          if (!resLine.ok) {
-            const errBody = await resLine.text();
-            console.error("LINE Reply API error response:", errBody);
-          } else {
-            console.log("LINE message replied successfully.");
+              if (!resLine.ok) {
+                const errBody = await resLine.text();
+                console.error("LINE Reply API error response (Background):", errBody);
+              } else {
+                console.log("LINE message replied successfully in background.");
+              }
+            }
           }
+        } catch (backgroundErr) {
+          console.error("Error in background webhook execution process:", backgroundErr);
         }
-      }
-
-      res.status(200).send("OK");
+      });
     } catch (err) {
-      console.error("Error inside LINE webhook handler:", err);
-      res.status(500).send("Internal Server Error");
+      console.error("Error inside LINE webhook handler outer shell:", err);
+      if (!res.headersSent) {
+        res.status(200).send("OK");
+      }
     }
   };
 

@@ -58,7 +58,24 @@ export default async function handler(req: IncomingMessage & { query: any }, res
     const rawBody = await getRawBody(req);
     const signature = req.headers["x-line-signature"] as string;
 
-    // 1. Retrieve settings from Firestore
+    // 1. Parse payload to handle empty test pings instantly
+    let payload;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch (e) {
+      // Just respond OK to non-JSON or invalid test streams immediately
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      return res.end("OK");
+    }
+
+    const events = payload.events || [];
+    if (events.length === 0) {
+      // LINE verification test ping has no events. Return 200 OK instantly before querying Firestore.
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      return res.end("OK");
+    }
+
+    // 2. Retrieve settings from Firestore for processing real events
     const settingsDoc = await getDoc(doc(db, "settings", "appSettings"));
     if (!settingsDoc.exists()) {
       console.warn("AppSettings does not exist in Firestore.");
@@ -77,7 +94,7 @@ export default async function handler(req: IncomingMessage & { query: any }, res
       return res.end("LINE Bot Disabled");
     }
 
-    // 2. Validate signature if secret is provided
+    // 3. Validate signature if secret is provided
     if (channelSecret && signature) {
       const hash = crypto
         .createHmac("SHA256", channelSecret)
@@ -89,18 +106,6 @@ export default async function handler(req: IncomingMessage & { query: any }, res
         return res.end("Invalid signature");
       }
     }
-
-    // 3. Parse and process events
-    let payload;
-    try {
-      payload = JSON.parse(rawBody);
-    } catch (e) {
-      // Just respond OK to empty pings
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      return res.end("OK");
-    }
-
-    const events = payload.events || [];
 
     for (const event of events) {
       if (event.type === "message" && event.message && event.message.type === "text") {
