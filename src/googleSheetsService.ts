@@ -161,6 +161,33 @@ export const createInventorySpreadsheet = async (
 };
 
 /**
+ * Helper to fetch the actual name of the first worksheet in the spreadsheet dynamically.
+ * This prevents crashes when the sheet name changes under localized accounts (e.g., "ชีต1" or "แผ่น1").
+ */
+export const getFirstSheetName = async (
+  accessToken: string,
+  spreadsheetId: string
+): Promise<string> => {
+  try {
+    const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (response.ok) {
+      const data = await response.json();
+      const firstTitle = data.sheets?.[0]?.properties?.title;
+      if (firstTitle) {
+        return firstTitle;
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch spreadsheet sheet titles, using fallback:", err);
+  }
+  return "Sheet1";
+};
+
+/**
  * Syncs/Overwrites products array directly into the target Google Spreadsheet.
  */
 export const syncProductsToSpreadsheet = async (
@@ -168,7 +195,7 @@ export const syncProductsToSpreadsheet = async (
   spreadsheetId: string,
   products: Product[]
 ): Promise<void> => {
-  const sheetName = 'Sheet1'; // Default Sheet 1
+  const sheetName = await getFirstSheetName(accessToken, spreadsheetId);
 
   // Headers matching Inventory System
   const headers = [
@@ -261,7 +288,7 @@ export const fetchSpreadsheetProducts = async (
   accessToken: string,
   spreadsheetId: string
 ): Promise<Omit<Product, 'id' | 'updatedAt'>[]> => {
-  const sheetName = 'Sheet1';
+  const sheetName = await getFirstSheetName(accessToken, spreadsheetId);
   const response = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A2:H1000`,
     {

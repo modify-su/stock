@@ -3,7 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { getFirestore, doc, getDoc, collection, getDocs, setDoc, updateDoc } from "firebase/firestore";
 import { GoogleGenAI } from "@google/genai";
 
 const PORT = 3000;
@@ -201,6 +201,57 @@ ${productsContext}
       });
     } catch (err) {
       return res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Google Sheets integration back-sync webhook
+  app.post("/api/sheets-update", async (req, res) => {
+    try {
+      const { spreadsheetId, products } = req.body;
+      if (!spreadsheetId) {
+        return res.status(400).json({ error: "Missing spreadsheetId" });
+      }
+
+      // Load actual settings to verify spreadsheet ID
+      const settingsDoc = await getDoc(doc(db, "settings", "appSettings"));
+      if (!settingsDoc.exists()) {
+        return res.status(404).json({ error: "AppSettings not found" });
+      }
+      const settings = settingsDoc.data();
+      if (settings.googleSheetsId !== spreadsheetId) {
+        return res.status(403).json({ error: "Unauthorized Spreadsheet ID: " + spreadsheetId });
+      }
+
+      // Update products in Firestore
+      if (Array.isArray(products)) {
+        for (const prod of products) {
+          if (!prod.sku) continue;
+          const prodRef = doc(db, "products", prod.sku);
+          await setDoc(prodRef, {
+            sku: prod.sku,
+            name: prod.name || "",
+            category: prod.category || "ทั่วไป",
+            quantity: Number(prod.quantity) || 0,
+            minStock: Number(prod.minStock) || 0,
+            unit: prod.unit || "ชิ้น",
+            location: prod.location || "ไม่ได้ระบุ",
+            updatedAt: new Date().toISOString()
+          });
+        }
+      }
+
+      // Update settings synced timestamp
+      await updateDoc(doc(db, "settings", "appSettings"), {
+        googleSheetsLastSyncedAt: new Date().toISOString()
+      });
+
+      return res.status(200).json({ 
+        success: true, 
+        message: `Synced ${products?.length || 0} items successfully!` 
+      });
+    } catch (err: any) {
+      console.error("Sheets update error:", err);
+      return res.status(500).json({ error: err.message || "Internal server error" });
     }
   });
 

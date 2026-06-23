@@ -56,6 +56,97 @@ export default function SyncAndBackup({
   const [pastedText, setPastedText] = useState('');
   const [importStatus, setImportStatus] = useState<{ success?: boolean; count?: number; message?: string } | null>(null);
   const [isUrlCopied, setIsUrlCopied] = useState(false);
+  const [isScriptCopied, setIsScriptCopied] = useState(false);
+
+  const getAppsScriptCode = () => {
+    const origin = window.location.origin;
+    return `/**
+ * Google Apps Script สำหรับเชื่อมโยงขากลับ (Google Sheets -> ระบบแอปสต๊อกคลังสินค้า)
+ * เมื่อแก้ไขหรือเพิ่มข้อมูล สามารถกดคลิกเพื่อซิงก์ข้อมูลกลับมายังระบบได้ทันที!
+ */
+
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('📦 เมนูแอปคลังสินค้า')
+    .addItem('🚀 ซิงก์ข้อมูลไปแอปคลัง (Sync to Inventory App)', 'syncToInventoryApp')
+    .addToUi();
+}
+
+function syncToInventoryApp() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheetId = spreadsheet.getId();
+  const sheet = spreadsheet.getSheetByName("Sheet1") || spreadsheet.getSheets()[0];
+  
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    SpreadsheetApp.getUi().alert('❌ ไม่พบข้อมูลสินค้าที่จะส่งซิงก์ (มีเฉพาะแถวหัวตาราง)');
+    return;
+  }
+  
+  // ดึงข้อมูลแถวทั้งหมด ยกเว้นแถวแรกที่เป็นหัวข้อหัวตาราง (A2 ถึง G สุดขอบ)
+  const range = sheet.getRange(2, 1, lastRow - 1, 7);
+  const values = range.getValues();
+  
+  const products = [];
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var sku = String(row[0] || '').trim();
+    var name = String(row[1] || '').trim();
+    if (!sku || !name) continue; // ข้ามข้อมูลว่างตัวหลัก
+    
+    products.push({
+      sku: sku,
+      name: name,
+      category: String(row[2] || 'ทั่วไป').trim(),
+      quantity: Number(row[3]) || 0,
+      minStock: Number(row[4]) || 0,
+      unit: String(row[5] || 'ชิ้น').trim(),
+      location: String(row[6] || '-').trim()
+    });
+  }
+
+  // ปลายทาง Webhook URL ของแอปคุณ ปรับตั้งตามโดเมนจริงของคุณสำเร็จ
+  const appUrl = "${origin}/api/sheets-update"; 
+  
+  const payload = {
+    spreadsheetId: spreadsheetId,
+    products: products
+  };
+  
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  try {
+    const response = UrlFetchApp.fetch(appUrl, options);
+    const code = response.getResponseCode();
+    const body = response.getContentText();
+    
+    if (code === 200) {
+      SpreadsheetApp.getUi().alert('✅ ซิงค์เสร็จสมบูรณ์! ข้อมูลสินค้าจำนวน ' + products.length + ' รายการซิงค์กลับไปยังแอปและระบบ Cloud สำเร็จแล้ว');
+    } else {
+      SpreadsheetApp.getUi().alert('❌ เชื่อมต่อผิดพลาด (โค้ด ' + code + '): ดึงผลลัพธ์ล้มเหลว ' + body);
+    }
+  } catch (err) {
+    SpreadsheetApp.getUi().alert('❌ เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่ายอินเทอร์เน็ต: ' + err.toString());
+  }
+}
+
+// ออปชันเสริม: ซิงค์อัตโนมัติเมื่อมีการแก้ไขเซลล์ในตาราง
+function onEdit(e) {
+  // หากต้องการให้ซิงก์อัตโนมัติทันทีที่พิมพ์ ให้เปิดคอมเมนต์บรรทัดล่างนี้ครับ
+  // syncToInventoryApp();
+}`;
+  };
+
+  const handleCopyAppsScript = () => {
+    navigator.clipboard.writeText(getAppsScriptCode());
+    setIsScriptCopied(true);
+    setTimeout(() => setIsScriptCopied(false), 2000);
+  };
 
   const handleCopyAppUrl = () => {
     const appUrl = window.location.origin;
@@ -691,6 +782,68 @@ export default function SyncAndBackup({
           )}
         </div>
       </div>
+
+      {/* 2.5 Google Apps Script Integration (Sheets -> App) Card */}
+      {settings.googleSheetsId && (
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
+              <Link2 className="w-5 h-5 text-emerald-600" />
+              <span>🔌 ซิงค์ข้อมูลขากลับอัตโนมัติ (Google Sheets ➔ คลังสินค้าแอปด้วย Google Apps Script)</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              เมื่อมีการแก้ไข ปรับปรุงยอด หรือเพิ่มชื่อสินค้าในไฟล์ Google Sheets คุณสามารถกดเพียงคลิกเดียวจากใน Sheets เพื่อให้รายการอัปเดตส่งกลับมายังฐานข้อมูล Cloud และแอปสต๊อกได้ทันที!
+            </p>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-700">📋 ขั้นตอนการติดตั้งสคริปต์ใน Google Sheets:</h4>
+              <ol className="list-decimal pl-5 text-xs text-slate-600 space-y-1.5 leading-relaxed">
+                <li>เปิดไฟล์ Google Sheets ของคุณที่ผูกเชื่อมต่อเอาไว้</li>
+                <li>ไปที่แถบเมนูด้านบน เลือก <span className="font-bold">ส่วนขยาย (Extensions)</span> &gt; เลือก <span className="font-bold">แอปส์สคริปต์ (Apps Script)</span></li>
+                <li>ลบโค้ดเก่าที่มีอยู่ออกทั้งหมด แล้วคลิกปุ่มด้านล่างเพื่อคัดลอกโค้ดสคริปต์ ไปวาง (Ctrl+V) ลงในช่องเขียนโค้ด</li>
+                <li>คลิกไอคอน <span className="font-bold">บันทึกโครงการ (รูปแผ่นดิสก์ 💾)</span> ที่แถบเครื่องมือด้านบน</li>
+                <li>กลับหน้าต่าง Google Sheets แล้วลอง <span className="font-bold">กดรีเฟรชหน้าเว็บ Sheets หนึ่งครั้ง</span> จะปรากฏเมนูทางขวาสุดชื่อ <span className="font-bold text-emerald-700">"📦 เมนูแอปคลังสินค้า"</span></li>
+                <li>คุณสามารถกดใช้งาน <span className="font-bold text-emerald-700">"🚀 ซิงก์ข้อมูลไปแอปคลัง"</span> เพื่อซิงก์ด่วน ได้ทันที! (ในการรันสิทธิ์ครั้งแรก Google จะขอให้กดอนุญาตสิทธิ์เข้าถึง ให้ทำตามขั้นตอน "วิธียกเลิกคำเตือน / ขั้นสูง" เพื่ออนุญาต)</li>
+              </ol>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                  สคริปต์สำเร็จรูป (โค้ดสำหรับนำไปวางใน Google Apps Script):
+                </span>
+                <button
+                  onClick={handleCopyAppsScript}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                >
+                  {isScriptCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-white" />
+                      <span>คัดลอกสำเร็จแล้ว!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Clipboard className="w-3.5 h-3.5" />
+                      <span>คัดลอกโค้ดสำเร็จรูป</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="relative">
+                <pre className="p-4 bg-slate-900 text-slate-200 text-[10.5px] font-mono leading-relaxed rounded-lg overflow-x-auto max-h-[250px] border border-slate-800">
+                  {getAppsScriptCode()}
+                </pre>
+                <div className="absolute top-2 right-2 px-2 py-1 bg-slate-800 rounded text-[9px] text-slate-400 font-mono">
+                  ✨ พ่วงปลายทาง Webhook แล้วอัตโนมัติ
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 3. CSV File Backup & Excel Import Area */}
       <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
