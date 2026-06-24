@@ -637,18 +637,7 @@ export default function LoginScreen({
 
         </div>
 
-        {/* Clear memory trigger */}
-        <div className="mt-6 flex flex-col items-center justify-center gap-1.5 text-center animate-fade-in relative z-10">
-          <button
-            onClick={handleSystemWipe}
-            className="px-4 py-2 border border-slate-200 hover:border-rose-200 text-slate-500 hover:text-rose-600 bg-white hover:bg-rose-50 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            🧹 เคลียร์ประวัติจำลอง & รีเซ็ตระบบสต๊อกใหม่ทั้งหมด
-          </button>
-          <p className="text-[10px] text-slate-400 max-w-[280px] leading-relaxed">
-            *จะทำการล้างข้อมูลแคช LocalStorage อย่างปลอดภัยทั้งหมดเพื่อเริ่มต้นใช้งานข้อมูลจำลองเซ็ตตั้งต้นของระบบ
-          </p>
-        </div>
+        {/* Clear memory trigger removed based on user request */}
 
       </div>
 

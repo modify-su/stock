@@ -20,6 +20,7 @@ interface InventoryTableProps {
   canManageProducts?: boolean;
   canRecordTransactions?: boolean;
   canDeleteProducts?: boolean;
+  canResetSystem?: boolean;
   onClearAllProducts?: () => Promise<void>;
 }
 
@@ -41,6 +42,7 @@ export default function InventoryTable({
   canManageProducts = true,
   canRecordTransactions = true,
   canDeleteProducts = true,
+  canResetSystem = true,
 }: InventoryTableProps) {
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -222,7 +224,7 @@ export default function InventoryTable({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {canDeleteProducts && onClearAllProducts && products.length > 0 && (
+          {canResetSystem && onClearAllProducts && products.length > 0 && (
             <button
               id="btn-clear-all-products"
               onClick={() => {

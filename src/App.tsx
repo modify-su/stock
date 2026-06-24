@@ -718,6 +718,20 @@ export default function App() {
             <span>ภาพรวม & แดชบอร์ด</span>
           </button>
           <button
+            onClick={() => setActiveMenuTab('OPERATIONS')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
+              activeMenuTab === 'OPERATIONS'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <RefreshCcw className="w-4 h-4" />
+            <span>บันทึกความเคลื่อนไหว</span>
+            {preSelectedProductId && (
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
+            )}
+          </button>
+          <button
             onClick={() => {
               setActiveMenuTab('INVENTORY');
               handleClearFilters();
@@ -736,20 +750,6 @@ export default function App() {
               }`}>
                 {products.filter(p => p.quantity <= p.minStock).length}
               </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveMenuTab('OPERATIONS')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
-              activeMenuTab === 'OPERATIONS'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-            }`}
-          >
-            <RefreshCcw className="w-4 h-4" />
-            <span>บันทึกความเคลื่อนไหว</span>
-            {preSelectedProductId && (
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
             )}
           </button>
           <button
@@ -945,6 +945,7 @@ export default function App() {
             canManageProducts={rolePermissions[currentUser.role].manageProducts}
             canRecordTransactions={rolePermissions[currentUser.role].recordTransactions}
             canDeleteProducts={rolePermissions[currentUser.role].manageProducts}
+            canResetSystem={rolePermissions[currentUser.role].resetSystem}
           />
         )}
 
