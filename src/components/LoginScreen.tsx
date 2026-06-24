@@ -58,6 +58,36 @@ export default function LoginScreen({
 }: LoginScreenProps) {
   const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'FORGOT'>('LOGIN');
 
+  // Sync mode with URL hash on mount and hash change
+  React.useEffect(() => {
+    const syncModeFromHash = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (hash === '#register') {
+        setMode('REGISTER');
+      } else if (hash === '#forgot') {
+        setMode('FORGOT');
+      } else if (hash === '#login') {
+        setMode('LOGIN');
+      }
+    };
+
+    syncModeFromHash();
+
+    window.addEventListener('hashchange', syncModeFromHash);
+    return () => {
+      window.removeEventListener('hashchange', syncModeFromHash);
+    };
+  }, []);
+
+  // Update hash when mode changes
+  React.useEffect(() => {
+    const currentHash = window.location.hash.toLowerCase();
+    const expectedHash = `#${mode.toLowerCase()}`;
+    if (currentHash !== expectedHash) {
+      window.location.hash = mode.toLowerCase();
+    }
+  }, [mode]);
+
   // Login States
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');

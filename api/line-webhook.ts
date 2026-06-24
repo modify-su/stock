@@ -166,7 +166,7 @@ ${productsContext}
               }
             });
             const geminiResponse = await activeAi.models.generateContent({
-              model: "gemini-3.5-flash",
+              model: "gemini-2.5-flash",
               contents: systemPrompt
             });
             responseText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
