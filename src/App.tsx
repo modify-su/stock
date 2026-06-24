@@ -440,6 +440,18 @@ export default function App() {
   };
 
   // --- Core Methods ---
+
+  // Helper to remove any undefined properties from object for Firestore compatibility
+  const cleanFirestoreData = <T extends object>(obj: T): T => {
+    const cleaned: any = {};
+    Object.keys(obj).forEach((key) => {
+      const val = (obj as any)[key];
+      if (val !== undefined) {
+        cleaned[key] = val;
+      }
+    });
+    return cleaned as T;
+  };
   
   // Add new dynamic product
   const handleAddProduct = async (newProductData: Omit<Product, 'id' | 'updatedAt'>) => {
@@ -449,15 +461,40 @@ export default function App() {
       id,
       updatedAt: new Date().toISOString(),
     };
-    await setDoc(doc(db, 'products', id), newProduct);
+    await setDoc(doc(db, 'products', id), cleanFirestoreData(newProduct));
   };
 
   // Update existing product meta properties
   const handleUpdateProduct = async (updatedProduct: Product) => {
-    await setDoc(doc(db, 'products', updatedProduct.id), {
-      ...updatedProduct,
-      updatedAt: new Date().toISOString()
-    });
+    const originalProduct = products.find(p => p.id === updatedProduct.id);
+    if (originalProduct && originalProduct.quantity !== updatedProduct.quantity) {
+      const diff = updatedProduct.quantity - originalProduct.quantity;
+      const txId = `tx-${Date.now()}`;
+      const newTx: Transaction = {
+        id: txId,
+        productId: updatedProduct.id,
+        productSku: updatedProduct.sku,
+        productName: updatedProduct.name,
+        type: diff > 0 ? 'IN' : 'OUT',
+        quantity: Math.abs(diff),
+        date: new Date().toISOString(),
+        reason: `ปรับปรุงข้อมูลสต๊อกปัจจุบันโดยตรงจากหน้าจอแก้ไขสินค้า (เดิม: ${originalProduct.quantity} -> ใหม่: ${updatedProduct.quantity})`,
+        operator: currentUser?.name || 'ผู้ดูแลระบบ',
+      };
+      
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'products', updatedProduct.id), cleanFirestoreData({
+        ...updatedProduct,
+        updatedAt: new Date().toISOString()
+      }));
+      batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
+      await batch.commit();
+    } else {
+      await setDoc(doc(db, 'products', updatedProduct.id), cleanFirestoreData({
+        ...updatedProduct,
+        updatedAt: new Date().toISOString()
+      }));
+    }
   };
 
   // Delete product
@@ -513,7 +550,7 @@ export default function App() {
 
       const batch = writeBatch(db);
       // Write transaction doc
-      batch.set(doc(db, 'transactions', txId), newTx);
+      batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
       // Update product qty and updatedAt
       batch.update(doc(db, 'products', p.id), {
         quantity: adjustedQty,
@@ -521,7 +558,7 @@ export default function App() {
       });
       await batch.commit();
     } else {
-      await setDoc(doc(db, 'transactions', txId), newTx);
+      await setDoc(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
     }
   };
 

@@ -745,17 +745,16 @@ export default function InventoryTable({
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-505 mb-1">จำนวนคงคลังปัจจุบัน</label>
+                  <label className="block text-xs font-semibold text-slate-505 mb-1">จำนวนคงคลังปัจจุบัน *</label>
                   <input
                     type="number"
                     min={0}
                     value={editingProduct.quantity}
                     onChange={(e) => setEditingProduct({ ...editingProduct, quantity: Number(e.target.value) })}
-                    className="w-full px-3 py-1.5 text-sm bg-slate-100 border border-slate-200 rounded-lg text-slate-500 focus:outline-hidden cursor-not-allowed"
-                    disabled
-                    title="กรุณาใช้ระบบบันทึกความรับเข้า/ส่งออกเพื่ออัปเดตจำนวนสินค้าคลังเพื่อความโปร่งใสและถูกต้องของระบบบัญชี"
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                    required
                   />
-                  <span className="text-[9px] text-slate-400 mt-0.5 block">อัปเดตผ่านบันทึกงาน</span>
+                  <span className="text-[9px] text-blue-600 font-semibold mt-0.5 block">แก้ไขได้ตรงโดยระบบจะซิงค์ประวัติให้</span>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">เกณฑ์แจ้งเตือนสต๊อกต่ำ</label>
