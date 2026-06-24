@@ -119,7 +119,7 @@ export const createInventorySpreadsheet = async (
               startRowIndex: 0,
               endRowIndex: 1,
               startColumnIndex: 0,
-              endColumnIndex: 8,
+              endColumnIndex: 10,
             },
             cell: {
               userEnteredFormat: {
@@ -207,6 +207,8 @@ export const syncProductsToSpreadsheet = async (
     'หน่วยนับ (Unit)',
     'ตำแหน่งจัดเก็บ (Storage Location)',
     'อัปเดตล่าสุด (Last Updated Time)',
+    'น้ำหนัก (Weight)',
+    'หน่วยน้ำหนัก (Weight Unit)',
   ];
 
   const rows = products.map((p) => [
@@ -218,12 +220,14 @@ export const syncProductsToSpreadsheet = async (
     p.unit || 'ชิ้น',
     p.location || '-',
     p.updatedAt ? new Date(p.updatedAt).toLocaleString('th-TH') : '-',
+    p.weight !== undefined && p.weight !== null ? p.weight : '-',
+    p.weightUnit || '-',
   ]);
 
   const values = [headers, ...rows];
 
   // 1. Clear existing sheets values first so stale items don't linger
-  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:Z1000:clear`, {
+  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:Z1000:clear`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -232,7 +236,7 @@ export const syncProductsToSpreadsheet = async (
 
   // 2. Put new array records
   const response = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -268,7 +272,7 @@ export const syncProductsToSpreadsheet = async (
                 sheetId: 0, // First sheet
                 dimension: 'COLUMNS',
                 startIndex: 0,
-                endIndex: 8,
+                endIndex: 10,
               },
             },
           },
@@ -290,7 +294,7 @@ export const fetchSpreadsheetProducts = async (
 ): Promise<Omit<Product, 'id' | 'updatedAt'>[]> => {
   const sheetName = await getFirstSheetName(accessToken, spreadsheetId);
   const response = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A2:H1000`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A2:J1000`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -313,7 +317,7 @@ export const fetchSpreadsheetProducts = async (
   const parsedProducts: Omit<Product, 'id' | 'updatedAt'>[] = [];
 
   for (const row of rows) {
-    // Columns: [sku, name, category, quantity, minStock, unit, location, updatedAt]
+    // Columns: [sku, name, category, quantity, minStock, unit, location, updatedAt, weight, weightUnit]
     const sku = row[0]?.trim() || '';
     const name = row[1]?.trim() || '';
     const category = row[2]?.trim() || 'ทั่วไป';
@@ -321,6 +325,12 @@ export const fetchSpreadsheetProducts = async (
     const minStock = parseInt(row[4]?.trim()) || 5;
     const unit = row[5]?.trim() || 'ชิ้น';
     const location = row[6]?.trim() || 'Zone-A';
+
+    // Parse weight and weightUnit if present
+    const rawWeight = row[8]?.trim();
+    const weight = rawWeight && rawWeight !== '-' ? parseFloat(rawWeight) : undefined;
+    const rawWeightUnit = row[9]?.trim();
+    const weightUnit = rawWeightUnit && rawWeightUnit !== '-' ? rawWeightUnit : undefined;
 
     if (!sku || !name) continue;
 
@@ -332,6 +342,8 @@ export const fetchSpreadsheetProducts = async (
       minStock,
       unit,
       location,
+      weight: (weight !== undefined && !isNaN(weight)) ? weight : undefined,
+      weightUnit: weightUnit || undefined,
     });
   }
 

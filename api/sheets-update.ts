@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs } from "firebase/firestore";
 import type { IncomingMessage, ServerResponse } from "http";
 
 const firebaseConfig = {
@@ -65,13 +65,30 @@ export default async function handler(req: IncomingMessage & { method?: string }
       return res.end(JSON.stringify({ error: "Unauthorized Spreadsheet ID: " + spreadsheetId }));
     }
 
+    // Load existing products to map SKU to existing document ID
+    const productsSnapshot = await getDocs(collection(db, "products"));
+    const skuMap = new Map<string, string>(); // sku -> docId
+    productsSnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (data.sku) {
+        skuMap.set(data.sku.trim().toLowerCase(), docSnap.id);
+      }
+    });
+
     // Update products in Firestore
     if (Array.isArray(products)) {
       for (const prod of products) {
         if (!prod.sku) continue;
-        const prodRef = doc(db, "products", prod.sku);
-        await setDoc(prodRef, {
-          sku: prod.sku,
+        const cleanSku = prod.sku.trim().toLowerCase();
+        const existingId = skuMap.get(cleanSku);
+        const id = existingId || `prod-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+        const prodRef = doc(db, "products", id);
+        
+        // Construct the product document fields cleanly
+        const productUpdate: Record<string, any> = {
+          id: id,
+          sku: prod.sku.toUpperCase().trim(),
           name: prod.name || "",
           category: prod.category || "ทั่วไป",
           quantity: Number(prod.quantity) || 0,
@@ -79,7 +96,17 @@ export default async function handler(req: IncomingMessage & { method?: string }
           unit: prod.unit || "ชิ้น",
           location: prod.location || "ไม่ได้ระบุ",
           updatedAt: new Date().toISOString()
-        });
+        };
+
+        if (prod.weight !== undefined && prod.weight !== null && prod.weight !== "") {
+          const w = Number(prod.weight);
+          if (!isNaN(w)) {
+            productUpdate.weight = w;
+            productUpdate.weightUnit = prod.weightUnit || "g";
+          }
+        }
+
+        await setDoc(prodRef, productUpdate, { merge: true });
       }
     }
 

@@ -83,8 +83,8 @@ function syncToInventoryApp() {
     return;
   }
   
-  // ดึงข้อมูลแถวทั้งหมด ยกเว้นแถวแรกที่เป็นหัวข้อหัวตาราง (A2 ถึง G สุดขอบ)
-  const range = sheet.getRange(2, 1, lastRow - 1, 7);
+  // ดึงข้อมูลแถวทั้งหมด ยกเว้นแถวแรกที่เป็นหัวข้อหัวตาราง (A2 ถึง J สุดขอบ)
+  const range = sheet.getRange(2, 1, lastRow - 1, 10);
   const values = range.getValues();
   
   const products = [];
@@ -94,6 +94,9 @@ function syncToInventoryApp() {
     var name = String(row[1] || '').trim();
     if (!sku || !name) continue; // ข้ามข้อมูลว่างตัวหลัก
     
+    var weightVal = row[8] !== undefined && row[8] !== null && String(row[8]).trim() !== '-' ? Number(row[8]) : null;
+    var weightUnitVal = row[9] !== undefined && row[9] !== null && String(row[9]).trim() !== '-' ? String(row[9]).trim() : null;
+
     products.push({
       sku: sku,
       name: name,
@@ -101,7 +104,9 @@ function syncToInventoryApp() {
       quantity: Number(row[3]) || 0,
       minStock: Number(row[4]) || 0,
       unit: String(row[5] || 'ชิ้น').trim(),
-      location: String(row[6] || '-').trim()
+      location: String(row[6] || '-').trim(),
+      weight: (weightVal !== null && !isNaN(weightVal)) ? weightVal : null,
+      weightUnit: weightUnitVal
     });
   }
 
