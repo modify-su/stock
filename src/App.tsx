@@ -816,7 +816,7 @@ export default function App() {
                 }`}
               >
                 <FileSpreadsheet className="w-4 h-4" />
-                <span>ซิงค์ & สำรองข้อมูล (Google Sheets)</span>
+                <span>ซิงค์ & ส่งออกข้อมูล (Google Sheets / Excel / CSV)</span>
               </button>
               <button
                 onClick={() => setActiveMenuTab('SETTINGS')}

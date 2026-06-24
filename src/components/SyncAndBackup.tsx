@@ -436,7 +436,7 @@ function onEdit(e) {
 
   const handleExportProductsToCsv = () => {
     try {
-      const headers = ["ชื่อสินค้า", "รหัสสินค้า_SKU", "หมวดหมู่", "จำนวนคงเหลือ", "เกณฑ์แจ้งเตือนสินค้าต่ำสุด", "หน่วยนับ", "ตำแหน่งชั้นวาง"];
+      const headers = ["ชื่อสินค้า", "รหัสสินค้า_SKU", "หมวดหมู่", "จำนวนคงเหลือ", "เกณฑ์แจ้งเตือนสินค้าต่ำสุด", "หน่วยนับ", "ตำแหน่งชั้นวาง", "น้ำหนัก", "หน่วยน้ำหนัก"];
       const rows = products.map(p => [
         p.name,
         p.sku,
@@ -444,7 +444,9 @@ function onEdit(e) {
         p.quantity.toString(),
         p.minStock.toString(),
         p.unit || 'ชิ้น',
-        p.location || '-'
+        p.location || '-',
+        p.weight !== undefined && p.weight !== null ? p.weight.toString() : '-',
+        p.weightUnit || '-'
       ]);
       const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(col => `"${col.replace(/"/g, '""')}"`).join(","))].join("\n");
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -452,6 +454,52 @@ function onEdit(e) {
       const link = document.createElement("a");
       link.setAttribute("href", url);
       link.setAttribute("download", `Backup_Inventory_${settings.appName || 'Stock'}_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleExportTransactionsToCsv = () => {
+    try {
+      const headers = [
+        "วันที่-เวลา",
+        "รหัสสินค้า_SKU",
+        "ชื่อสินค้า",
+        "ประเภทรายการ",
+        "จำนวน",
+        "น้ำหนักรวม",
+        "หน่วยน้ำหนัก",
+        "ผู้ปฏิบัติการ",
+        "เลขที่อ้างอิง",
+        "สถานะสินค้าตีกลับ",
+        "หมายเหตุ/เหตุผล"
+      ];
+      const rows = transactions.map(t => {
+        let typeStr = t.type === 'IN' ? 'รับเข้า (IN)' : t.type === 'OUT' ? 'เบิกออก (OUT)' : 'สินค้าคืน/ตีกลับ (RETURN)';
+        let returnStr = t.returnStatus === 'RE_STOCK' ? 'คืนสต๊อกหลัก' : t.returnStatus === 'DAMAGED_WRITE_OFF' ? 'สินค้าชำรุด/เขียนตัดบัญชี (Write-off)' : t.returnStatus === 'PENDING_INSPECT' ? 'รอตรวจสอบคุณภาพ' : '-';
+        return [
+          t.date ? new Date(t.date).toLocaleString('th-TH') : '-',
+          t.productSku,
+          t.productName,
+          typeStr,
+          t.quantity.toString(),
+          t.weight !== undefined && t.weight !== null ? t.weight.toString() : '-',
+          t.weightUnit || '-',
+          t.operator || '-',
+          t.referenceNo || '-',
+          returnStr,
+          t.reason || '-'
+        ];
+      });
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(col => `"${col.replace(/"/g, '""')}"`).join(","))].join("\n");
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Transaction_Movement_Report_${settings.appName || 'Stock'}_${new Date().toISOString().slice(0, 10)}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -864,47 +912,74 @@ function onEdit(e) {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Block: Export actions */}
-          <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3 flex flex-col justify-between">
-            <div className="space-y-1.5">
-              <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Download className="w-3.5 h-3.5 text-blue-600" />
-                <span>ดาวน์โหลดข้อมูลสต๊อก (Export Backup)</span>
-              </h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                ดาวน์โหลดตารางผลิตภัณฑ์สินค้าทั้งหมดเป็นไฟล์นามสกุลมาตรฐาน CSV เพื่อเซฟเป็นบันทึกสรุปรอบบัญชี หรือสั่งเขียนลงโปรแกรม Microsoft Excel
-              </p>
-            </div>
+          <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50 space-y-4 flex flex-col justify-between">
+            <div className="space-y-4">
+              {/* Product inventory export */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5 text-blue-600" />
+                  <span>ดาวน์โหลดข้อมูลสินค้าคงเหลือในคลัง (Export Current Inventory)</span>
+                </h4>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  ส่งออกตารางสินค้าปัจจุบันพร้อมน้ำหนักและตำแหน่งจัดวางเป็นไฟล์ Excel / CSV (.csv) รองรับการเปิดใช้งานและกรองข้อมูลด้วย Microsoft Excel
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    onClick={handleExportProductsToCsv}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>ดาวน์โหลดสรุปสต๊อกปัจจุบัน (.CSV / Excel)</span>
+                  </button>
 
-            <div className="flex flex-wrap gap-2 pt-2">
-              <button
-                onClick={handleExportProductsToCsv}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>ดาวน์โหลดข้อมูล (.CSV)</span>
-              </button>
+                  <button
+                    onClick={() => {
+                      const headers = ["ชื่อสินค้า", "รหัสสินค้า_SKU", "หมวดหมู่", "จำนวนคงเหลือ", "เกณฑ์แจ้งเตือนสินค้าต่ำสุด", "หน่วยนับ", "ตำแหน่งชั้นวาง", "น้ำหนัก", "หน่วยน้ำหนัก"];
+                      const rows = products.map(p => [
+                        p.name,
+                        p.sku,
+                        p.category,
+                        p.quantity.toString(),
+                        p.minStock.toString(),
+                        p.unit || 'ชิ้น',
+                        p.location || '-',
+                        p.weight !== undefined && p.weight !== null ? p.weight.toString() : '-',
+                        p.weightUnit || '-'
+                      ]);
+                      const tsvContent = [headers.join("\t"), ...rows.map(e => e.join("\t"))].join("\n");
+                      navigator.clipboard.writeText(tsvContent);
+                      alert("📋 คัดลอกข้อมูลสินค้าแบบแบ่งคอลัมน์ (Tab-Separated) ลงบอร์ดคลิปบอร์ดแล้ว! คุณสามารถเปิด Google Sheets แล้วกด Ctrl+V เพื่อวางข้อมูลได้เลยทันที");
+                    }}
+                    className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer border border-slate-300"
+                  >
+                    <Clipboard className="w-3 h-3" />
+                    <span>คัดลอกด่วนไป Google Sheets (TSV)</span>
+                  </button>
+                </div>
+              </div>
 
-              <button
-                onClick={() => {
-                  const headers = ["ชื่อสินค้า", "รหัสสินค้า_SKU", "หมวดหมู่", "จำนวนคงเหลือ", "เกณฑ์แจ้งเตือนสินค้าต่ำสุด", "หน่วยนับ", "ตำแหน่งชั้นวาง"];
-                  const rows = products.map(p => [
-                    p.name,
-                    p.sku,
-                    p.category,
-                    p.quantity.toString(),
-                    p.minStock.toString(),
-                    p.unit || 'ชิ้น',
-                    p.location || '-'
-                  ]);
-                  const tsvContent = [headers.join("\t"), ...rows.map(e => e.join("\t"))].join("\n");
-                  navigator.clipboard.writeText(tsvContent);
-                  alert("📋 คัดลอกข้อมูลสินค้าแบบแบ่งคอลัมน์ (Tab-Separated) ลงบอร์ดคลิปบอร์ดแล้ว! คุณสามารถเปิด Google Sheets แล้วกด Ctrl+V เพื่อวางข้อมูลได้เลยทันที");
-                }}
-                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-300"
-              >
-                <Clipboard className="w-3.5 h-3.5" />
-                <span>คัดลอกด่วนไป Google Sheets (TSV)</span>
-              </button>
+              {/* Separator line */}
+              <div className="border-t border-slate-200/60 my-2"></div>
+
+              {/* Transactions log export */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>ดาวน์โหลดประวัติการเบิกออก-รับเข้าคลังรายเดือน (Export Monthly Movement Logs)</span>
+                </h4>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  ดาวน์โหลดรายงานประวัติการเดินสะพัดคลังทั้งหมด เพื่อนำไปสรุปยอดรายเดือน คำนวณปริมาณการเบิกจ่ายสินค้า และวางแผนงวดสต๊อกถัดไป
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    onClick={handleExportTransactionsToCsv}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>ดาวน์โหลดประวัติเคลื่อนไหวคลัง (.CSV / Excel)</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
