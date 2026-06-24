@@ -135,7 +135,7 @@ ${productsContext}
               let replyText = "";
               try {
                 const geminiResponse = await ai.models.generateContent({
-                  model: 'gemini-2.5-flash',
+                  model: 'gemini-3.5-flash',
                   contents: systemPrompt
                 });
                 replyText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
