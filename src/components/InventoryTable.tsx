@@ -70,6 +70,8 @@ export default function InventoryTable({
   const [newMinStock, setNewMinStock] = useState<number>(10);
   const [newUnit, setNewUnit] = useState('ชิ้น');
   const [newLoc, setNewLoc] = useState('');
+  const [newWeight, setNewWeight] = useState<string>('');
+  const [newWeightUnit, setNewWeightUnit] = useState<string>('g');
 
   // Sku uniqueness checks
   const [validationError, setValidationError] = useState('');
@@ -108,6 +110,8 @@ export default function InventoryTable({
     setNewMinStock(10);
     setNewUnit('ชิ้น');
     setNewLoc('Zone A - ชั้น 1');
+    setNewWeight('');
+    setNewWeightUnit('g');
     setValidationError('');
     setIsAddOpen(true);
   };
@@ -136,6 +140,8 @@ export default function InventoryTable({
       minStock: Number(newMinStock),
       unit: newUnit.trim() || 'ชิ้น',
       location: newLoc.trim() || 'คลังทั่วไป',
+      weight: newWeight ? Number(newWeight) : undefined,
+      weightUnit: newWeight ? newWeightUnit : undefined,
     });
 
     setIsAddOpen(false);
@@ -423,7 +429,14 @@ export default function InventoryTable({
                     </td>
                     <td className="py-3 px-4">
                       <div className="font-medium text-slate-800">{p.name}</div>
-                      <div className="text-[10px] text-slate-400 font-sans mt-0.5">อัปเดต: {new Date(p.updatedAt).toLocaleString('th-TH')}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-slate-400 font-sans">อัปเดต: {new Date(p.updatedAt).toLocaleString('th-TH')}</span>
+                        {p.weight !== undefined && p.weight !== null && (
+                          <span className="inline-flex items-center px-1 py-0.2 text-[9px] font-semibold bg-sky-50 text-sky-700 border border-sky-100 rounded">
+                            ⚖️ {p.weight} {p.weightUnit === 'kg' ? 'กก. (kg)' : 'ก. (g)'}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200/50">
@@ -641,27 +654,73 @@ export default function InventoryTable({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-505 mb-1">หน่วยนับ</label>
-                  <input
-                    type="text"
-                    value={newUnit}
-                    onChange={(e) => setNewUnit(e.target.value)}
-                    placeholder="เช่น ชิ้น, กล่อง, แพ็ค"
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                    required
-                  />
+                  <label className="block text-xs font-semibold text-slate-505 mb-1">หน่วยนับ *</label>
+                  <select
+                    value={['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].includes(newUnit) ? newUnit : 'CUSTOM'}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'CUSTOM') {
+                        setNewUnit('');
+                      } else {
+                        setNewUnit(val);
+                      }
+                    }}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 mb-1"
+                  >
+                    {['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                    <option value="CUSTOM">อื่นๆ / เพิ่มเติม...</option>
+                  </select>
+                  {!['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].includes(newUnit) && (
+                    <input
+                      type="text"
+                      value={newUnit}
+                      onChange={(e) => setNewUnit(e.target.value)}
+                      placeholder="พิมพ์ระบุหน่วยนับ..."
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                      required
+                    />
+                  )}
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-505 mb-1">ตำแหน่งเก็บสินค้า (Shelf Location)</label>
-                <input
-                  type="text"
-                  value={newLoc}
-                  onChange={(e) => setNewLoc(e.target.value)}
-                  placeholder="เช่น Zone A - แถวที่ 2 ชั้น 3"
-                  className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-505 mb-1">ตำแหน่งเก็บสินค้า (Shelf Location)</label>
+                  <input
+                    type="text"
+                    value={newLoc}
+                    onChange={(e) => setNewLoc(e.target.value)}
+                    placeholder="เช่น Zone A - แถวที่ 2 ชั้น 3"
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-505 mb-1">น้ำหนัก (ระบุได้)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={newWeight}
+                      onChange={(e) => setNewWeight(e.target.value)}
+                      placeholder="เช่น 150"
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-505 mb-1">หน่วยน้ำหนัก</label>
+                    <select
+                      value={newWeightUnit}
+                      onChange={(e) => setNewWeightUnit(e.target.value)}
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                    >
+                      <option value="g">กรัม (g)</option>
+                      <option value="kg">กก. (kg)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
               <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
@@ -767,25 +826,75 @@ export default function InventoryTable({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">หน่วยนับ</label>
-                  <input
-                    type="text"
-                    value={editingProduct.unit || 'ชิ้น'}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, unit: e.target.value })}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                    required
-                  />
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">หน่วยนับ *</label>
+                  <select
+                    value={['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].includes(editingProduct.unit || 'ชิ้น') ? (editingProduct.unit || 'ชิ้น') : 'CUSTOM'}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'CUSTOM') {
+                        setEditingProduct({ ...editingProduct, unit: '' });
+                      } else {
+                        setEditingProduct({ ...editingProduct, unit: val });
+                      }
+                    }}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 mb-1"
+                  >
+                    {['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                    <option value="CUSTOM">อื่นๆ / เพิ่มเติม...</option>
+                  </select>
+                  {!['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].includes(editingProduct.unit || 'ชิ้น') && (
+                    <input
+                      type="text"
+                      value={editingProduct.unit || ''}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, unit: e.target.value })}
+                      placeholder="พิมพ์ระบุหน่วยนับ..."
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                      required
+                    />
+                  )}
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">ชั้นที่เก็บสินค้า (Shelf Location)</label>
-                <input
-                  type="text"
-                  value={editingProduct.location}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, location: e.target.value })}
-                  className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-150 focus:border-blue-500"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">ชั้นที่เก็บสินค้า (Shelf Location)</label>
+                  <input
+                    type="text"
+                    value={editingProduct.location}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, location: e.target.value })}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-150 focus:border-blue-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">น้ำหนัก (ระบุได้)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={editingProduct.weight !== undefined && editingProduct.weight !== null ? editingProduct.weight : ''}
+                      onChange={(e) => setEditingProduct({ 
+                        ...editingProduct, 
+                        weight: e.target.value ? Number(e.target.value) : undefined 
+                      })}
+                      placeholder="เช่น 150"
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">หน่วยน้ำหนัก</label>
+                    <select
+                      value={editingProduct.weightUnit || 'g'}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, weightUnit: e.target.value })}
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                    >
+                      <option value="g">กรัม (g)</option>
+                      <option value="kg">กก. (kg)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
               <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">

@@ -9,6 +9,8 @@ export interface Product {
   location: string;
   updatedAt: string;
   price?: number;
+  weight?: number;
+  weightUnit?: string;
 }
 
 export type TransactionType = 'IN' | 'OUT' | 'RETURN';
@@ -28,6 +30,8 @@ export interface Transaction {
   // Dynamic fields based on type
   returnStatus?: ReturnStatus; // relevant only if type === 'RETURN'
   referenceNo?: string; // order number, invoice number, etc.
+  weight?: number;
+  weightUnit?: string;
 }
 
 export interface InventorySummary {

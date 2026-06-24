@@ -183,6 +183,14 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
                           </span>
                         </>
                       )}
+                      {log.weight !== undefined && log.weight !== null && (
+                        <>
+                          <span className="text-slate-300">|</span>
+                          <span className="flex items-center gap-1 text-[11px] bg-sky-50 px-1.5 py-0.5 rounded font-sans text-sky-700 border border-sky-100">
+                            ⚖️ น้ำหนัก: {log.weight} {log.weightUnit === 'kg' ? 'กก. (kg)' : 'ก. (g)'}
+                          </span>
+                        </>
+                      )}
                     </div>
 
                     <p className="mt-2 text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200 inline-block font-sans">

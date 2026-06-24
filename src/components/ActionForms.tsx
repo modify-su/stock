@@ -31,6 +31,8 @@ export default function ActionForms({
   const [operator, setOperator] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [returnStatus, setReturnStatus] = useState<ReturnStatus>('RE_STOCK');
+  const [weight, setWeight] = useState<string>('');
+  const [weightUnit, setWeightUnit] = useState<string>('g');
 
   // Ui helpers
   const [successMessage, setSuccessMessage] = useState('');
@@ -112,6 +114,8 @@ export default function ActionForms({
       operator: operator.trim(),
       referenceNo: referenceNo.trim() || undefined,
       returnStatus: activeTab === 'RETURN' ? returnStatus : undefined,
+      weight: weight ? Number(weight) : undefined,
+      weightUnit: weight ? weightUnit : undefined,
     });
 
     // Success response and clear state
@@ -121,6 +125,7 @@ export default function ActionForms({
     setQuantity(1);
     setReason('');
     setReferenceNo('');
+    setWeight('');
     onClearPreSelection();
 
     // Auto clear success message
@@ -235,7 +240,7 @@ export default function ActionForms({
 
         <fieldset disabled={!canRecordTransactions} className="space-y-4">
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Product selection */}
           <div>
             <label className="block text-xs font-semibold text-slate-550 mb-1">
@@ -291,6 +296,35 @@ export default function ActionForms({
                 สูงสุดที่เบิกได้คือ {selectedProduct.quantity} {selectedProduct.unit || 'ชิ้น'}
               </p>
             )}
+          </div>
+
+          {/* Weight selector */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-550 mb-1">
+              น้ำหนักของรายการ (เลือกใส่ได้)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                step="any"
+                placeholder="เช่น 500, 1.5"
+                value={weight}
+                onChange={(e) => setWeight(e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+              />
+              <select
+                value={weightUnit}
+                onChange={(e) => setWeightUnit(e.target.value)}
+                className="px-2 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-100 focus:border-blue-400 shrink-0"
+              >
+                <option value="g">กรัม (g)</option>
+                <option value="kg">กิโลกรัม (kg)</option>
+              </select>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">
+              ระบุน้ำหนักรวมตามจริงเพื่อจดจำลงประวัติ
+            </p>
           </div>
         </div>
 
