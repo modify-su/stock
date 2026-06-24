@@ -59,6 +59,7 @@ export interface AppSettings {
   lineChannelAccessToken?: string;
   lineChannelSecret?: string;
   lineBotEnabled?: boolean;
+  lineBotSystemPrompt?: string;
 }
 
 export interface RolePermissions {

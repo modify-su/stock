@@ -114,6 +114,7 @@ export default function SystemSettings({
   const [lineBotEnabled, setLineBotEnabled] = useState(settings.lineBotEnabled || false);
   const [lineChannelAccessToken, setLineChannelAccessToken] = useState(settings.lineChannelAccessToken || '');
   const [lineChannelSecret, setLineChannelSecret] = useState(settings.lineChannelSecret || '');
+  const [lineBotSystemPrompt, setLineBotSystemPrompt] = useState(settings.lineBotSystemPrompt || '');
   const [isLineCopied, setIsLineCopied] = useState(false);
   const [lineSuccessMessage, setLineSuccessMessage] = useState('');
 
@@ -123,9 +124,10 @@ export default function SystemSettings({
       ...settings,
       lineBotEnabled,
       lineChannelAccessToken: lineChannelAccessToken.trim(),
-      lineChannelSecret: lineChannelSecret.trim()
+      lineChannelSecret: lineChannelSecret.trim(),
+      lineBotSystemPrompt: lineBotSystemPrompt.trim()
     });
-    setLineSuccessMessage('บันทึกการเชื่อมต่อ LINE Bot สำเร็จ! ขณะนี้ระบบดึงข้อความจากไลน์ผ่าน Webhook ไปประมวลผลสต๊อกด้วย Gemini AI เรียบร้อยครับ 🚀');
+    setLineSuccessMessage('บันทึกการเชื่อมต่อและข้อความตอบกลับ LINE Bot สำเร็จ! บอทจะเริ่มใช้คำสั่งวิเคราะห์ข้อเสนอแนะใหม่ทันทีครับ 🚀');
     setTimeout(() => setLineSuccessMessage(''), 5500);
   };
 
@@ -614,6 +616,52 @@ export default function SystemSettings({
                 className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-emerald-100 focus:border-emerald-550 disabled:opacity-55"
               />
               <p className="text-[10px] text-slate-400">ใช้ตรวจสอบ Signature (x-line-signature) เพื่อป้องกันแฮกเกอร์ป้อนข้อมูลเท็จทำลายเซิร์ฟเวอร์</p>
+            </div>
+
+            {/* Custom AI prompt message */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="block text-xs font-bold text-slate-600">
+                  🧠 ปรับแต่งบุคลิกภาพ / ข้อความวิเคราะห์ตอบกลับของบอท AI (System Prompt)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLineBotSystemPrompt(`คุณคือผู้ดูแลบอร์ดจัดการคลังสินค้าอัจฉริยะประมวลผลด้วย AI (Warehouse Stock Assistant Bot) สื่อสารผ่านแอพ LINE ด้วยภาษาไทยที่กระชับ ชัดเจน เปี่ยมความช่วยเหลือ และเป็นมิตร
+
+นี่คือข้อมูลคงคลังสินค้าล่าสุดจริงภายในระบบ (เรียลไทม์):
+{{productsContext}}
+
+พนักงานหรือผู้ใช้พิมพ์คำถามว่า: "{{text}}"
+
+โปรดทำตามข้อตกลงในการวิเคราะห์ข้อมูลเพื่อตอบพนักงาน:
+1. หากพนักงานกล่าวทักทาย เช่น "สวัสดี", "ดีครับ/ค่ะ" ให้ทักทายกลับและอธิบายงานที่ช่วยตรวจสอบได้ เช่น "สวัสดีครับ! ผมบอทคลังสินค้าอัจฉริยะ ยินดีให้ความช่วยเหลือครับ คุณสามารถพิมพ์ชื่อสินค้าเพื่อตรวจสต๊อก สอบถามพิกัดที่เก็บสินค้า หรือถามหาสินค้าใกล้เหลือน้อยได้เลยครับ! 📦"
+2. หากพิมพ์เกี่ยวกับสต๊อกเหลือน้อย หรือสินค้าใกล้หมด หรือแจ้งเตือน ให้ตรวจสอบสินค้าที่จำนวนเหลือน้อยกว่าค่าจุดแจ้งเตือน (minStock) หรือสต๊อกเป็น 0 แล้วสรุปออกมาเป็นรายการแยกย่อยที่เข้าใจเข้าใจง่าย เช่น "⚠️ สินค้าใกล้หมดในระบบมีดังนี้ครับ..."
+3. หากพิมพ์พิมพ์ชื่อสินค้าหรือส่วนหนึ่งของชื่อ หรือ SKU ทางร้าน ให้ตอบข้อมูลเฉพาะเจาะจง เช่น ชื่อสินค้า, จำนวนคงเหลือ, หน่วยนับ, พิกัดจานจัดเก็บ เพื่อแจ้งพนักงานอย่างมั่นใจ
+4. หากถามสินค้าบางชิ้นที่ไม่มีในรายการข้างต้นเลย ให้ระบุว่า "ขออภัยครับ ไม่พบรายการที่ตรงกับคีย์เวิร์ดนี้ในระบบคลังปัจจุบันครับ" อย่างสุภาพพร้อมบอกให้ลองพิมพ์ค้นหาด้วยรหัสหรือชื่ออื่น
+5. พยายามตอบเรียงเป็นข้อๆ (Bullet points) วงเล็บ และตัวหนาเพื่อให้แสดงผลผ่านหน้าจอแชต LINE บนมือถือได้งดงามและประหยัดพื้นที่มากที่สุด`);
+                  }}
+                  className="text-[10px] text-emerald-600 hover:underline cursor-pointer font-bold"
+                >
+                  🔄 คืนค่าเริ่มต้นแบบมาตรฐาน
+                </button>
+              </div>
+              <textarea
+                placeholder="ป้อนคำสั่งและวิธีตอบกลับของ AI บอทได้ตามใจชอบ เช่น 'คุณคือบอทคลังร้านค้าสมบูรณ์การค้า ตอบลูกค้าด้วยน้ำเสียงสุภาพ อ่อนน้อม ลงท้ายด้วย ค้าบ ตลอดเวลา...'"
+                value={lineBotSystemPrompt}
+                onChange={(e) => setLineBotSystemPrompt(e.target.value)}
+                disabled={!hasSettingsPermission}
+                rows={10}
+                className="w-full px-3 py-2 text-xs font-sans bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-emerald-100 focus:border-emerald-550 disabled:opacity-55 leading-relaxed"
+              />
+              <div className="bg-emerald-50/50 border border-emerald-100 rounded-lg p-2.5 text-[10.5px] text-emerald-800 space-y-1">
+                <p className="font-bold flex items-center gap-1">💡 แนะนำการปรับข้อความบอท:</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-emerald-750">
+                  <li>ปรับเปลี่ยนโทนคำตอบ ชื่อบริษัท หรือเพิ่มเงื่อนไขการทำงานเฉพาะของฝ่ายคลังได้ทันที</li>
+                  <li>ระบุ <code className="bg-emerald-100 px-1 rounded text-emerald-900 font-mono font-bold">{"{{productsContext}}"}</code> ในตำแหน่งที่ต้องการให้ระบบวางตารางจำนวนสินค้า</li>
+                  <li>ระบุ <code className="bg-emerald-100 px-1 rounded text-emerald-900 font-mono font-bold">{"{{text}}"}</code> ในตำแหน่งคำถามหรือคีย์เวิร์ดที่พนักงานแชตเข้ามา</li>
+                </ul>
+              </div>
             </div>
 
             {/* Save Button */}
