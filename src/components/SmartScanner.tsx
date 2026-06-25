@@ -66,6 +66,7 @@ export default function SmartScanner({
 
   // --- AI Shipping Label Scanning State ---
   const [cameraActive, setCameraActive] = useState(false);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<{
@@ -135,24 +136,42 @@ export default function SmartScanner({
   };
 
   // Turn on/off camera
-  const startCamera = async () => {
+  const startCamera = async (currentFacingMode = facingMode) => {
     setErrorMessage('');
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-      });
+      
+      // Attempt 1: Try with current facingMode (as ideal) and resolution
+      const constraints: MediaStreamConstraints = {
+        video: { 
+          facingMode: { ideal: currentFacingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+      
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (firstErr) {
+        console.warn("First camera attempt failed, trying basic video constraints:", firstErr);
+        // Attempt 2: Fallback to basic video stream (any available camera)
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        videoRef.current.play().catch(playErr => {
+          console.error("Video play failed:", playErr);
+        });
       }
       setCameraActive(true);
     } catch (err: any) {
       console.error("Camera access error:", err);
-      setErrorMessage("ไม่สามารถเข้าถึงกล้องถ่ายภาพได้ กรุณาตรวจสอบสิทธิ์การใช้งานกล้อง หรือใช้การอัปโหลดรูปภาพแทน");
+      setErrorMessage("ไม่สามารถเข้าถึงกล้องถ่ายภาพได้: " + (err.message || err.name || "สิทธิ์ถูกปฏิเสธ") + " แนะนำให้เปลี่ยนมาใช้วิธีอัปโหลดรูปภาพใบปะหน้าพัสดุ หรือสแกนผ่านลิงก์แท็บใหม่แทนได้ครับ");
       setCameraActive(false);
     }
   };
@@ -187,6 +206,11 @@ export default function SmartScanner({
         const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
         setSelectedImage(dataUrl);
         stopCamera();
+        
+        // Auto-trigger scanning!
+        setTimeout(() => {
+          handleScanWithAI(dataUrl);
+        }, 100);
       }
     }
   };
@@ -317,8 +341,9 @@ export default function SmartScanner({
   };
 
   // Send captured image to Gemini AI backend API
-  const handleScanWithAI = async () => {
-    if (!selectedImage) return;
+  const handleScanWithAI = async (imageToScan?: string) => {
+    const targetImage = imageToScan || selectedImage;
+    if (!targetImage) return;
 
     setIsScanning(true);
     setErrorMessage('');
@@ -331,7 +356,7 @@ export default function SmartScanner({
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ image: selectedImage })
+        body: JSON.stringify({ image: targetImage })
       });
 
       if (!response.ok) {
@@ -527,7 +552,13 @@ export default function SmartScanner({
         // Image processing
         const reader = new FileReader();
         reader.onload = (event) => {
-          setSelectedImage(event.target?.result as string);
+          const dataUrl = event.target?.result as string;
+          setSelectedImage(dataUrl);
+          
+          // Auto-trigger scanning!
+          setTimeout(() => {
+            handleScanWithAI(dataUrl);
+          }, 100);
         };
         reader.readAsDataURL(file);
       }
@@ -911,17 +942,29 @@ export default function SmartScanner({
                   </div>
                 </div>
 
-                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2">
+                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 flex-wrap px-2">
                   <button
                     onClick={captureFrame}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-md flex items-center gap-1.5"
+                    className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-md flex items-center gap-1.5 cursor-pointer"
                   >
                     <Camera className="w-4 h-4" />
                     <span>ถ่ายภาพใบลาเบล (Capture)</span>
                   </button>
                   <button
+                    onClick={() => {
+                      const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+                      setFacingMode(nextMode);
+                      startCamera(nextMode);
+                    }}
+                    className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center gap-1.5 cursor-pointer"
+                    title="สลับกล้องหน้า/หลัง"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>สลับกล้อง ({facingMode === 'environment' ? 'หลัง' : 'หน้า'})</span>
+                  </button>
+                  <button
                     onClick={stopCamera}
-                    className="bg-slate-800 text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-slate-700"
+                    className="bg-slate-800 text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-slate-700 cursor-pointer"
                   >
                     ยกเลิก
                   </button>
