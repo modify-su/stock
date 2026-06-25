@@ -45,6 +45,49 @@ interface ScannedItem {
   selectedAction: TransactionType;
   selectedReturnStatus?: ReturnStatus;
   selectedReason: string;
+  multiplier?: number;
+  multiplierReason?: string;
+}
+
+// Helper to parse promotion/bundle multiplier from SKU or Name (e.g. "5 แถม 2" or "ซื้อ 5 แถม 2" -> 7, or "5+2" -> 7, or "แพ็ค 12" -> 12)
+function parsePromoMultiplier(sku: string, name: string): { multiplier: number; reason: string } {
+  const combined = `${sku || ''} ${name || ''}`.toLowerCase();
+  
+  // Pattern 1: X แถม Y or XแถมY (e.g. 5 แถม 2, 5แถม2, ซื้อ 5 แถม 2, ซื้อ5แถม2)
+  const thaiPromoMatch = combined.match(/(\d+)\s*แถม\s*(\d+)/);
+  if (thaiPromoMatch) {
+    const x = parseInt(thaiPromoMatch[1], 10);
+    const y = parseInt(thaiPromoMatch[2], 10);
+    return { multiplier: x + y, reason: `โปรโมชัน ซื้อ ${x} แถม ${y} (รวม ${x + y} ชิ้น)` };
+  }
+
+  // Pattern 2: X+Y or X + Y (e.g. 5+2, 5 + 2, 10+2)
+  const plusMatch = combined.match(/(\d+)\s*\+\s*(\d+)/);
+  if (plusMatch) {
+    const x = parseInt(plusMatch[1], 10);
+    const y = parseInt(plusMatch[2], 10);
+    if (x > 0 && y > 0 && x < 100 && y < 100) {
+      return { multiplier: x + y, reason: `โปรโมชันแพ็ค ${x} + ${y} (รวม ${x + y} ชิ้น)` };
+    }
+  }
+
+  // Pattern 3: แถม Y or แถมY (e.g. แถม 1, แถม1, แถม 2)
+  const freeMatch = combined.match(/แถม\s*(\d+)/);
+  if (freeMatch) {
+    const y = parseInt(freeMatch[1], 10);
+    return { multiplier: 1 + y, reason: `ซื้อ 1 แถม ${y} (รวม ${1 + y} ชิ้น)` };
+  }
+
+  // Pattern 4: แพ็ค X (e.g. แพ็ค 6, แพ็ค 12)
+  const packMatch = combined.match(/แพ็ค\s*(\d+)|pack\s*(\d+)/i);
+  if (packMatch) {
+    const x = parseInt(packMatch[1] || packMatch[2], 10);
+    if (x > 0 && x < 200) {
+      return { multiplier: x, reason: `แพ็คเกจกล่อง/แพ็คละ ${x} ชิ้น` };
+    }
+  }
+
+  return { multiplier: 1, reason: "" };
 }
 
 export default function SmartScanner({
@@ -377,12 +420,17 @@ export default function SmartScanner({
       const actionType: TransactionType = data.detectedAction === 'IN' ? 'IN' : data.detectedAction === 'RETURN' ? 'RETURN' : 'OUT'; // Default to OUT
 
       // Enrich extracted items with required transaction mapping fields
-      const formattedItems = (data.extractedItems || []).map((item: any) => ({
-        ...item,
-        selectedAction: actionType,
-        selectedReturnStatus: actionType === 'RETURN' ? 'RE_STOCK' : undefined,
-        selectedReason: actionType === 'OUT' ? `เบิกจ่ายอัตโนมัติผ่านแทรคกิ้ง ${data.trackingNo || data.orderId || ''}`.trim() : 'รับเข้าคลังผ่านการสแกนใบลาเบล'
-      }));
+      const formattedItems = (data.extractedItems || []).map((item: any) => {
+        const promo = parsePromoMultiplier(item.sku, item.productName || (item.matchedProduct?.name));
+        return {
+          ...item,
+          selectedAction: actionType,
+          selectedReturnStatus: actionType === 'RETURN' ? 'RE_STOCK' : undefined,
+          selectedReason: actionType === 'OUT' ? `เบิกจ่ายอัตโนมัติผ่านแทรคกิ้ง ${data.trackingNo || data.orderId || ''}`.trim() : 'รับเข้าคลังผ่านการสแกนใบลาเบล',
+          multiplier: promo.multiplier,
+          multiplierReason: promo.reason
+        };
+      });
 
       setScanResult({
         orderId: data.orderId || '-',
@@ -506,14 +554,19 @@ export default function SmartScanner({
           // Enrich extracted actions with default states for React inputs
           const enrichedResults = data.results.map((pageRes: any) => ({
             ...pageRes,
-            extractedItems: pageRes.extractedItems.map((item: any) => ({
-              ...item,
-              selectedAction: pageRes.detectedAction,
-              selectedReturnStatus: pageRes.detectedAction === 'RETURN' ? 'RE_STOCK' : undefined,
-              selectedReason: pageRes.detectedAction === 'OUT' 
-                ? `เบิกสต๊อกผ่าน PDF ออเดอร์ (แผ่นที่ ${pageRes.pageNumber} แทรคกิ้ง: ${pageRes.trackingNo || pageRes.orderId || '-'})`
-                : `รับเข้าคลังสินค้าผ่าน PDF แผ่นที่ ${pageRes.pageNumber}`
-            }))
+            extractedItems: pageRes.extractedItems.map((item: any) => {
+              const promo = parsePromoMultiplier(item.sku, item.productName || (item.matchedProduct?.name));
+              return {
+                ...item,
+                selectedAction: pageRes.detectedAction,
+                selectedReturnStatus: pageRes.detectedAction === 'RETURN' ? 'RE_STOCK' : undefined,
+                selectedReason: pageRes.detectedAction === 'OUT' 
+                  ? `เบิกสต๊อกผ่าน PDF ออเดอร์ (แผ่นที่ ${pageRes.pageNumber} แทรคกิ้ง: ${pageRes.trackingNo || pageRes.orderId || '-'})`
+                  : `รับเข้าคลังสินค้าผ่าน PDF แผ่นที่ ${pageRes.pageNumber}`,
+                multiplier: promo.multiplier,
+                multiplierReason: promo.reason
+              };
+            })
           }));
           allResults.push(...enrichedResults);
         }
@@ -799,13 +852,17 @@ export default function SmartScanner({
       pageRes.extractedItems.forEach(item => {
         if (item.matched && item.matchedProduct) {
           const prod = item.matchedProduct;
+          const finalQty = item.quantity * (item.multiplier || 1);
+          const promoReasonSuffix = item.multiplier && item.multiplier > 1 
+            ? ` [รวมตัวคูณโปรโมชัน/ของแถม: x${item.multiplier} ชิ้น (${item.multiplierReason || ''})]` 
+            : '';
           validTxs.push({
             productId: prod.id,
             productSku: prod.sku,
             productName: prod.name,
             type: item.selectedAction,
-            quantity: item.quantity,
-            reason: item.selectedReason || (item.selectedAction === 'IN' ? 'รับเข้าคลังผ่านการสแกน PDF' : `เบิกออเดอร์อัตโนมัติผ่าน PDF ปะหน้าพัสดุ (หน้า ${pageRes.pageNumber})`),
+            quantity: finalQty,
+            reason: (item.selectedReason || (item.selectedAction === 'IN' ? 'รับเข้าคลังผ่านการสแกน PDF' : `เบิกออเดอร์อัตโนมัติผ่าน PDF ปะหน้าพัสดุ (หน้า ${pageRes.pageNumber})`)) + promoReasonSuffix,
             operator: operator.trim(),
             returnStatus: item.selectedAction === 'RETURN' ? item.selectedReturnStatus : undefined,
             referenceNo: pageRes.trackingNo && pageRes.trackingNo !== '-' ? pageRes.trackingNo : pageRes.orderId
@@ -865,6 +922,7 @@ export default function SmartScanner({
         updatedList[existingIdx].quantity += 1;
         setBarcodeList(updatedList);
       } else {
+        const promo = parsePromoMultiplier(foundProd.sku, foundProd.name);
         const newScanned: ScannedItem = {
           sku: foundProd.sku,
           productName: foundProd.name,
@@ -881,6 +939,8 @@ export default function SmartScanner({
           selectedAction: barcodeAction,
           selectedReturnStatus: barcodeAction === 'RETURN' ? barcodeReturnStatus : undefined,
           selectedReason: barcodeReason,
+          multiplier: promo.multiplier,
+          multiplierReason: promo.reason,
         };
         setBarcodeList([newScanned, ...barcodeList]);
       }
@@ -889,6 +949,7 @@ export default function SmartScanner({
     } else {
       playBeep('error');
       // Even if not found in db, allow adding as custom unmapped item
+      const promo = parsePromoMultiplier(query, `รหัสที่ไม่พบคลังคิวสินค้า (${query})`);
       const unmappedScanned: ScannedItem = {
         sku: query.toUpperCase(),
         productName: `รหัสที่ไม่พบคลังคิวสินค้า (${query})`,
@@ -898,6 +959,8 @@ export default function SmartScanner({
         selectedAction: barcodeAction,
         selectedReturnStatus: barcodeAction === 'RETURN' ? barcodeReturnStatus : undefined,
         selectedReason: barcodeReason,
+        multiplier: promo.multiplier,
+        multiplierReason: promo.reason,
       };
       setBarcodeList([unmappedScanned, ...barcodeList]);
       setErrorMessage(`⚠️ ไม่พบสินค้าที่มีรหัส SKU: "${query}" ในระบบคลังสินค้าหลัก แต่ได้สร้างรายการสแกนสำรองไว้ให้แล้วครับ`);
@@ -914,6 +977,13 @@ export default function SmartScanner({
   const adjustBarcodeQty = (index: number, amount: number) => {
     const updated = [...barcodeList];
     updated[index].quantity = Math.max(1, updated[index].quantity + amount);
+    setBarcodeList(updated);
+  };
+
+  // Update barcode list item field (e.g., multiplier)
+  const updateBarcodeItemField = (index: number, field: keyof ScannedItem, value: any) => {
+    const updated = [...barcodeList];
+    updated[index] = { ...updated[index], [field]: value };
     setBarcodeList(updated);
   };
 
@@ -944,13 +1014,17 @@ export default function SmartScanner({
     try {
       const transactionsPayload = validTxs.map(item => {
         const prod = item.matchedProduct!;
+        const finalQty = item.quantity * (item.multiplier || 1);
+        const promoReasonSuffix = item.multiplier && item.multiplier > 1 
+          ? ` [รวมตัวคูณโปรโมชัน/ของแถม: x${item.multiplier} ชิ้น (${item.multiplierReason || ''})]` 
+          : '';
         return {
           productId: prod.id,
           productSku: prod.sku,
           productName: prod.name,
           type: item.selectedAction,
-          quantity: item.quantity,
-          reason: item.selectedReason || (item.selectedAction === 'IN' ? 'รับเข้าคลังผ่านการสแกนลาเบล' : 'เบิกจ่ายด่วนผ่านเครื่องสแกนบาร์โค้ด'),
+          quantity: finalQty,
+          reason: (item.selectedReason || (item.selectedAction === 'IN' ? 'รับเข้าคลังผ่านการสแกนลาเบล' : 'เบิกจ่ายด่วนผ่านเครื่องสแกนบาร์โค้ด')) + promoReasonSuffix,
           operator: operator.trim(),
           returnStatus: item.selectedAction === 'RETURN' ? item.selectedReturnStatus : undefined,
           referenceNo: activeMode === 'AI_LABEL' ? (scanResult?.trackingNo !== '-' ? scanResult?.trackingNo : scanResult?.orderId) : undefined
@@ -1433,20 +1507,53 @@ export default function SmartScanner({
                                 )}
                               </td>
                               <td className="py-2 px-2">
-                                <div className="flex items-center justify-center gap-1">
-                                  <button
-                                    onClick={() => updatePdfBatchItemField(pageIdx, itemIdx, 'quantity', Math.max(1, item.quantity - 1))}
-                                    className="p-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
-                                  >
-                                    <Minus className="w-2.5 h-2.5" />
-                                  </button>
-                                  <span className="font-bold text-[11px] w-5 text-center">{item.quantity}</span>
-                                  <button
-                                    onClick={() => updatePdfBatchItemField(pageIdx, itemIdx, 'quantity', item.quantity + 1)}
-                                    className="p-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
-                                  >
-                                    <Plus className="w-2.5 h-2.5" />
-                                  </button>
+                                <div className="flex flex-col items-center gap-1.5">
+                                  {/* Primary Qty Controller */}
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={() => updatePdfBatchItemField(pageIdx, itemIdx, 'quantity', Math.max(1, item.quantity - 1))}
+                                      className="p-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
+                                    >
+                                      <Minus className="w-2.5 h-2.5" />
+                                    </button>
+                                    <span className="font-bold text-[11px] w-5 text-center">{item.quantity}</span>
+                                    <button
+                                      onClick={() => updatePdfBatchItemField(pageIdx, itemIdx, 'quantity', item.quantity + 1)}
+                                      className="p-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
+                                    >
+                                      <Plus className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+
+                                  {/* Multiplier Setup */}
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="flex items-center gap-0.5 text-[9px] text-slate-500">
+                                      <span className="whitespace-nowrap">คูณโปรฯ:</span>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        value={item.multiplier || 1}
+                                        onChange={(e) => {
+                                          const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                          updatePdfBatchItemField(pageIdx, itemIdx, 'multiplier', val);
+                                          if (val === 1) {
+                                            updatePdfBatchItemField(pageIdx, itemIdx, 'multiplierReason', '');
+                                          } else {
+                                            updatePdfBatchItemField(pageIdx, itemIdx, 'multiplierReason', `ปรับแต่งตัวคูณสต๊อก x${val}`);
+                                          }
+                                        }}
+                                        className="w-9 text-center font-bold bg-slate-50 border border-slate-200 rounded text-[9px] py-0 outline-hidden focus:border-blue-500 focus:bg-white"
+                                      />
+                                    </div>
+                                    {item.multiplier && item.multiplier > 1 && (
+                                      <div className="text-[8px] text-emerald-600 font-bold bg-emerald-50 px-1 py-0.5 rounded text-center max-w-[120px] leading-tight shrink-0">
+                                        {item.multiplierReason || 'โปรของแถม'}
+                                      </div>
+                                    )}
+                                    <div className="text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 mt-0.5">
+                                      หักสุทธิ: {item.quantity * (item.multiplier || 1)} ชิ้น
+                                    </div>
+                                  </div>
                                 </div>
                               </td>
                               <td className="py-2 px-2 text-center">
@@ -1637,20 +1744,55 @@ export default function SmartScanner({
                             )}
                           </td>
                           <td className="p-3">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => updateScannedItemField(idx, 'quantity', Math.max(1, item.quantity - 1))}
-                                className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
-                              >
-                                <Minus className="w-3 h-3" />
-                              </button>
-                              <span className="font-bold text-xs w-6 text-center">{item.quantity}</span>
-                              <button
-                                onClick={() => updateScannedItemField(idx, 'quantity', item.quantity + 1)}
-                                className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
+                            <div className="flex flex-col items-center gap-2">
+                              {/* Primary Qty Controller */}
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => updateScannedItemField(idx, 'quantity', Math.max(1, item.quantity - 1))}
+                                  className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
+                                  title="ลดจำนวนสแกน"
+                                >
+                                  <Minus className="w-3 h-3" />
+                                </button>
+                                <span className="font-bold text-xs w-6 text-center">{item.quantity}</span>
+                                <button
+                                  onClick={() => updateScannedItemField(idx, 'quantity', item.quantity + 1)}
+                                  className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
+                                  title="เพิ่มจำนวนสแกน"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              {/* Multiplier controller */}
+                              <div className="flex flex-col items-center gap-1">
+                                <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                                  <span>ตัวคูณโปรฯ:</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={item.multiplier || 1}
+                                    onChange={(e) => {
+                                      const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                      updateScannedItemField(idx, 'multiplier', val);
+                                      if (val === 1) {
+                                        updateScannedItemField(idx, 'multiplierReason', '');
+                                      } else {
+                                        updateScannedItemField(idx, 'multiplierReason', `ปรับแต่งตัวคูณสต๊อก x${val}`);
+                                      }
+                                    }}
+                                    className="w-10 text-center font-bold bg-slate-50 border border-slate-200 rounded text-[10px] py-0.5 outline-hidden focus:border-blue-500 focus:bg-white"
+                                  />
+                                </div>
+                                {item.multiplier && item.multiplier > 1 && (
+                                  <div className="text-[9px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-center max-w-[140px] leading-tight shrink-0">
+                                    {item.multiplierReason || 'พบเงื่อนไขของแถม'}
+                                  </div>
+                                )}
+                                <div className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 mt-0.5">
+                                  ยอดสัญจรสุทธิ: {item.quantity * (item.multiplier || 1)} {item.matchedProduct?.unit || 'ชิ้น'}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="p-3 text-center">
@@ -1869,20 +2011,53 @@ export default function SmartScanner({
                             </span>
                           </td>
                           <td className="p-3">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => adjustBarcodeQty(idx, -1)}
-                                className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
-                              >
-                                <Minus className="w-3 h-3" />
-                              </button>
-                              <span className="font-bold text-xs w-6 text-center">{item.quantity}</span>
-                              <button
-                                onClick={() => adjustBarcodeQty(idx, 1)}
-                                className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
+                            <div className="flex flex-col items-center gap-1.5">
+                              {/* Primary Qty Controller */}
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => adjustBarcodeQty(idx, -1)}
+                                  className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
+                                >
+                                  <Minus className="w-3 h-3" />
+                                </button>
+                                <span className="font-bold text-xs w-6 text-center">{item.quantity}</span>
+                                <button
+                                  onClick={() => adjustBarcodeQty(idx, 1)}
+                                  className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              {/* Multiplier Setup */}
+                              <div className="flex flex-col items-center gap-0.5">
+                                <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                                  <span>ตัวคูณโปรฯ:</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={item.multiplier || 1}
+                                    onChange={(e) => {
+                                      const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                      updateBarcodeItemField(idx, 'multiplier', val);
+                                      if (val === 1) {
+                                        updateBarcodeItemField(idx, 'multiplierReason', '');
+                                      } else {
+                                        updateBarcodeItemField(idx, 'multiplierReason', `ปรับแต่งตัวคูณสต๊อก x${val}`);
+                                      }
+                                    }}
+                                    className="w-10 text-center font-bold bg-slate-50 border border-slate-200 rounded text-[10px] py-0.5 outline-hidden focus:border-blue-500 focus:bg-white"
+                                  />
+                                </div>
+                                {item.multiplier && item.multiplier > 1 && (
+                                  <div className="text-[9px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-center max-w-[140px] leading-tight shrink-0">
+                                    {item.multiplierReason || 'พบเงื่อนไขของแถม'}
+                                  </div>
+                                )}
+                                <div className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 mt-0.5">
+                                  ยอดสัญจรสุทธิ: {item.quantity * (item.multiplier || 1)} ชิ้น
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="p-3 text-center">
