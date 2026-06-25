@@ -56,6 +56,13 @@ export default function SmartScanner({
   // Tabs: 'AI_LABEL' (Scan Shipping Label) or 'BARCODE_SCAN' (Scan Barcodes/SKUs)
   const [activeMode, setActiveMode] = useState<'AI_LABEL' | 'BARCODE_SCAN'>('AI_LABEL');
 
+  // Sort products alphabetically by SKU for easy lookup
+  const sortedProducts = [...products].sort((a, b) => {
+    const skuA = a.sku || '';
+    const skuB = b.sku || '';
+    return skuA.localeCompare(skuB);
+  });
+
   // Common operators
   const [operator, setOperator] = useState('');
   useEffect(() => {
@@ -571,6 +578,147 @@ export default function SmartScanner({
     const items = [...scanResult.extractedItems];
     items[index] = { ...items[index], [field]: value };
     setScanResult({ ...scanResult, extractedItems: items });
+  };
+
+  // Manual product matching for single scanned item
+  const handleManualMatch = (index: number, product: Product | null) => {
+    if (!scanResult) return;
+    const items = [...scanResult.extractedItems];
+    if (product) {
+      items[index] = {
+        ...items[index],
+        matched: true,
+        matchedProduct: {
+          id: product.id,
+          sku: product.sku,
+          name: product.name,
+          quantity: product.quantity,
+          unit: product.unit || "ชิ้น",
+          location: product.location || "ไม่ได้ระบุ"
+        }
+      };
+    } else {
+      items[index] = {
+        ...items[index],
+        matched: false,
+        matchedProduct: null
+      };
+    }
+    setScanResult({ ...scanResult, extractedItems: items });
+  };
+
+  // Inline edit SKU for single scanned item, which triggers auto-matching
+  const handleUpdateScannedSku = (index: number, newSku: string) => {
+    if (!scanResult) return;
+    const items = [...scanResult.extractedItems];
+    const item = items[index];
+    
+    const cleanSku = newSku.trim().toUpperCase();
+    const matchedProduct = products.find(p => p.sku.trim().toUpperCase() === cleanSku);
+    
+    items[index] = {
+      ...item,
+      sku: newSku,
+      matched: !!matchedProduct,
+      matchedProduct: matchedProduct ? {
+        id: matchedProduct.id,
+        sku: matchedProduct.sku,
+        name: matchedProduct.name,
+        quantity: matchedProduct.quantity,
+        unit: matchedProduct.unit || "ชิ้น",
+        location: matchedProduct.location || "ไม่ได้ระบุ"
+      } : null
+    };
+    setScanResult({ ...scanResult, extractedItems: items });
+  };
+
+  // Inline edit product name for single scanned item
+  const handleUpdateScannedName = (index: number, newName: string) => {
+    if (!scanResult) return;
+    const items = [...scanResult.extractedItems];
+    items[index] = {
+      ...items[index],
+      productName: newName
+    };
+    setScanResult({ ...scanResult, extractedItems: items });
+  };
+
+  // Manual product matching for PDF batch items
+  const handleManualMatchPdf = (pageIndex: number, itemIndex: number, product: Product | null) => {
+    setPdfBatchResults(prev => {
+      const updated = [...prev];
+      const page = { ...updated[pageIndex] };
+      const items = [...page.extractedItems];
+      if (product) {
+        items[itemIndex] = {
+          ...items[itemIndex],
+          matched: true,
+          matchedProduct: {
+            id: product.id,
+            sku: product.sku,
+            name: product.name,
+            quantity: product.quantity,
+            unit: product.unit || "ชิ้น",
+            location: product.location || "ไม่ได้ระบุ"
+          }
+        };
+      } else {
+        items[itemIndex] = {
+          ...items[itemIndex],
+          matched: false,
+          matchedProduct: null
+        };
+      }
+      page.extractedItems = items;
+      updated[pageIndex] = page;
+      return updated;
+    });
+  };
+
+  // Inline edit SKU for PDF batch item
+  const handleUpdatePdfBatchSku = (pageIndex: number, itemIndex: number, newSku: string) => {
+    setPdfBatchResults(prev => {
+      const updated = [...prev];
+      const page = { ...updated[pageIndex] };
+      const items = [...page.extractedItems];
+      const item = items[itemIndex];
+      
+      const cleanSku = newSku.trim().toUpperCase();
+      const matchedProduct = products.find(p => p.sku.trim().toUpperCase() === cleanSku);
+      
+      items[itemIndex] = {
+        ...item,
+        sku: newSku,
+        matched: !!matchedProduct,
+        matchedProduct: matchedProduct ? {
+          id: matchedProduct.id,
+          sku: matchedProduct.sku,
+          name: matchedProduct.name,
+          quantity: matchedProduct.quantity,
+          unit: matchedProduct.unit || "ชิ้น",
+          location: matchedProduct.location || "ไม่ได้ระบุ"
+        } : null
+      };
+      page.extractedItems = items;
+      updated[pageIndex] = page;
+      return updated;
+    });
+  };
+
+  // Inline edit name for PDF batch item
+  const handleUpdatePdfBatchName = (pageIndex: number, itemIndex: number, newName: string) => {
+    setPdfBatchResults(prev => {
+      const updated = [...prev];
+      const page = { ...updated[pageIndex] };
+      const items = [...page.extractedItems];
+      items[itemIndex] = {
+        ...items[itemIndex],
+        productName: newName
+      };
+      page.extractedItems = items;
+      updated[pageIndex] = page;
+      return updated;
+    });
   };
 
   // Remove a scanned item from the list
@@ -1176,25 +1324,89 @@ export default function SmartScanner({
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                           {pageRes.extractedItems.map((item, itemIdx) => (
-                            <tr key={itemIdx} className={`hover:bg-slate-50/40 ${!item.matched ? 'bg-amber-50/10' : ''}`}>
-                              <td className="py-2 px-2">
-                                <span className="font-mono bg-slate-100 text-slate-700 px-1 rounded text-[9px] block w-fit mb-0.5 font-bold">
-                                  {item.sku}
-                                </span>
-                                <span className="text-slate-500 text-[10px] line-clamp-1">{item.productName}</span>
+                            <tr key={itemIdx} className={`hover:bg-slate-50/40 ${!item.matched ? 'bg-amber-50/20' : ''}`}>
+                              <td className="py-2 px-2 w-64">
+                                <div className="space-y-1 max-w-[240px]">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[9px] text-slate-400 font-bold shrink-0 w-6 font-sans">SKU:</span>
+                                    <input
+                                      type="text"
+                                      value={item.sku}
+                                      onChange={(e) => handleUpdatePdfBatchSku(pageIdx, itemIdx, e.target.value)}
+                                      placeholder="SKU"
+                                      className="font-mono bg-slate-50 text-slate-700 px-1 py-0.5 rounded text-[10px] border border-slate-200 focus:border-blue-500 focus:bg-white w-full outline-hidden"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[9px] text-slate-400 font-bold shrink-0 w-6 font-sans">ชื่อ:</span>
+                                    <input
+                                      type="text"
+                                      value={item.productName}
+                                      onChange={(e) => handleUpdatePdfBatchName(pageIdx, itemIdx, e.target.value)}
+                                      placeholder="ชื่อสินค้า"
+                                      className="text-slate-600 text-[10px] px-1 py-0.5 rounded border border-slate-200 focus:border-blue-500 focus:bg-white w-full outline-hidden"
+                                    />
+                                  </div>
+                                </div>
                               </td>
                               <td className="py-2 px-2">
                                 {item.matched && item.matchedProduct ? (
-                                  <div>
-                                    <span className="font-bold text-slate-800 block text-[11px] leading-tight">{item.matchedProduct.name}</span>
-                                    <span className="text-[9px] text-slate-500">
-                                      สต๊อก: <strong>{item.matchedProduct.quantity} {item.matchedProduct.unit}</strong> | พิกัด: {item.matchedProduct.location}
-                                    </span>
+                                  <div className="space-y-1">
+                                    <div className="space-y-0.5">
+                                      <span className="font-bold text-slate-800 block text-[11px] leading-tight">{item.matchedProduct.name}</span>
+                                      <span className="text-[9px] text-slate-500">
+                                        สต๊อก: <strong>{item.matchedProduct.quantity} {item.matchedProduct.unit}</strong> | พิกัด: {item.matchedProduct.location}
+                                      </span>
+                                    </div>
+                                    <div className="pt-0.5 max-w-[220px]">
+                                      <select
+                                        className="w-full border border-slate-200 hover:border-blue-400 rounded px-1.5 py-0.5 text-[10px] focus:outline-hidden focus:border-blue-500 bg-white"
+                                        value={item.matchedProduct.id}
+                                        onChange={(e) => {
+                                          const selectedId = e.target.value;
+                                          const prod = products.find(p => p.id === selectedId);
+                                          if (prod) {
+                                            handleManualMatchPdf(pageIdx, itemIdx, prod);
+                                          } else {
+                                            handleManualMatchPdf(pageIdx, itemIdx, null);
+                                          }
+                                        }}
+                                      >
+                                        <option value="">-- เปลี่ยนตัวจับคู่ --</option>
+                                        {sortedProducts.map(p => (
+                                          <option key={p.id} value={p.id}>
+                                            [{p.sku}] {p.name} ({p.quantity} {p.unit})
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
                                   </div>
                                 ) : (
-                                  <div className="flex items-center gap-1 text-amber-600 font-semibold text-[9px]">
-                                    <AlertCircle className="w-3 h-3 shrink-0" />
-                                    <span>ไม่พบ SKU ในระบบ</span>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-1 text-amber-600 font-semibold text-[9px]">
+                                      <AlertCircle className="w-3 h-3 shrink-0" />
+                                      <span>ไม่พบ SKU ในระบบ</span>
+                                    </div>
+                                    <div className="max-w-[220px]">
+                                      <select
+                                        className="w-full border border-amber-300 hover:border-blue-500 rounded px-1.5 py-0.5 text-[10px] focus:outline-hidden focus:border-blue-500 bg-amber-50/50"
+                                        value=""
+                                        onChange={(e) => {
+                                          const selectedId = e.target.value;
+                                          const prod = products.find(p => p.id === selectedId);
+                                          if (prod) {
+                                            handleManualMatchPdf(pageIdx, itemIdx, prod);
+                                          }
+                                        }}
+                                      >
+                                        <option value="">👉 เลือกคู่สินค้าด้วยมือ...</option>
+                                        {sortedProducts.map(p => (
+                                          <option key={p.id} value={p.id}>
+                                            [{p.sku}] {p.name} ({p.quantity} {p.unit})
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
                                   </div>
                                 )}
                               </td>
@@ -1316,25 +1528,89 @@ export default function SmartScanner({
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
                       {scanResult.extractedItems.map((item, idx) => (
-                        <tr key={idx} className={`hover:bg-slate-50/50 transition-colors ${!item.matched ? 'bg-amber-50/30' : ''}`}>
-                          <td className="p-3">
-                            <span className="font-mono bg-slate-100 text-slate-700 px-1 rounded text-[10px] block w-fit mb-0.5">
-                              {item.sku}
-                            </span>
-                            <span className="text-slate-600 text-[11px] line-clamp-1">{item.productName}</span>
+                        <tr key={idx} className={`hover:bg-slate-50/50 transition-colors ${!item.matched ? 'bg-amber-50/20' : ''}`}>
+                          <td className="p-3 w-72">
+                            <div className="space-y-1.5 max-w-[280px]">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-slate-400 font-bold shrink-0 w-8">SKU:</span>
+                                <input
+                                  type="text"
+                                  value={item.sku}
+                                  onChange={(e) => handleUpdateScannedSku(idx, e.target.value)}
+                                  placeholder="รหัส SKU บนใบ"
+                                  className="font-mono bg-slate-50 text-slate-700 px-1.5 py-0.5 rounded text-[11px] border border-slate-200 focus:border-blue-500 focus:bg-white w-full outline-hidden"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-slate-400 font-bold shrink-0 w-8">ชื่อใบ:</span>
+                                <input
+                                  type="text"
+                                  value={item.productName}
+                                  onChange={(e) => handleUpdateScannedName(idx, e.target.value)}
+                                  placeholder="ชื่อสินค้าบนใบ"
+                                  className="text-slate-600 text-[11px] px-1.5 py-0.5 rounded border border-slate-200 focus:border-blue-500 focus:bg-white w-full outline-hidden"
+                                />
+                              </div>
+                            </div>
                           </td>
                           <td className="p-3">
                             {item.matched && item.matchedProduct ? (
-                              <div className="space-y-0.5">
-                                <span className="font-bold text-slate-800 block leading-tight">{item.matchedProduct.name}</span>
-                                <span className="text-[10px] text-slate-500 block">
-                                  คงคลัง: <strong className="text-slate-700">{item.matchedProduct.quantity} {item.matchedProduct.unit}</strong> | พิกัด: <span className="bg-slate-100 text-slate-600 px-1 rounded">{item.matchedProduct.location}</span>
-                                </span>
+                              <div className="space-y-1.5">
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-slate-800 block leading-tight text-[11px]">{item.matchedProduct.name}</span>
+                                  <span className="text-[10px] text-slate-500 block">
+                                    คงคลัง: <strong className="text-slate-700">{item.matchedProduct.quantity} {item.matchedProduct.unit}</strong> | พิกัด: <span className="bg-slate-100 text-slate-600 px-1 rounded text-[9px]">{item.matchedProduct.location}</span>
+                                  </span>
+                                </div>
+                                <div className="pt-1 max-w-[260px]">
+                                  <select
+                                    className="w-full border border-slate-200 hover:border-blue-400 rounded px-1.5 py-1 text-[11px] focus:outline-hidden focus:border-blue-500 bg-white"
+                                    value={item.matchedProduct.id}
+                                    onChange={(e) => {
+                                      const selectedId = e.target.value;
+                                      const prod = products.find(p => p.id === selectedId);
+                                      if (prod) {
+                                        handleManualMatch(idx, prod);
+                                      } else {
+                                        handleManualMatch(idx, null);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">-- ค้นหา/เปลี่ยนตัวจับคู่สินค้าระบบ --</option>
+                                    {sortedProducts.map(p => (
+                                      <option key={p.id} value={p.id}>
+                                        [{p.sku}] {p.name} ({p.quantity} {p.unit})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-1.5 text-amber-600 font-semibold text-[10px]">
-                                <AlertCircle className="w-3.5 h-3.5" />
-                                <span>ไม่พบ SKU สินค้านี้ในสต๊อกระบบ</span>
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-1 text-amber-600 font-semibold text-[10px]">
+                                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                  <span>ไม่พบ SKU ในสต๊อกระบบ (ปรับแต่งคลังเองได้ด้านล่าง)</span>
+                                </div>
+                                <div className="max-w-[260px]">
+                                  <select
+                                    className="w-full border border-amber-300 hover:border-blue-500 rounded px-1.5 py-1 text-[11px] focus:outline-hidden focus:border-blue-500 bg-amber-50/50"
+                                    value=""
+                                    onChange={(e) => {
+                                      const selectedId = e.target.value;
+                                      const prod = products.find(p => p.id === selectedId);
+                                      if (prod) {
+                                        handleManualMatch(idx, prod);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">👉 เลือกคู่สินค้าในระบบด้วยตนเอง...</option>
+                                    {sortedProducts.map(p => (
+                                      <option key={p.id} value={p.id}>
+                                        [{p.sku}] {p.name} ({p.quantity} {p.unit})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
                               </div>
                             )}
                           </td>

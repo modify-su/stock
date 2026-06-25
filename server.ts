@@ -31,6 +31,42 @@ const ai = new GoogleGenAI({
   }
 });
 
+// Helper function to generate content with multiple fallback models and retries
+async function generateContentWithFallback(params: {
+  contents: any;
+  config?: any;
+}) {
+  // We prefer gemini-2.5-flash as the primary fast and stable model,
+  // followed by gemini-1.5-flash as the fallback, and gemini-3.5-flash.
+  const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+  let lastError: any = null;
+
+  for (const model of models) {
+    let attempts = 2; // Retry each model up to 2 times
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        console.log(`[AI] Attempting generateContent with model: ${model} (attempt ${attempt}/${attempts})`);
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: params.contents,
+          config: params.config,
+        });
+        console.log(`[AI] Successfully generated content using model: ${model}`);
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = err?.message || String(err);
+        console.warn(`[AI] Error with model ${model} (attempt ${attempt}/${attempts}):`, errMsg);
+        
+        // Wait briefly before retrying
+        await new Promise(resolve => setTimeout(resolve, 600));
+      }
+    }
+  }
+
+  throw lastError || new Error("Failed to generate content with all available models.");
+}
+
 async function startServer() {
   const app = express();
 
@@ -134,8 +170,7 @@ ${productsContext}
 
               let replyText = "";
               try {
-                const geminiResponse = await ai.models.generateContent({
-                  model: 'gemini-3.5-flash',
+                const geminiResponse = await generateContentWithFallback({
                   contents: systemPrompt
                 });
                 replyText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
@@ -294,8 +329,7 @@ ${productsContext}
         text: "วิเคราะห์ภาพถ่ายนี้ซึ่งเป็นใบปะหน้าพัสดุ (Shipping Label), ใบสั่งซื้อ (Order Receipt), ใบจัดส่งพัสดุจากแพลตฟอร์มต่างๆ เช่น Shopee, TikTok Shop, Lazada หรือบิลระบบขนส่งอื่นๆ (Flash, J&T, Kerry, ไปรษณีย์ไทย) ค้นหาเลขที่สั่งซื้อ (Order ID), เลขแทรคกิ้งขนส่ง (Tracking Number), และรายชื่อสินค้าพร้อมรหัส SKU สินค้าและจำนวนชิ้น (Quantity) \n\nข้อแนะนำสำหรับแพลตฟอร์ม:\n- สำหรับ TikTok Shop: ค้นหาสินค้าในตารางรายการที่มักมีคำว่า 'Seller SKU', 'รหัสสินค้า', 'ชื่อสินค้า', 'จำนวน' หรือ 'Qty'\n- สำหรับ Shopee: ค้นหาส่วนของรายการจัดส่งท้ายฉลากพัสดุหรือมุมขวาบน/ล่าง ที่มักมีคำว่า 'SKU', 'Parent SKU', 'จำนวน/Qty' หรือรหัสย่อสินค้า\n- กรุณาทำความสะอาดรหัส SKU โดยตัดเว้นวรรคที่ไม่จำเป็นออก และแปลงให้อยู่ในโครงสร้าง JSON ที่กำหนด",
       };
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+      const response = await generateContentWithFallback({
         contents: { parts: [imagePart, promptPart] },
         config: {
           responseMimeType: "application/json",
@@ -412,8 +446,7 @@ ${productsContext}
 นี่คือข้อมูลข้อความของหน้าต่างๆ:
 ${formattedPages}`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+      const response = await generateContentWithFallback({
         contents: promptText,
         config: {
           responseMimeType: "application/json",
