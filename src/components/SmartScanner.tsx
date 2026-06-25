@@ -341,8 +341,8 @@ export default function SmartScanner({
   };
 
   // Send captured image to Gemini AI backend API
-  const handleScanWithAI = async (imageToScan?: string) => {
-    const targetImage = imageToScan || selectedImage;
+  const handleScanWithAI = async (imageToScan?: any) => {
+    const targetImage = (typeof imageToScan === 'string' ? imageToScan : null) || selectedImage;
     if (!targetImage) return;
 
     setIsScanning(true);
