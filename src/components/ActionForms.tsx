@@ -1,10 +1,12 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { ArrowDownLeft, ArrowUpRight, RotateCcw, AlertCircle, CheckCircle, HelpCircle, ClipboardList, PenTool } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, RotateCcw, AlertCircle, CheckCircle, HelpCircle, ClipboardList, PenTool, Lock, Camera, Sparkles } from 'lucide-react';
 import { Product, Transaction, TransactionType, ReturnStatus, UserProfile } from '../types';
+import SmartScanner from './SmartScanner';
 
 interface ActionFormsProps {
   products: Product[];
   onRecordTransaction: (tx: Omit<Transaction, 'id' | 'date'>) => void;
+  onRecordMultipleTransactions: (txs: Omit<Transaction, 'id' | 'date'>[]) => Promise<void>;
   preSelectedProductId: string | null;
   preSelectedType: TransactionType | null;
   onClearPreSelection: () => void;
@@ -15,12 +17,16 @@ interface ActionFormsProps {
 export default function ActionForms({
   products,
   onRecordTransaction,
+  onRecordMultipleTransactions,
   preSelectedProductId,
   preSelectedType,
   onClearPreSelection,
   canRecordTransactions = true,
   currentUser,
 }: ActionFormsProps) {
+  // Toggle between MANUAL form entry and modern AI/Barcode SCANNER
+  const [entryMethod, setEntryMethod] = useState<'MANUAL' | 'SCANNER'>('MANUAL');
+
   // Navigation for workflows
   const [activeTab, setActiveTab] = useState<TransactionType>('IN');
 
@@ -168,8 +174,43 @@ export default function ActionForms({
         </div>
       )}
 
-      {/* Tabs */}
-      <div id="oper-tabs" className="grid grid-cols-3 gap-2 p-1.5 bg-slate-50 border border-slate-200 rounded-lg mb-6">
+      {/* Entry Method Selector */}
+      <div className="flex gap-2 p-1 bg-slate-100 border border-slate-200 rounded-lg mb-6 max-w-md">
+        <button
+          onClick={() => setEntryMethod('MANUAL')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
+            entryMethod === 'MANUAL'
+              ? 'bg-white text-slate-850 shadow-xs border border-slate-200'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4 text-slate-600" />
+          <span>กรอกข้อมูลคีย์มือ (Manual Entry)</span>
+        </button>
+        <button
+          onClick={() => setEntryMethod('SCANNER')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
+            entryMethod === 'SCANNER'
+              ? 'bg-blue-600 text-white shadow-xs border border-blue-600'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Camera className="w-4 h-4 text-yellow-300 animate-pulse" />
+          <span>สแกนเนอร์ AI & บาร์โค้ด</span>
+        </button>
+      </div>
+
+      {entryMethod === 'SCANNER' ? (
+        <SmartScanner
+          products={products}
+          onRecordMultipleTransactions={onRecordMultipleTransactions}
+          canRecordTransactions={canRecordTransactions}
+          currentUser={currentUser}
+        />
+      ) : (
+        <>
+          {/* Tabs */}
+          <div id="oper-tabs" className="grid grid-cols-3 gap-2 p-1.5 bg-slate-50 border border-slate-200 rounded-lg mb-6">
         {/* Tab 1: IN (รับสินค้า) */}
         <button
           onClick={() => {
@@ -481,6 +522,8 @@ export default function ActionForms({
           </button>
         </div>
       </form>
+      </>
+      )}
     </div>
   );
 }

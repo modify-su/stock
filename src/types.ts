@@ -78,3 +78,12 @@ export interface Category {
   name: string;
 }
 
+export interface Shelf {
+  id: string;
+  name: string;
+  description?: string;
+  zone?: string;
+  createdAt?: string;
+}
+
+

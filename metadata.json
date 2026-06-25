@@ -1,6 +1,6 @@
 {
   "name": "ระบบจัดการสต๊อกสินค้า",
   "description": "เว็บแอปพลิเคชันจัดการสต๊อกสินค้า รองรับการรับเข้าสินค้า การส่งออกสินค้า และการจัดการสินค้าตีกลับ พร้อมรายงานสรุปข้อมูล",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

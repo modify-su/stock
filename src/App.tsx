@@ -15,9 +15,12 @@ import {
   Layers,
   Database,
   Shield,
-  FileSpreadsheet
+  FileSpreadsheet,
+  QrCode,
+  MapPin,
+  Printer
 } from 'lucide-react';
-import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category } from './types';
+import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf } from './types';
 import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS } from './mockData';
 import DashboardStats from './components/DashboardStats';
 import InventoryTable from './components/InventoryTable';
@@ -26,6 +29,8 @@ import TransactionLogs from './components/TransactionLogs';
 import SystemSettings from './components/SystemSettings';
 import SyncAndBackup from './components/SyncAndBackup';
 import LoginScreen from './components/LoginScreen';
+import ShelfManagement from './components/ShelfManagement';
+import ShelfAuditModal from './components/ShelfAuditModal';
 import { getCachedToken, syncProductsToSpreadsheet } from './googleSheetsService';
 
 // Import Firebase
@@ -140,7 +145,8 @@ export default function App() {
     transactions: true,
     settings: true,
     rolePermissions: true,
-    categories: true
+    categories: true,
+    shelves: true
   });
 
   const dbLoading = loadingCollections.users || 
@@ -148,13 +154,15 @@ export default function App() {
                     loadingCollections.transactions || 
                     loadingCollections.settings || 
                     loadingCollections.rolePermissions ||
-                    loadingCollections.categories;
+                    loadingCollections.categories ||
+                    loadingCollections.shelves;
 
   // --- Real-time Sync States from Firestore ---
   const [products, setProducts] = useState<Product[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [shelves, setShelves] = useState<Shelf[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [rolePermissions, setRolePermissions] = useState<Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>>(DEFAULT_ROLE_PERMISSIONS);
 
@@ -202,7 +210,11 @@ export default function App() {
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       const list: Product[] = [];
       snapshot.forEach((snap) => {
-        list.push(snap.data() as Product);
+        const data = snap.data();
+        list.push({
+          id: data.id || snap.id,
+          ...data
+        } as Product);
       });
       // Sort: newest updated first
       list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -270,6 +282,58 @@ export default function App() {
       setLoadingCollections(prev => ({ ...prev, categories: false }));
     });
 
+    // 7. Shelves real-time listener
+    const unsubShelves = onSnapshot(collection(db, 'shelves'), async (snapshot) => {
+      if (snapshot.empty) {
+        // Auto-seed shelves from products' unique locations
+        try {
+          const prodSnap = await getDocs(collection(db, 'products'));
+          const locationsSet = new Set<string>();
+          prodSnap.forEach(snap => {
+            const loc = (snap.data().location || '').trim();
+            if (loc) locationsSet.add(loc);
+          });
+          
+          if (locationsSet.size > 0) {
+            let index = 1;
+            for (const loc of Array.from(locationsSet)) {
+              const shelfId = `shelf-${Date.now()}-${index++}`;
+              await setDoc(doc(db, 'shelves', shelfId), {
+                id: shelfId,
+                name: loc,
+                description: `ชั้นวางสำหรับเก็บสินค้า ${loc}`,
+                zone: 'โซนทั่วไป',
+                createdAt: new Date().toISOString()
+              });
+            }
+          } else {
+            // Seed default shelf
+            const shelfId = 'shelf-default-1';
+            await setDoc(doc(db, 'shelves', shelfId), {
+              id: shelfId,
+              name: 'A1',
+              description: 'ชั้นวางหลักโซน A แถว 1',
+              zone: 'โซน A',
+              createdAt: new Date().toISOString()
+            });
+          }
+        } catch (err) {
+          console.error("Failed to seed shelves:", err);
+        }
+      } else {
+        const list: Shelf[] = [];
+        snapshot.forEach((snap) => {
+          list.push(snap.data() as Shelf);
+        });
+        list.sort((a, b) => a.name.localeCompare(b.name, 'th'));
+        setShelves(list);
+      }
+      setLoadingCollections(prev => ({ ...prev, shelves: false }));
+    }, (error) => {
+      console.error("shelves sync error", error);
+      setLoadingCollections(prev => ({ ...prev, shelves: false }));
+    });
+
     return () => {
       unsubUsers();
       unsubProducts();
@@ -277,6 +341,7 @@ export default function App() {
       unsubSettings();
       unsubRolePerms();
       unsubCategories();
+      unsubShelves();
     };
   }, []);
 
@@ -308,7 +373,7 @@ export default function App() {
   // --- Filter states ---
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
-  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC'>('OVERVIEW');
+  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES'>('OVERVIEW');
 
   // Redirect non-ADMIN users away from admin-only tabs
   useEffect(() => {
@@ -320,6 +385,30 @@ export default function App() {
   // --- Quick-Action Transfer States ---
   const [preSelectedProductId, setPreSelectedProductId] = useState<string | null>(null);
   const [preSelectedType, setPreSelectedType] = useState<TransactionType | null>(null);
+
+  // --- Check if scanned/opened from Shelf QR Code ---
+  const [scannedShelfForAudit, setScannedShelfForAudit] = useState<Shelf | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shelfIdParam = params.get('shelf');
+    if (shelfIdParam && shelves.length > 0) {
+      const foundShelf = shelves.find(
+        s => s.id === shelfIdParam || s.name.toLowerCase() === shelfIdParam.toLowerCase()
+      );
+      if (foundShelf) {
+        setScannedShelfForAudit(foundShelf);
+      }
+    }
+  }, [window.location.search, shelves]);
+
+  const handleCloseAuditModal = () => {
+    setScannedShelfForAudit(null);
+    // Clear shelf query param from URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete('shelf');
+    window.history.replaceState({}, '', url.pathname + url.search);
+  };
 
   // --- System Custom Handlers ---
   const handleAddUser = async (newUserData: Omit<UserProfile, 'id' | 'isActive'>) => {
@@ -560,6 +649,49 @@ export default function App() {
     } else {
       await setDoc(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
     }
+  };
+
+  // Process batch transaction execution (mutates multiple products in Firestore batch)
+  const handleRecordMultipleTransactions = async (txsData: Omit<Transaction, 'id' | 'date'>[]) => {
+    if (txsData.length === 0) return;
+    const batch = writeBatch(db);
+    const timestamp = new Date().toISOString();
+
+    for (let i = 0; i < txsData.length; i++) {
+      const txData = txsData[i];
+      const txId = `tx-${Date.now()}-${i}`;
+      const newTx: Transaction = {
+        ...txData,
+        id: txId,
+        date: timestamp,
+      };
+
+      const p = products.find(prod => prod.id === txData.productId);
+      if (p) {
+        let adjustedQty = p.quantity;
+
+        if (txData.type === 'IN') {
+          adjustedQty += txData.quantity;
+        } else if (txData.type === 'OUT') {
+          adjustedQty = Math.max(0, adjustedQty - txData.quantity);
+        } else if (txData.type === 'RETURN') {
+          if (txData.returnStatus === 'RE_STOCK') {
+            adjustedQty += txData.quantity;
+          }
+        }
+
+        // Add to batch
+        batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
+        batch.update(doc(db, 'products', p.id), {
+          quantity: adjustedQty,
+          updatedAt: timestamp
+        });
+      } else {
+        batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
+      }
+    }
+
+    await batch.commit();
   };
 
   // Reset Logs / Clear All
@@ -805,6 +937,17 @@ export default function App() {
               {transactions.length}
             </span>
           </button>
+          <button
+            onClick={() => setActiveMenuTab('SHELVES')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
+              activeMenuTab === 'SHELVES'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <MapPin className="w-4 h-4" />
+            <span>จัดการชั้นวางสินค้า / QR Code</span>
+          </button>
           {currentUser.role === 'ADMIN' && (
             <>
               <button
@@ -990,6 +1133,7 @@ export default function App() {
           <ActionForms
             products={products}
             onRecordTransaction={handleRecordTransaction}
+            onRecordMultipleTransactions={handleRecordMultipleTransactions}
             preSelectedProductId={preSelectedProductId}
             preSelectedType={preSelectedType}
             onClearPreSelection={handleClearPreSelection}
@@ -1035,7 +1179,29 @@ export default function App() {
           />
         )}
 
+        {activeMenuTab === 'SHELVES' && (
+          <ShelfManagement
+            products={products}
+            shelves={shelves}
+            currentUser={currentUser}
+            canManageProducts={rolePermissions[currentUser.role].manageProducts}
+            onRecordTransaction={handleRecordTransaction}
+          />
+        )}
+
       </main>
+
+      {/* 6.5. Shelf Audit modal for scanned QR codes */}
+      {scannedShelfForAudit && (
+        <ShelfAuditModal
+          shelf={scannedShelfForAudit}
+          products={products}
+          currentUser={currentUser}
+          canRecordTransactions={rolePermissions[currentUser.role].recordTransactions}
+          onRecordTransaction={handleRecordTransaction}
+          onClose={handleCloseAuditModal}
+        />
+      )}
 
       {/* 7. Footer Accent */}
       <footer id="app-footer" className="bg-slate-900 text-slate-400 py-8 border-t border-slate-800 text-xs">
