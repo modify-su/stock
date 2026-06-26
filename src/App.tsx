@@ -43,7 +43,8 @@ import {
   deleteDoc, 
   updateDoc, 
   writeBatch, 
-  getDocs 
+  getDocs,
+  getDoc
 } from 'firebase/firestore';
 
 // Dynamic icon renderer
@@ -64,7 +65,7 @@ function AppLogoIcon({ name, className = "w-6 h-6" }: { name: string; className?
 const INITIAL_USERS: UserProfile[] = [
   { 
     id: 'usr-1', 
-    name: 'modify (ผู้ดูแลระบบหลัก)', 
+    name: 'ผู้จัดการ (ผู้ดูแลระบบหลัก)', 
     username: 'modify', 
     role: 'ADMIN', 
     isActive: true,
@@ -287,38 +288,48 @@ export default function App() {
       if (snapshot.empty) {
         // Auto-seed shelves from products' unique locations
         try {
-          const prodSnap = await getDocs(collection(db, 'products'));
-          const locationsSet = new Set<string>();
-          prodSnap.forEach(snap => {
-            const loc = (snap.data().location || '').trim();
-            if (loc) locationsSet.add(loc);
-          });
-          
-          if (locationsSet.size > 0) {
-            let index = 1;
-            for (const loc of Array.from(locationsSet)) {
-              const shelfId = `shelf-${Date.now()}-${index++}`;
+          const stateSnap = await getDoc(doc(db, 'settings', 'shelves_state'));
+          if (!stateSnap.exists()) {
+            // Mark as seeded first to prevent multiple triggers
+            await setDoc(doc(db, 'settings', 'shelves_state'), { seeded: true });
+
+            const prodSnap = await getDocs(collection(db, 'products'));
+            const locationsSet = new Set<string>();
+            prodSnap.forEach(snap => {
+              const loc = (snap.data().location || '').trim();
+              if (loc) locationsSet.add(loc);
+            });
+            
+            if (locationsSet.size > 0) {
+              let index = 1;
+              for (const loc of Array.from(locationsSet)) {
+                const shelfId = `shelf-${Date.now()}-${index++}`;
+                await setDoc(doc(db, 'shelves', shelfId), {
+                  id: shelfId,
+                  name: loc,
+                  description: `ชั้นวางสำหรับเก็บสินค้า ${loc}`,
+                  zone: 'โซนทั่วไป',
+                  createdAt: new Date().toISOString()
+                });
+              }
+            } else {
+              // Seed default shelf
+              const shelfId = 'shelf-default-1';
               await setDoc(doc(db, 'shelves', shelfId), {
                 id: shelfId,
-                name: loc,
-                description: `ชั้นวางสำหรับเก็บสินค้า ${loc}`,
-                zone: 'โซนทั่วไป',
+                name: 'A1',
+                description: 'ชั้นวางหลักโซน A แถว 1',
+                zone: 'โซน A',
                 createdAt: new Date().toISOString()
               });
             }
           } else {
-            // Seed default shelf
-            const shelfId = 'shelf-default-1';
-            await setDoc(doc(db, 'shelves', shelfId), {
-              id: shelfId,
-              name: 'A1',
-              description: 'ชั้นวางหลักโซน A แถว 1',
-              zone: 'โซน A',
-              createdAt: new Date().toISOString()
-            });
+            // Already initialized once, user has explicitly deleted all shelves
+            setShelves([]);
           }
         } catch (err) {
           console.error("Failed to seed shelves:", err);
+          setShelves([]);
         }
       } else {
         const list: Shelf[] = [];
@@ -1110,6 +1121,7 @@ export default function App() {
           <InventoryTable
             products={products}
             categories={categories}
+            shelves={shelves}
             onAddCategory={handleAddCategory}
             onUpdateCategory={handleUpdateCategory}
             onDeleteCategory={handleDeleteCategory}

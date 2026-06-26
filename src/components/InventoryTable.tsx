@@ -1,11 +1,12 @@
 import { useState, FormEvent } from 'react';
 import { Search, Plus, Edit2, Trash2, SlidersHorizontal, AlertCircle, ShoppingBag, Folder, Tag, MapPin, DollarSign, ArrowDown, ArrowUp, Lock } from 'lucide-react';
-import { Product, Category } from '../types';
+import { Product, Category, Shelf } from '../types';
 import ConfirmModal from './ConfirmModal';
 
 interface InventoryTableProps {
   products: Product[];
   categories: Category[];
+  shelves?: Shelf[];
   onAddCategory: (name: string) => Promise<void>;
   onUpdateCategory: (id: string, name: string) => Promise<void>;
   onDeleteCategory: (id: string) => Promise<void>;
@@ -27,6 +28,7 @@ interface InventoryTableProps {
 export default function InventoryTable({
   products,
   categories,
+  shelves = [],
   onAddCategory,
   onUpdateCategory,
   onDeleteCategory,
@@ -70,11 +72,21 @@ export default function InventoryTable({
   const [newMinStock, setNewMinStock] = useState<number>(10);
   const [newUnit, setNewUnit] = useState('ชิ้น');
   const [newLoc, setNewLoc] = useState('');
+  const [showCustomAddLoc, setShowCustomAddLoc] = useState(false);
+  const [showCustomEditLoc, setShowCustomEditLoc] = useState(false);
   const [newWeight, setNewWeight] = useState<string>('');
   const [newWeightUnit, setNewWeightUnit] = useState<string>('g');
 
   // Sku uniqueness checks
   const [validationError, setValidationError] = useState('');
+
+  // Get available shelf locations dynamically
+  const getAvailableLocations = () => {
+    const list = shelves && shelves.length > 0 
+      ? shelves.map(s => s.name).filter(Boolean) 
+      : ['A1', 'B1', 'คลังทั่วไป'];
+    return Array.from(new Set(list));
+  };
 
   // Custom modal dialog confirmation state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -109,7 +121,11 @@ export default function InventoryTable({
     setNewQty(0);
     setNewMinStock(10);
     setNewUnit('ชิ้น');
-    setNewLoc('Zone A - ชั้น 1');
+    
+    const avail = getAvailableLocations();
+    setNewLoc(avail[0] || 'A1');
+    setShowCustomAddLoc(false);
+    
     setNewWeight('');
     setNewWeightUnit('g');
     setValidationError('');
@@ -505,7 +521,14 @@ export default function InventoryTable({
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={() => canManageProducts ? setEditingProduct(p) : undefined}
+                          onClick={() => {
+                            if (canManageProducts) {
+                              setEditingProduct(p);
+                              const avail = getAvailableLocations();
+                              const isCustom = !avail.includes(p.location || '');
+                              setShowCustomEditLoc(isCustom);
+                            }
+                          }}
                           disabled={!canManageProducts}
                           className={`p-1 px-1.5 rounded transition-colors ${
                             canManageProducts 
@@ -688,13 +711,38 @@ export default function InventoryTable({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-505 mb-1">ตำแหน่งเก็บสินค้า (Shelf Location)</label>
-                  <input
-                    type="text"
-                    value={newLoc}
-                    onChange={(e) => setNewLoc(e.target.value)}
-                    placeholder="เช่น Zone A - แถวที่ 2 ชั้น 3"
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                  />
+                  <select
+                    value={showCustomAddLoc ? 'CUSTOM' : newLoc}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'CUSTOM') {
+                        setShowCustomAddLoc(true);
+                        setNewLoc('');
+                      } else {
+                        setShowCustomAddLoc(false);
+                        setNewLoc(val);
+                      }
+                    }}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 mb-1.5 font-medium"
+                  >
+                    {getAvailableLocations().map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                    <option value="CUSTOM">+ ระบุตำแหน่งอื่นด้วยตัวเอง...</option>
+                  </select>
+
+                  {showCustomAddLoc && (
+                    <input
+                      type="text"
+                      value={newLoc}
+                      onChange={(e) => setNewLoc(e.target.value)}
+                      placeholder="เช่น Zone B - แถวที่ 1 ชั้น 2"
+                      className="w-full px-3 py-1.5 text-sm bg-blue-50/30 border border-blue-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-semibold animate-fade-in"
+                      required
+                    />
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -860,12 +908,41 @@ export default function InventoryTable({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">ชั้นที่เก็บสินค้า (Shelf Location)</label>
-                  <input
-                    type="text"
-                    value={editingProduct.location}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, location: e.target.value })}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-150 focus:border-blue-500"
-                  />
+                  <select
+                    value={showCustomEditLoc ? 'CUSTOM' : editingProduct.location}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'CUSTOM') {
+                        setShowCustomEditLoc(true);
+                        setEditingProduct({ ...editingProduct, location: '' });
+                      } else {
+                        setShowCustomEditLoc(false);
+                        setEditingProduct({ ...editingProduct, location: val });
+                      }
+                    }}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-150 focus:border-blue-500 mb-1.5 font-medium"
+                  >
+                    {Array.from(new Set([
+                      ...getAvailableLocations(),
+                      ...(editingProduct.location && !showCustomEditLoc ? [editingProduct.location] : [])
+                    ])).map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                    <option value="CUSTOM">+ ระบุตำแหน่งอื่นด้วยตัวเอง...</option>
+                  </select>
+
+                  {showCustomEditLoc && (
+                    <input
+                      type="text"
+                      value={editingProduct.location}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, location: e.target.value })}
+                      placeholder="พิมพ์ระบุตำแหน่งที่เก็บ..."
+                      className="w-full px-3 py-1.5 text-sm bg-blue-50/30 border border-blue-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-semibold animate-fade-in"
+                      required
+                    />
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>

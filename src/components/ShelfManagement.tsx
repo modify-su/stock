@@ -98,6 +98,12 @@ export default function ShelfManagement({
     zone: 'โซน A'
   });
 
+  // Zone editing and custom zone input states
+  const [isZoneEditModalOpen, setIsZoneEditModalOpen] = useState(false);
+  const [zoneToRename, setZoneToRename] = useState('');
+  const [renamedZoneName, setRenamedZoneName] = useState('');
+  const [showCustomZoneInput, setShowCustomZoneInput] = useState(false);
+
   // View items modal
   const [selectedShelfForView, setSelectedShelfForView] = useState<Shelf | null>(null);
 
@@ -152,7 +158,45 @@ export default function ShelfManagement({
     });
   };
 
-  // Delete Zone function (deletes empty shelves under this zone)
+  // Start zone renaming
+  const handleStartRenameZone = (zoneName: string) => {
+    setZoneToRename(zoneName);
+    setRenamedZoneName(zoneName);
+    setIsZoneEditModalOpen(true);
+  };
+
+  // Save renamed zone
+  const handleSaveZoneRename = async () => {
+    const trimmedNewName = renamedZoneName.trim();
+    if (!trimmedNewName || trimmedNewName === zoneToRename) {
+      setIsZoneEditModalOpen(false);
+      return;
+    }
+
+    try {
+      // Find all shelves in this zone
+      const zoneShelves = shelves.filter(s => (s.zone || 'โซนทั่วไป') === zoneToRename);
+      if (zoneShelves.length > 0) {
+        await Promise.all(
+          zoneShelves.map(shelf => 
+            updateDoc(doc(db, 'shelves', shelf.id), {
+              zone: trimmedNewName
+            })
+          )
+        );
+      }
+      setSuccess(`เปลี่ยนชื่อโซนจาก "${zoneToRename}" เป็น "${trimmedNewName}" เรียบร้อยแล้ว (มีผลต่อ ${zoneShelves.length} ชั้นวาง)`);
+      setSelectedZone(trimmedNewName);
+      setIsZoneEditModalOpen(false);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err: any) {
+      console.error('Error renaming zone:', err);
+      setError('เกิดข้อผิดพลาดในการเปลี่ยนชื่อโซน: ' + err.message);
+      setTimeout(() => setError(''), 4000);
+    }
+  };
+
+  // Delete Zone function (deletes shelves under this zone and unassigns products)
   const handleDeleteZone = async (zoneName: string) => {
     // Find all shelves in this zone
     const zoneShelves = shelves.filter(s => (s.zone || 'โซนทั่วไป') === zoneName);
@@ -160,31 +204,56 @@ export default function ShelfManagement({
     // Check if any of these shelves have products
     const shelvesWithProducts: string[] = [];
     const productsToUpdate: Product[] = [];
+    const activeProductsToClear: Product[] = [];
 
     for (const shelf of zoneShelves) {
       const shelfProducts = getProductsForShelf(shelf.name);
       const activeProducts = shelfProducts.filter(p => p.quantity > 0);
       if (activeProducts.length > 0) {
         shelvesWithProducts.push(shelf.name);
-      } else {
-        productsToUpdate.push(...shelfProducts);
+        activeProductsToClear.push(...activeProducts);
       }
+      productsToUpdate.push(...shelfProducts);
     }
 
     if (shelvesWithProducts.length > 0) {
       setConfirmDialog({
         isOpen: true,
-        title: 'ไม่สามารถลบโซนได้',
-        message: `ไม่สามารถลบโซน "${zoneName}" ได้ เนื่องจากมีสินค้าที่มีจำนวนคงเหลือค้างอยู่ในชั้นวางดังต่อไปนี้:\n\n${shelvesWithProducts.join(', ')} (รวม ${shelvesWithProducts.length} ชั้นวาง)\n\nกรุณาย้ายหรือขายสินค้าทั้งหมดออกจากชั้นวางเหล่านั้นก่อนทำการลบโซนครับ`,
-        confirmText: 'ตกลง',
-        variant: 'warning',
-        isAlertOnly: true,
-        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false }))
+        title: 'ยืนยันการบังคับลบโซนคลังสินค้า',
+        message: `โซน "${zoneName}" มีชั้นวางสินค้าที่ยังมีสินค้าจำนวนคงเหลือตกค้างอยู่ทั้งหมด ${shelvesWithProducts.length} ชั้นวาง ได้แก่: ${shelvesWithProducts.join(', ')}\n\nหากคุณต้องการลบโซนนี้ ระบบจำเป็นต้องบังคับย้ายพิกัดจัดเก็บของสินค้าเหล่านั้น (${activeProductsToClear.length} รายการ) ออก ให้กลายเป็น "ไม่มีพิกัดจัดเก็บ" ทันที โดยยอดสินค้าคงคลังจะไม่มีการสูญหายใดๆ\n\nคุณยืนยันที่จะลบแบบบังคับใช่หรือไม่?`,
+        confirmText: 'บังคับลบและเคลียร์พิกัด',
+        cancelText: 'ยกเลิก',
+        variant: 'danger',
+        onConfirm: async () => {
+          try {
+            // Clear location of ALL products in these shelves (both active and empty)
+            if (productsToUpdate.length > 0) {
+              await Promise.all(
+                productsToUpdate.map(p => updateDoc(doc(db, 'products', p.id), { location: '' }))
+              );
+            }
+
+            // Delete all shelves in this zone
+            if (zoneShelves.length > 0) {
+              await Promise.all(zoneShelves.map(shelf => deleteDoc(doc(db, 'shelves', shelf.id))));
+            }
+            
+            setSuccess(`ลบโซน "${zoneName}" และย้ายพิกัดสินค้าตกค้างสำเร็จเรียบร้อยแล้ว`);
+            setSelectedZone('ALL');
+            setTimeout(() => setSuccess(''), 3000);
+          } catch (err: any) {
+            console.error('Error force deleting zone:', err);
+            setError('เกิดข้อผิดพลาดในการบังคับลบโซน: ' + err.message);
+            setTimeout(() => setError(''), 4000);
+          } finally {
+            setConfirmDialog(p => ({ ...p, isOpen: false }));
+          }
+        }
       });
       return;
     }
 
-    // Confirm deletion
+    // Confirm standard deletion
     const confirmMessage = zoneShelves.length > 0 
       ? `คุณต้องการลบโซน "${zoneName}" ใช่หรือไม่? การดำเนินการนี้จะลบชั้นวางสินค้าในโซนนี้จำนวน ${zoneShelves.length} ชั้นวางออกจากระบบโดยถาวร (ระบบจะเคลียร์พิกัดของสินค้าที่มีจำนวนเป็น 0 ชิ้นโดยอัตโนมัติ)`
       : `คุณต้องการลบโซน "${zoneName}" ออกจากระบบใช่หรือไม่?`;
@@ -234,6 +303,13 @@ export default function ShelfManagement({
 
   // Get unique zones from shelves for filtering
   const zones = ['ALL', ...Array.from(new Set(shelves.map(s => s.zone || 'โซนทั่วไป').filter(Boolean)))];
+
+  // Dynamic list of unique zones currently in shelves, plus default standard ones
+  const defaultZonesList = ['โซน A', 'โซน B', 'โซน C', 'โซนทั่วไป', 'ฝากส่ง'];
+  const allAvailableZones = Array.from(new Set([
+    ...defaultZonesList,
+    ...shelves.map(s => s.zone || 'โซนทั่วไป').filter(Boolean)
+  ]));
 
   // Filter shelves
   const filteredShelves = shelves.filter(shelf => {
@@ -473,6 +549,7 @@ export default function ShelfManagement({
       description: shelf.description || '',
       zone: shelf.zone || 'โซน A'
     });
+    setShowCustomZoneInput(false);
     setIsFormOpen(true);
   };
 
@@ -665,6 +742,7 @@ export default function ShelfManagement({
                   onClick={() => {
                     setEditingShelf(null);
                     setFormData({ name: '', description: '', zone: 'โซน A' });
+                    setShowCustomZoneInput(false);
                     setIsFormOpen(true);
                   }}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
@@ -773,20 +851,36 @@ export default function ShelfManagement({
                       {zone === 'ALL' ? 'ทั้งหมด' : zone}
                     </button>
                     {zone !== 'ALL' && canManageProducts && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteZone(zone);
-                        }}
-                        className={`p-0.5 rounded transition-colors cursor-pointer ${
-                          selectedZone === zone
-                            ? 'text-blue-200 hover:text-white hover:bg-blue-700'
-                            : 'text-slate-400 hover:text-rose-600 hover:bg-rose-100'
-                        }`}
-                        title={`ลบโซน "${zone}" และชั้นวางที่ว่างอยู่ทั้งหมด`}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0 ml-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartRenameZone(zone);
+                          }}
+                          className={`p-0.5 rounded transition-colors cursor-pointer ${
+                            selectedZone === zone
+                              ? 'text-blue-200 hover:text-white hover:bg-blue-700'
+                              : 'text-slate-400 hover:text-blue-600 hover:bg-blue-100'
+                          }`}
+                          title={`แก้ไขชื่อโซน "${zone}"`}
+                        >
+                          <Edit2 className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteZone(zone);
+                          }}
+                          className={`p-0.5 rounded transition-colors cursor-pointer ${
+                            selectedZone === zone
+                              ? 'text-blue-200 hover:text-white hover:bg-blue-700'
+                              : 'text-slate-400 hover:text-rose-600 hover:bg-rose-100'
+                          }`}
+                          title={`ลบโซน "${zone}" และชั้นวางที่ว่างอยู่ทั้งหมด`}
+                        >
+                          <Trash2 className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -1350,16 +1444,39 @@ export default function ShelfManagement({
                   โซนหลัก (Zone) *
                 </label>
                 <select
-                  value={formData.zone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, zone: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-hidden focus:border-blue-500 bg-slate-50 focus:bg-white"
+                  value={showCustomZoneInput ? 'CUSTOM' : formData.zone}
+                  onChange={(e) => {
+                    if (e.target.value === 'CUSTOM') {
+                      setShowCustomZoneInput(true);
+                      setFormData(prev => ({ ...prev, zone: '' }));
+                    } else {
+                      setShowCustomZoneInput(false);
+                      setFormData(prev => ({ ...prev, zone: e.target.value }));
+                    }
+                  }}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-hidden focus:border-blue-500 bg-slate-50 focus:bg-white font-medium"
                 >
-                  <option value="โซน A">โซน A (หน้าร้าน)</option>
-                  <option value="โซน B">โซน B (หลังร้าน)</option>
-                  <option value="โซน C">โซน C (ห้องเก็บของแช่เย็น)</option>
-                  <option value="โซนทั่วไป">โซนทั่วไป (General)</option>
-                  <option value="ฝากส่ง">โซนเตรียมแพ็คฝากส่ง</option>
+                  {allAvailableZones.map((z) => (
+                    <option key={z} value={z}>{z}</option>
+                  ))}
+                  <option value="CUSTOM">+ ระบุชื่อโซนอื่นด้วยตัวเอง...</option>
                 </select>
+
+                {showCustomZoneInput && (
+                  <div className="mt-2 animate-fade-in">
+                    <label className="block text-[10px] font-bold text-blue-600 mb-1">
+                      ระบุชื่อโซนใหม่เอง *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น โซนเก็บอาหาร, ห้องเตรียมส่ง, ตู้แช่เย็น"
+                      value={formData.zone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, zone: e.target.value }))}
+                      className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs focus:outline-hidden focus:border-blue-500 bg-blue-50/30 focus:bg-white font-semibold"
+                      required
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1836,6 +1953,78 @@ export default function ShelfManagement({
                 <Printer className="w-4 h-4" />
                 <span>พิมพ์ป้ายกลุ่มนี้ ({shelves.length} ป้าย)</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Rename Zone */}
+      {isZoneEditModalOpen && (
+        <div 
+          onClick={() => setIsZoneEditModalOpen(false)}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-scale-up"
+          >
+            <div className="bg-slate-950 text-white px-6 py-4 flex items-center justify-between">
+              <h4 className="font-extrabold text-sm flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-blue-400" />
+                <span>แก้ไขชื่อโซนหลัก</span>
+              </h4>
+              <button 
+                onClick={() => setIsZoneEditModalOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">
+                  ชื่อโซนเดิม
+                </label>
+                <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-600 font-semibold">
+                  {zoneToRename}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  ชื่อโซนใหม่ *
+                </label>
+                <input
+                  type="text"
+                  placeholder="เช่น โซนหน้าร้าน, ห้องเก็บอาหาร"
+                  value={renamedZoneName}
+                  onChange={(e) => setRenamedZoneName(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-hidden focus:border-blue-500 bg-slate-50 focus:bg-white font-semibold"
+                  required
+                />
+                <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                  * การเปลี่ยนชื่อโซนจะแก้ไขข้อมูลของชั้นวางทั้งหมดที่อยู่ในโซนนี้โดยอัตโนมัติ สินค้าที่อิงตำแหน่งชั้นวางในโซนนี้จะยังคงเชื่อมโยงอย่างถูกต้อง
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsZoneEditModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-xs font-semibold text-slate-600 cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveZoneRename}
+                  disabled={!renamedZoneName.trim() || renamedZoneName.trim() === zoneToRename}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  บันทึกการแก้ไข
+                </button>
+              </div>
             </div>
           </div>
         </div>
