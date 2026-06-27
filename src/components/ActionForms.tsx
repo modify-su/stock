@@ -1,5 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { ArrowDownLeft, ArrowUpRight, RotateCcw, AlertCircle, CheckCircle, HelpCircle, ClipboardList, PenTool, Lock, Camera, Sparkles } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, RotateCcw, AlertCircle, CheckCircle, HelpCircle, ClipboardList, PenTool, Lock, Camera, Sparkles, Search, X } from 'lucide-react';
 import { Product, Transaction, TransactionType, ReturnStatus, UserProfile } from '../types';
 import SmartScanner from './SmartScanner';
 
@@ -40,6 +40,10 @@ export default function ActionForms({
   const [weight, setWeight] = useState<string>('');
   const [weightUnit, setWeightUnit] = useState<string>('g');
 
+  // Autocomplete state
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
   // Ui helpers
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -55,11 +59,18 @@ export default function ActionForms({
   useEffect(() => {
     if (preSelectedProductId) {
       setProductId(preSelectedProductId);
+      const found = products.find(p => p.id === preSelectedProductId);
+      if (found) {
+        setProductSearchQuery(`[${found.sku}] - ${found.name}`);
+      }
+    } else {
+      setProductId('');
+      setProductSearchQuery('');
     }
     if (preSelectedType) {
       setActiveTab(preSelectedType);
     }
-  }, [preSelectedProductId, preSelectedType]);
+  }, [preSelectedProductId, preSelectedType, products]);
 
   // Selected product details
   const selectedProduct = products.find((p) => p.id === productId);
@@ -287,19 +298,85 @@ export default function ActionForms({
             <label className="block text-xs font-semibold text-slate-550 mb-1">
               เลือกสินค้าในระบบคลัง *
             </label>
-            <select
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
-              required
-            >
-              <option value="">-- กรุณาเลือกสินค้า --</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  [{p.sku}] - {p.name} (คงเหลือ: {p.quantity} {p.unit || 'ชิ้น'})
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-4 w-4 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  className="w-full pl-9 pr-8 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-100 focus:border-blue-400 font-medium"
+                  placeholder="ค้นหาตามชื่อสินค้า หรือ SKU..."
+                  value={productSearchQuery}
+                  onChange={(e) => {
+                    setProductSearchQuery(e.target.value);
+                    setProductId('');
+                    setIsDropdownOpen(true);
+                  }}
+                  onFocus={() => setIsDropdownOpen(true)}
+                  required={!productId}
+                />
+                {productSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProductId('');
+                      setProductSearchQuery('');
+                      setIsDropdownOpen(true);
+                    }}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Autocomplete Dropdown Options */}
+              {isDropdownOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-10" 
+                    onClick={() => setIsDropdownOpen(false)} 
+                  />
+                  <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                    {products.filter(p => 
+                      p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || 
+                      p.sku.toLowerCase().includes(productSearchQuery.toLowerCase())
+                    ).length === 0 ? (
+                      <div className="p-3 text-xs text-slate-400 text-center">ไม่พบรายการสินค้าที่ต้องการ</div>
+                    ) : (
+                      products
+                        .filter(p => 
+                          p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || 
+                          p.sku.toLowerCase().includes(productSearchQuery.toLowerCase())
+                        )
+                        .map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setProductId(p.id);
+                              setProductSearchQuery(`[${p.sku}] - ${p.name}`);
+                              setIsDropdownOpen(false);
+                            }}
+                            className="w-full text-left px-3.5 py-2.5 hover:bg-slate-50 text-xs border-b border-slate-50 flex justify-between items-center transition-colors cursor-pointer"
+                          >
+                            <div>
+                              <div className="font-extrabold text-slate-800">{p.name}</div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                SKU: {p.sku} | พิกัด: {p.location || 'ไม่ได้ระบุ'}
+                              </div>
+                            </div>
+                            <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-black text-[9px] shrink-0">
+                              {p.quantity} {p.unit || 'ชิ้น'}
+                            </span>
+                          </button>
+                        ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Selected product quick metadata card */}
             {selectedProduct && (
