@@ -87,6 +87,26 @@ function parsePromoMultiplier(sku: string, name: string): { multiplier: number; 
     }
   }
 
+  // Pattern 5: Suffix quantities like 2 PC, 2 ชิ้น, 2 sets, 3 units etc. (if number > 1)
+  try {
+    const qtyMatches = Array.from(combined.matchAll(/(\d+)\s*(pcs|pc|ชิ้น|คู่|กล่อง|set|sets|pack|packs|pu|unit|units)/gi));
+    for (const match of qtyMatches) {
+      const x = parseInt(match[1], 10);
+      if (x > 1 && x < 200) {
+        return { multiplier: x, reason: `ระบุจำนวนทวีคูณ ${x} ${match[2]} ในรหัสหรือชื่อสินค้า` };
+      }
+    }
+  } catch (e) {
+    // Fallback if matchAll is not supported in environment
+    const qtyMatch = combined.match(/(\d+)\s*(pcs|pc|ชิ้น|คู่|กล่อง|set|sets|pack|packs|pu|unit|units)/i);
+    if (qtyMatch) {
+      const x = parseInt(qtyMatch[1], 10);
+      if (x > 1 && x < 200) {
+        return { multiplier: x, reason: `ระบุจำนวนทวีคูณ ${x} ${qtyMatch[2]} ในรหัสหรือชื่อสินค้า` };
+      }
+    }
+  }
+
   return { multiplier: 1, reason: "" };
 }
 
