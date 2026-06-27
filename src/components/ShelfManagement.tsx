@@ -400,7 +400,19 @@ export default function ShelfManagement({
   const printHtmlContent = (htmlContent: string) => {
     // Attempt window.open first
     try {
-      const printWindow = window.open('', '', 'height=750,width=950');
+      // Calculate dynamic popup window size to be flexible according to the screen size
+      const screenWidth = typeof window !== 'undefined' ? window.screen.width : 1024;
+      const screenHeight = typeof window !== 'undefined' ? window.screen.height : 768;
+      
+      // Set size to 90% of screen size, but max out at 950px width and 850px height
+      const width = Math.min(950, Math.floor(screenWidth * 0.9));
+      const height = Math.min(850, Math.floor(screenHeight * 0.9));
+      
+      // Center the popup window on screen
+      const left = Math.max(0, Math.floor((screenWidth - width) / 2));
+      const top = Math.max(0, Math.floor((screenHeight - height) / 2));
+
+      const printWindow = window.open('', '', `height=${height},width=${width},left=${left},top=${top},resizable=yes,scrollbars=yes`);
       if (printWindow) {
         printWindow.document.open();
         printWindow.document.write(htmlContent);
@@ -2235,9 +2247,11 @@ export default function ShelfManagement({
               {/* Printable batch container preview */}
               <div 
                 id="printable-area-batch" 
-                className="grid gap-4 justify-center"
+                className="grid gap-4 justify-center w-full"
                 style={{
-                  gridTemplateColumns: `repeat(${shelfGridColumns}, minmax(0, 1fr))`
+                  gridTemplateColumns: typeof window !== 'undefined' && window.innerWidth < 640
+                    ? '1fr'
+                    : `repeat(${shelfGridColumns}, minmax(0, 1fr))`
                 }}
               >
                 {shelves.map((shelf) => {
@@ -2252,7 +2266,7 @@ export default function ShelfManagement({
                       className="print-card border-4 border-slate-950 rounded-2xl bg-white text-center shadow-xs transition-all duration-300 flex flex-col justify-between"
                       style={{
                         padding: `${padding}px`,
-                        maxWidth: `${cardWidth}px`,
+                        maxWidth: `min(100%, ${cardWidth}px)`,
                         margin: '0 auto',
                         width: '100%'
                       }}
@@ -2282,7 +2296,7 @@ export default function ShelfManagement({
                       <img
                         src={getQrCodeUrlForShelf(shelf)}
                         alt={`QR Code shelf ${shelf.name}`}
-                        className="mx-auto my-2 border border-slate-200 p-1 bg-white rounded-lg transition-all duration-300"
+                        className="mx-auto my-2 border border-slate-200 p-1 bg-white rounded-lg transition-all duration-300 max-w-full h-auto"
                         style={{
                           width: `${qrSize}px`,
                           height: `${qrSize}px`,
