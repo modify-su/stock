@@ -14,7 +14,9 @@ import {
   Check, 
   ChevronRight, 
   Map, 
-  AlertCircle 
+  AlertCircle,
+  SlidersHorizontal,
+  LayoutGrid 
 } from 'lucide-react';
 import { Product, Shelf, UserProfile } from '../types';
 import { db } from '../firebase';
@@ -71,7 +73,11 @@ export default function ShelfManagement({
   const [showUnit, setShowUnit] = useState(true);
   const [customText, setCustomText] = useState('');
   const [qrAction, setQrAction] = useState<'VIEW' | 'OUT' | 'IN'>('OUT');
-  const [stickerSize, setStickerSize] = useState<'SM' | 'MD' | 'LG'>('MD');
+  const [stickerSize, setStickerSize] = useState<'SM' | 'MD' | 'LG' | 'CUSTOM'>('MD');
+  const [customCardWidth, setCustomCardWidth] = useState<number>(230);
+  const [customQrSize, setCustomQrSize] = useState<number>(130);
+  const [customFontSize, setCustomFontSize] = useState<number>(11);
+  const [customPadding, setCustomPadding] = useState<number>(15);
   const [labelQty, setLabelQty] = useState<number>(1);
 
   // Queued Labels data structure
@@ -85,9 +91,21 @@ export default function ShelfManagement({
     showUnit: boolean;
     customText: string;
     qrAction: 'VIEW' | 'OUT' | 'IN';
-    stickerSize: 'SM' | 'MD' | 'LG';
+    stickerSize: 'SM' | 'MD' | 'LG' | 'CUSTOM';
+    customCardWidth?: number;
+    customQrSize?: number;
+    customFontSize?: number;
+    customPadding?: number;
   }
   const [printQueue, setPrintQueue] = useState<QueuedLabel[]>([]);
+
+  // Shelf QR size customization states
+  const [shelfStickerSize, setShelfStickerSize] = useState<'SM' | 'MD' | 'LG' | 'CUSTOM'>('MD');
+  const [shelfCustomCardWidth, setShelfCustomCardWidth] = useState<number>(340);
+  const [shelfCustomQrSize, setShelfCustomQrSize] = useState<number>(180);
+  const [shelfCustomFontSize, setShelfCustomFontSize] = useState<number>(14);
+  const [shelfCustomPadding, setShelfCustomPadding] = useState<number>(24);
+  const [shelfGridColumns, setShelfGridColumns] = useState<number>(2); // 1, 2, or 3
 
   // Modal states
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -358,7 +376,13 @@ export default function ShelfManagement({
       showUnit,
       customText: customText.trim(),
       qrAction,
-      stickerSize
+      stickerSize,
+      ...(stickerSize === 'CUSTOM' ? {
+        customCardWidth,
+        customQrSize,
+        customFontSize,
+        customPadding
+      } : {})
     };
 
     setPrintQueue(prev => [...prev, newItem]);
@@ -372,15 +396,61 @@ export default function ShelfManagement({
     setCustomText('');
   };
 
+  // Centralized robust printing function (Bypasses Sandbox / Popup Blockers in iframe)
+  const printHtmlContent = (htmlContent: string) => {
+    // Attempt window.open first
+    try {
+      const printWindow = window.open('', '', 'height=750,width=950');
+      if (printWindow) {
+        printWindow.document.open();
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+        return;
+      }
+    } catch (e) {
+      console.warn("window.open blocked or failed, using silent iframe printer", e);
+    }
+
+    // Fallback: Silent Inline iframe printing (Doesn't require popups!)
+    const existing = document.getElementById('silent-print-iframe') as HTMLIFrameElement;
+    if (existing) {
+      existing.parentNode?.removeChild(existing);
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.id = 'silent-print-iframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    iframe.style.visibility = 'hidden';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (doc) {
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+
+      setSuccess("🖨️ ตรวจพบว่าเบราว์เซอร์บล็อกป๊อปอัปในหน้าจอนี้: กำลังสั่งพิมพ์สติกเกอร์ผ่านช่องทางสำรองโดยตรง...");
+      setTimeout(() => setSuccess(''), 4500);
+
+      if (iframe.contentWindow) {
+        const win = iframe.contentWindow;
+        win.focus();
+        // Give external QR codes 800ms to load before opening print window
+        setTimeout(() => {
+          win.print();
+        }, 800);
+      }
+    }
+  };
+
   // Print all queued stickers
   const handlePrintQueue = () => {
     if (printQueue.length === 0) return;
-
-    const printWindow = window.open('', '', 'height=700,width=900');
-    if (!printWindow) {
-      alert('กรุณาอนุญาตให้ระบบเปิดหน้าต่างใหม่ (Popup Blocked) เพื่อสั่งพิมพ์ใบสติกเกอร์ครับ');
-      return;
-    }
 
     let gridHtml = '';
     printQueue.forEach((item) => {
@@ -398,6 +468,14 @@ export default function ShelfManagement({
         cardStyle = 'width: 300px; padding: 22px; margin: 8px;';
         imgStyle = 'width: 170px; height: 170px;';
         textStyle = 'font-size: 13px;';
+      } else if (item.stickerSize === 'CUSTOM') {
+        const cw = item.customCardWidth || 230;
+        const cq = item.customQrSize || 130;
+        const cf = item.customFontSize || 11;
+        const cp = item.customPadding || 15;
+        cardStyle = `width: ${cw}px; padding: ${cp}px; margin: 5px;`;
+        imgStyle = `width: ${cq}px; height: ${cq}px;`;
+        textStyle = `font-size: ${cf}px;`;
       } else { // MD
         cardStyle = 'width: 230px; padding: 15px; margin: 5px;';
         imgStyle = 'width: 130px; height: 130px;';
@@ -443,7 +521,7 @@ export default function ShelfManagement({
       }
     });
 
-    printWindow.document.write(`
+    const fullHtml = `
       <html>
         <head>
           <title>พิมพ์ป้าย QR Code ติดสินค้า</title>
@@ -494,8 +572,9 @@ export default function ShelfManagement({
           </div>
         </body>
       </html>
-    `);
-    printWindow.document.close();
+    `;
+
+    printHtmlContent(fullHtml);
   };
 
 
@@ -610,102 +689,98 @@ export default function ShelfManagement({
     const printContent = document.getElementById('printable-area');
     if (!printContent) return;
 
-    const originalContent = document.body.innerHTML;
-    const printWindow = window.open('', '', 'height=600,width=800');
-    
-    if (printWindow) {
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>พิมพ์ป้ายชั้นวางสินค้า QR Code</title>
-            <style>
-              body { 
-                font-family: 'Helvetica Neue', Arial, sans-serif; 
-                margin: 0; 
-                padding: 20px; 
-                background: #white;
-                text-align: center;
+    const cardWidth = shelfStickerSize === 'CUSTOM' ? shelfCustomCardWidth : shelfStickerSize === 'SM' ? 260 : shelfStickerSize === 'LG' ? 420 : 340;
+    const qrSize = shelfStickerSize === 'CUSTOM' ? shelfCustomQrSize : shelfStickerSize === 'SM' ? 120 : shelfStickerSize === 'LG' ? 240 : 180;
+    const fontSize = shelfStickerSize === 'CUSTOM' ? shelfCustomFontSize : shelfStickerSize === 'SM' ? 11 : shelfStickerSize === 'LG' ? 17 : 14;
+    const padding = shelfStickerSize === 'CUSTOM' ? shelfCustomPadding : shelfStickerSize === 'SM' ? 16 : shelfStickerSize === 'LG' ? 32 : 24;
+
+    const fullHtml = `
+      <html>
+        <head>
+          <title>พิมพ์ป้ายชั้นวางสินค้า QR Code</title>
+          <style>
+            body { 
+              font-family: 'Helvetica Neue', Arial, sans-serif; 
+              margin: 0; 
+              padding: 20px; 
+              background: #fff;
+              text-align: center;
+            }
+            .print-card {
+              border: 4px solid #333;
+              border-radius: 16px;
+              padding: ${padding}px;
+              margin: 10px auto;
+              max-width: ${cardWidth}px;
+              background: #fff;
+              box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+              page-break-inside: avoid;
+            }
+            .title { 
+              font-size: ${fontSize + 14}px; 
+              font-weight: bold; 
+              margin: 0 0 5px 0; 
+              color: #000;
+              letter-spacing: 1px;
+            }
+            .subtitle { 
+              font-size: ${fontSize - 2}px; 
+              color: #666; 
+              margin: 0 0 20px 0;
+              text-transform: uppercase;
+              font-weight: bold;
+            }
+            .qr-image { 
+              width: ${qrSize}px; 
+              height: ${qrSize}px; 
+              margin: 15px auto;
+              display: block;
+            }
+            .description { 
+              font-size: ${fontSize - 1}px; 
+              color: #444; 
+              margin-top: 15px;
+              border-top: 1px dashed #ccc;
+              padding-top: 15px;
+              line-height: 1.4;
+            }
+            .footer-text {
+              font-size: ${fontSize - 4}px;
+              color: #888;
+              margin-top: 10px;
+            }
+            .btn-print-trigger {
+              background-color: #2563eb;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              font-size: 14px;
+              font-weight: bold;
+              border-radius: 6px;
+              cursor: pointer;
+              margin-bottom: 20px;
+            }
+            @media print {
+              .btn-print-trigger { display: none; }
+              body { padding: 0; }
+              .print-card { 
+                box-shadow: none; 
+                border: 3px solid #000; 
+                margin: 20px auto; 
               }
-              .print-card {
-                border: 4px solid #333;
-                border-radius: 16px;
-                padding: 30px;
-                margin: 10px auto;
-                max-width: 420px;
-                background: #fff;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                page-break-inside: avoid;
-              }
-              .title { 
-                font-size: 32px; 
-                font-weight: bold; 
-                margin: 0 0 5px 0; 
-                color: #000;
-                letter-spacing: 1px;
-              }
-              .subtitle { 
-                font-size: 14px; 
-                color: #666; 
-                margin: 0 0 20px 0;
-                text-transform: uppercase;
-                font-weight: bold;
-              }
-              .qr-image { 
-                width: 220px; 
-                height: 220px; 
-                margin: 15px auto;
-                display: block;
-              }
-              .description { 
-                font-size: 13px; 
-                color: #444; 
-                margin-top: 15px;
-                border-top: 1px dashed #ccc;
-                padding-top: 15px;
-                line-height: 1.4;
-              }
-              .footer-text {
-                font-size: 10px;
-                color: #888;
-                margin-top: 10px;
-              }
-              .btn-print-trigger {
-                background-color: #2563eb;
-                color: white;
-                border: none;
-                padding: 10px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 6px;
-                cursor: pointer;
-                margin-bottom: 20px;
-              }
-              @media print {
-                .btn-print-trigger { display: none; }
-                body { padding: 0; }
-                .print-card { 
-                  box-shadow: none; 
-                  border: 3px solid #000; 
-                  margin: 20px auto; 
-                }
-              }
-            </style>
-          </head>
-          <body>
-            <button class="btn-print-trigger" onclick="window.print()">กดปุ่มนี้เพื่อพิมพ์ / บันทึก PDF</button>
-            <div id="print-container">
-              ${printContent.innerHTML}
-            </div>
-            <script>
-              window.onload = function() {
-                // Optional: auto trigger print
-              }
-            </script>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-    }
+            }
+          </style>
+        </head>
+        <body>
+          <button class="btn-print-trigger" onclick="window.print()">กดปุ่มนี้เพื่อพิมพ์ / บันทึก PDF</button>
+          <div id="print-container">
+            ${printContent.innerHTML}
+          </div>
+        </body>
+      </html>
+    `;
+
+    printHtmlContent(fullHtml);
   };
 
   return (
@@ -1189,12 +1264,13 @@ export default function ShelfManagement({
                       <label className="block text-xs font-black text-slate-700 mb-1">ขนาดดวงสติกเกอร์:</label>
                       <select
                         value={stickerSize}
-                        onChange={(e) => setStickerSize(e.target.value as 'SM' | 'MD' | 'LG')}
+                        onChange={(e) => setStickerSize(e.target.value as 'SM' | 'MD' | 'LG' | 'CUSTOM')}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden focus:border-blue-500 font-semibold"
                       >
                         <option value="SM">ขนาดเล็ก (Small - 60x60 มม.)</option>
                         <option value="MD">ขนาดกลาง (Medium - 80x80 มม.)</option>
                         <option value="LG">ขนาดใหญ่ (Large - 100x100 มม.)</option>
+                        <option value="CUSTOM">กำหนดขนาดเอง (Custom Size...)</option>
                       </select>
                     </div>
 
@@ -1226,6 +1302,89 @@ export default function ShelfManagement({
                     </div>
                   </div>
 
+                  {/* Custom Sizing Panel */}
+                  {stickerSize === 'CUSTOM' && (
+                    <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-3.5 animate-fade-in text-slate-700">
+                      <div className="text-xs font-extrabold text-blue-900 flex items-center gap-1">
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        <span>ตั้งค่าขนาดพิกเซลบาร์โค้ดสติกเกอร์ (Custom Dimension Control)</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[10px] font-bold">ความกว้างป้าย:</span>
+                            <span className="text-[10px] font-extrabold text-blue-600 font-mono">{customCardWidth}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="140"
+                            max="450"
+                            step="5"
+                            value={customCardWidth}
+                            onChange={(e) => {
+                              const cw = Number(e.target.value);
+                              setCustomCardWidth(cw);
+                              // Keep QR size within boundary
+                              if (customQrSize > cw - 20) {
+                                setCustomQrSize(cw - 20);
+                              }
+                            }}
+                            className="w-full accent-blue-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[10px] font-bold">ขนาด QR Code:</span>
+                            <span className="text-[10px] font-extrabold text-blue-600 font-mono">{customQrSize}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="40"
+                            max={customCardWidth - 20}
+                            step="5"
+                            value={customQrSize}
+                            onChange={(e) => setCustomQrSize(Number(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[10px] font-bold">ขนาดตัวอักษร:</span>
+                            <span className="text-[10px] font-extrabold text-blue-600 font-mono">{customFontSize}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="8"
+                            max="24"
+                            step="1"
+                            value={customFontSize}
+                            onChange={(e) => setCustomFontSize(Number(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[10px] font-bold">ระยะขอบการ์ด:</span>
+                            <span className="text-[10px] font-extrabold text-blue-600 font-mono">{customPadding}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="4"
+                            max="40"
+                            step="1"
+                            value={customPadding}
+                            onChange={(e) => setCustomPadding(Number(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     onClick={handleAddToQueue}
                     className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
@@ -1243,16 +1402,24 @@ export default function ShelfManagement({
               
               {selectedProduct ? (
                 <div 
-                  className={`bg-white border-2 border-dashed border-slate-400 rounded-lg p-5 shadow-lg flex flex-col justify-between text-center bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] transition-all duration-300 ${
-                    stickerSize === 'SM' ? 'w-56' : stickerSize === 'LG' ? 'w-80' : 'w-64'
+                  className={`bg-white border-2 border-dashed border-slate-400 rounded-lg shadow-lg flex flex-col justify-between text-center bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] transition-all duration-300 ${
+                    stickerSize === 'SM' ? 'w-56 p-4' : stickerSize === 'LG' ? 'w-80 p-6' : stickerSize === 'CUSTOM' ? '' : 'w-64 p-5'
                   }`}
+                  style={stickerSize === 'CUSTOM' ? {
+                    width: `${customCardWidth}px`,
+                    padding: `${customPadding}px`,
+                    fontSize: `${customFontSize}px`
+                  } : undefined}
                 >
                   <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide">
                     {selectedProduct.category || 'หมวดทั่วไป'}
                   </div>
                   
                   {showName && (
-                    <div className="text-xs font-extrabold text-slate-900 mt-1 line-clamp-2 leading-snug">
+                    <div 
+                      className="font-extrabold text-slate-900 mt-1 line-clamp-2 leading-snug"
+                      style={stickerSize === 'CUSTOM' ? { fontSize: `${customFontSize}px` } : { fontSize: '12px' }}
+                    >
                       {selectedProduct.name}
                     </div>
                   )}
@@ -1261,7 +1428,14 @@ export default function ShelfManagement({
                     <img 
                       src={getQrCodeUrlForProduct(selectedProduct, qrAction)} 
                       alt="Product QR Preview" 
-                      className="w-32 h-32"
+                      className="transition-all duration-300"
+                      style={stickerSize === 'CUSTOM' ? {
+                        width: `${customQrSize}px`,
+                        height: `${customQrSize}px`
+                      } : {
+                        width: stickerSize === 'SM' ? '90px' : stickerSize === 'LG' ? '170px' : '130px',
+                        height: stickerSize === 'SM' ? '90px' : stickerSize === 'LG' ? '170px' : '130px'
+                      }}
                     />
                   </div>
 
@@ -1271,7 +1445,10 @@ export default function ShelfManagement({
                     {qrAction === 'OUT' ? 'สแกนเพื่อตัดเบิก (OUT)' : qrAction === 'IN' ? 'สแกนรับของเข้า (IN)' : 'สแกนตรวจสอบสต๊อก'}
                   </div>
 
-                  <div className="text-left mt-3.5 pt-3.5 border-t border-dashed border-slate-200 text-[11px] text-slate-600 space-y-0.5">
+                  <div 
+                    className="text-left mt-3.5 pt-3.5 border-t border-dashed border-slate-200 text-slate-600 space-y-0.5"
+                    style={stickerSize === 'CUSTOM' ? { fontSize: `${customFontSize - 1}px` } : { fontSize: '11px' }}
+                  >
                     {showSku && <div><strong>SKU:</strong> {selectedProduct.sku}</div>}
                     {showLocation && <div><strong>พิกัดคลัง:</strong> {selectedProduct.location || 'ไม่ได้ระบุ'}</div>}
                     {showUnit && <div><strong>หน่วยเบิก:</strong> {selectedProduct.unit}</div>}
@@ -1354,7 +1531,9 @@ export default function ShelfManagement({
                           {item.qrAction === 'OUT' ? 'OUT' : item.qrAction === 'IN' ? 'IN' : 'VIEW'}
                         </span>
                         <span className="text-[10px] text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded">
-                          ขนาด {item.stickerSize === 'SM' ? 'เล็ก' : item.stickerSize === 'LG' ? 'ใหญ่' : 'กลาง'}
+                          {item.stickerSize === 'SM' ? 'ขนาดเล็ก' : 
+                           item.stickerSize === 'LG' ? 'ขนาดใหญ่' : 
+                           item.stickerSize === 'CUSTOM' ? `กำหนดเอง (${item.customCardWidth}px)` : 'ขนาดกลาง'}
                         </span>
                       </div>
                     </div>
@@ -1717,9 +1896,9 @@ export default function ShelfManagement({
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-scale-up"
+            className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
           >
-            <div className="bg-slate-950 text-white px-6 py-4 flex items-center justify-between">
+            <div className="bg-slate-950 text-white px-6 py-4 flex items-center justify-between shrink-0">
               <h4 className="font-extrabold text-sm flex items-center gap-1.5">
                 <QrCode className="w-4 h-4 text-blue-400" />
                 <span>พรีวิวป้ายชั้นวาง QR Code</span>
@@ -1732,54 +1911,184 @@ export default function ShelfManagement({
               </button>
             </div>
 
-            <div className="p-6 flex flex-col items-center">
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col items-center bg-slate-50 space-y-5 w-full">
+              {/* Size Configuration Controls */}
+              <div className="w-full bg-white border border-slate-200/80 rounded-xl p-4 space-y-3 shadow-xs">
+                <div>
+                  <label className="block text-xs font-black text-slate-700 mb-1 flex items-center gap-1">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
+                    <span>ปรับแต่งขนาดป้ายชั้นวาง (Shelf Tag Sizing):</span>
+                  </label>
+                  <select
+                    value={shelfStickerSize}
+                    onChange={(e) => setShelfStickerSize(e.target.value as 'SM' | 'MD' | 'LG' | 'CUSTOM')}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden focus:border-blue-500 font-semibold text-slate-700"
+                  >
+                    <option value="SM">ขนาดเล็ก (Small - 60x60 มม.)</option>
+                    <option value="MD">ขนาดกลาง (Medium - 80x80 มม.)</option>
+                    <option value="LG">ขนาดใหญ่ (Large - 100x100 มม.)</option>
+                    <option value="CUSTOM">กำหนดขนาดเอง (Custom Size...)</option>
+                  </select>
+                </div>
+
+                {shelfStickerSize === 'CUSTOM' && (
+                  <div className="space-y-3 pt-2.5 border-t border-slate-200/50">
+                    <div className="grid grid-cols-2 gap-3 text-slate-700">
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold">ความกว้างป้าย:</span>
+                          <span className="text-[10px] font-extrabold text-blue-600 font-mono">{shelfCustomCardWidth}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="200"
+                          max="450"
+                          step="5"
+                          value={shelfCustomCardWidth}
+                          onChange={(e) => {
+                            const cw = Number(e.target.value);
+                            setShelfCustomCardWidth(cw);
+                            if (shelfCustomQrSize > cw - 40) {
+                              setShelfCustomQrSize(cw - 40);
+                            }
+                          }}
+                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold">ขนาด QR Code:</span>
+                          <span className="text-[10px] font-extrabold text-blue-600 font-mono">{shelfCustomQrSize}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="80"
+                          max={shelfCustomCardWidth - 40}
+                          step="5"
+                          value={shelfCustomQrSize}
+                          onChange={(e) => setShelfCustomQrSize(Number(e.target.value))}
+                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold">ขนาดอักษร:</span>
+                          <span className="text-[10px] font-extrabold text-blue-600 font-mono">{shelfCustomFontSize}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10"
+                          max="24"
+                          step="1"
+                          value={shelfCustomFontSize}
+                          onChange={(e) => setShelfCustomFontSize(Number(e.target.value))}
+                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold">ระยะขอบการ์ด:</span>
+                          <span className="text-[10px] font-extrabold text-blue-600 font-mono">{shelfCustomPadding}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="8"
+                          max="48"
+                          step="1"
+                          value={shelfCustomPadding}
+                          onChange={(e) => setShelfCustomPadding(Number(e.target.value))}
+                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Printable Area */}
               <div id="printable-area" className="w-full flex justify-center">
-                <div className="print-card w-full max-w-[340px] border-4 border-slate-950 rounded-2xl p-6 bg-white text-center shadow-xs">
-                  <div className="text-[11px] text-slate-400 font-extrabold tracking-widest uppercase mb-1">
-                    {printModalShelf.zone || 'คลังสินค้าหลัก'}
-                  </div>
-                  <h3 className="title text-3xl font-black text-slate-950 tracking-tight m-0 uppercase">
-                    {printModalShelf.name}
-                  </h3>
-                  <div className="subtitle text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-4">
-                    STORAGE SHELF QR CODE
+                <div 
+                  className="print-card w-full border-4 border-slate-950 rounded-2xl bg-white text-center shadow-xs transition-all duration-300 flex flex-col justify-between"
+                  style={{
+                    padding: `${shelfStickerSize === 'CUSTOM' ? shelfCustomPadding : shelfStickerSize === 'SM' ? 16 : shelfStickerSize === 'LG' ? 32 : 24}px`,
+                    maxWidth: `min(100%, ${shelfStickerSize === 'CUSTOM' ? shelfCustomCardWidth : shelfStickerSize === 'SM' ? 260 : shelfStickerSize === 'LG' ? 420 : 340}px)`,
+                  }}
+                >
+                  <div>
+                    <div className="text-[11px] text-slate-400 font-extrabold tracking-widest uppercase mb-1">
+                      {printModalShelf.zone || 'คลังสินค้าหลัก'}
+                    </div>
+                    <h3 
+                      className="title font-black text-slate-950 tracking-tight m-0 uppercase"
+                      style={{
+                        fontSize: `${(shelfStickerSize === 'CUSTOM' ? shelfCustomFontSize : shelfStickerSize === 'SM' ? 11 : shelfStickerSize === 'LG' ? 17 : 14) + 14}px`
+                      }}
+                    >
+                      {printModalShelf.name}
+                    </h3>
+                    <div 
+                      className="subtitle text-slate-500 font-bold uppercase tracking-wider mb-4"
+                      style={{
+                        fontSize: `${(shelfStickerSize === 'CUSTOM' ? shelfCustomFontSize : shelfStickerSize === 'SM' ? 11 : shelfStickerSize === 'LG' ? 17 : 14) - 2}px`
+                      }}
+                    >
+                      STORAGE SHELF QR CODE
+                    </div>
                   </div>
                   
                   <img
                     src={getQrCodeUrlForShelf(printModalShelf)}
                     alt={`QR Code shelf ${printModalShelf.name}`}
-                    className="qr-image w-48 h-48 mx-auto my-3 border border-slate-200 p-2 bg-white rounded-lg shadow-2xs"
+                    className="qr-image mx-auto my-3 border border-slate-200 p-2 bg-white rounded-lg shadow-2xs transition-all duration-300 max-w-full h-auto"
+                    style={{
+                      width: `${shelfStickerSize === 'CUSTOM' ? shelfCustomQrSize : shelfStickerSize === 'SM' ? 120 : shelfStickerSize === 'LG' ? 240 : 180}px`,
+                      height: `${shelfStickerSize === 'CUSTOM' ? shelfCustomQrSize : shelfStickerSize === 'SM' ? 120 : shelfStickerSize === 'LG' ? 240 : 180}px`,
+                    }}
                     referrerPolicy="no-referrer"
                   />
                   
-                  <p className="description text-xs text-slate-700 border-t border-dashed border-slate-200 pt-3 mt-3 leading-relaxed">
-                    <strong>คำอธิบาย:</strong> {printModalShelf.description || 'ไม่มีคำอธิบายเสริม'}<br/>
-                    <span className="text-[10px] text-slate-400 block mt-1">ใช้แอปคลังสินค้า หรือสมาร์ทโฟนสแกนเพื่ออัปเดตสต๊อกทันที</span>
-                  </p>
-                  
-                  <div className="footer-text text-[9px] text-slate-400 mt-2 font-mono">
-                    ID: {printModalShelf.id}
+                  <div>
+                    <p 
+                      className="description text-slate-700 border-t border-dashed border-slate-200 pt-3 mt-3 leading-relaxed"
+                      style={{
+                        fontSize: `${(shelfStickerSize === 'CUSTOM' ? shelfCustomFontSize : shelfStickerSize === 'SM' ? 11 : shelfStickerSize === 'LG' ? 17 : 14) - 1}px`
+                      }}
+                    >
+                      <strong>คำอธิบาย:</strong> {printModalShelf.description || 'ไม่มีคำอธิบายเสริม'}<br/>
+                      <span className="text-[10px] text-slate-400 block mt-1">ใช้แอปคลังสินค้า หรือสมาร์ทโฟนสแกนเพื่ออัปเดตสต๊อกทันที</span>
+                    </p>
+                    
+                    <div 
+                      className="footer-text text-slate-400 mt-2 font-mono"
+                      style={{
+                        fontSize: `${(shelfStickerSize === 'CUSTOM' ? shelfCustomFontSize : shelfStickerSize === 'SM' ? 11 : shelfStickerSize === 'LG' ? 17 : 14) - 4}px`
+                      }}
+                    >
+                      ID: {printModalShelf.id}
+                    </div>
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Actions panel */}
-              <div className="w-full pt-6 mt-6 border-t border-slate-100 flex gap-2">
-                <button
-                  onClick={() => setPrintModalShelf(null)}
-                  className="flex-1 px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-xs font-semibold text-slate-700 cursor-pointer"
-                >
-                  ย้อนกลับ
-                </button>
-                <button
-                  onClick={triggerPrint}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>ดาวน์โหลด / พิมพ์บาร์โค้ด</span>
-                </button>
-              </div>
+            {/* Actions panel */}
+            <div className="p-6 border-t border-slate-200 bg-white flex justify-end gap-2 shrink-0 w-full">
+              <button
+                onClick={() => setPrintModalShelf(null)}
+                className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-xs font-semibold text-slate-700 cursor-pointer"
+              >
+                ย้อนกลับ
+              </button>
+              <button
+                onClick={triggerPrint}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Printer className="w-4 h-4" />
+                <span>ดาวน์โหลด / พิมพ์บาร์โค้ด</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1793,12 +2102,12 @@ export default function ShelfManagement({
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl max-w-4xl w-full max-h-[85vh] shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
+            className="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
           >
             <div className="bg-slate-950 text-white px-6 py-4 flex items-center justify-between shrink-0">
               <h4 className="font-extrabold text-sm flex items-center gap-1.5">
                 <Printer className="w-4 h-4 text-blue-400" />
-                <span>พรีวิวการพิมพ์ป้ายชั้นวางทั้งหมด ({shelves.length} รายการ)</span>
+                <span>พรีวิวและปรับแต่งการพิมพ์ป้ายชั้นวางทั้งหมด ({shelves.length} รายการ)</span>
               </h4>
               <button 
                 onClick={() => setIsBatchPrintOpen(false)}
@@ -1809,34 +2118,199 @@ export default function ShelfManagement({
             </div>
 
             <div className="p-6 overflow-y-auto space-y-4 bg-slate-50 flex-1">
-              <p className="text-xs text-slate-500 text-center leading-relaxed max-w-lg mx-auto">
-                ระบบจัดเตรียมใบแปะชั้นวางสินค้าเรียงตามตัวอักษรทั้งหมดเรียบร้อยแล้ว โดยเมื่อคลิก "เริ่มพิมพ์ใบแปะแบบชุด" ระบบจะเปิดหน้าต่างที่สั่งพิมพ์ได้อย่างเหมาะสม
-              </p>
+              {/* Batch Configuration Panel */}
+              <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-4 max-w-3xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-black text-slate-700 mb-1 flex items-center gap-1">
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
+                      <span>ปรับขนาดป้ายกลุ่มนี้ (Batch Tag Sizing):</span>
+                    </label>
+                    <select
+                      value={shelfStickerSize}
+                      onChange={(e) => setShelfStickerSize(e.target.value as 'SM' | 'MD' | 'LG' | 'CUSTOM')}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden focus:border-blue-500 font-semibold text-slate-700"
+                    >
+                      <option value="SM">ขนาดเล็ก (Small - 60x60 มม.)</option>
+                      <option value="MD">ขนาดกลาง (Medium - 80x80 มม.)</option>
+                      <option value="LG">ขนาดใหญ่ (Large - 100x100 มม.)</option>
+                      <option value="CUSTOM">กำหนดขนาดเอง (Custom Size...)</option>
+                    </select>
+                  </div>
 
-              {/* Printable batch container */}
-              <div id="printable-area-batch" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 justify-center">
-                {shelves.map((shelf) => (
-                  <div key={shelf.id} className="print-card border-2 border-slate-950 rounded-xl p-5 bg-white text-center">
-                    <div className="text-[10px] text-slate-400 font-extrabold uppercase mb-0.5">
-                      {shelf.zone || 'คลังสินค้าหลัก'}
-                    </div>
-                    <h3 className="text-xl font-black text-slate-950 uppercase m-0 leading-tight">
-                      {shelf.name}
-                    </h3>
-                    <img
-                      src={getQrCodeUrlForShelf(shelf)}
-                      alt={`QR Code shelf ${shelf.name}`}
-                      className="w-36 h-36 mx-auto my-2 border border-slate-200 p-1 bg-white rounded-lg"
-                      referrerPolicy="no-referrer"
-                    />
-                    <p className="text-[11px] text-slate-600 line-clamp-2 h-7 leading-relaxed border-t border-dashed border-slate-100 pt-1.5 mt-1.5">
-                      {shelf.description || 'ไม่มีรายละเอียดเพิ่มเติม'}
-                    </p>
-                    <div className="text-[8px] text-slate-400 font-mono mt-1 leading-none">
-                      ID: {shelf.id}
+                  <div>
+                    <label className="block text-xs font-black text-slate-700 mb-1 flex items-center gap-1">
+                      <LayoutGrid className="w-3.5 h-3.5 text-blue-600" />
+                      <span>จำนวนคอลัมน์แสดงผลตอนพิมพ์ (Grid Columns):</span>
+                    </label>
+                    <select
+                      value={shelfGridColumns}
+                      onChange={(e) => setShelfGridColumns(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden focus:border-blue-500 font-semibold text-slate-700"
+                    >
+                      <option value={1}>1 คอลัมน์ (เดี่ยว - เหมาะสำหรับป้ายขนาดใหญ่)</option>
+                      <option value={2}>2 คอลัมน์ (มาตรฐานสมดุล)</option>
+                      <option value={3}>3 คอลัมน์ (เหมาะสำหรับป้ายขนาดเล็กและกลาง)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {shelfStickerSize === 'CUSTOM' && (
+                  <div className="space-y-3 pt-3 border-t border-slate-200/50">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-slate-700">
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold">ความกว้างป้าย:</span>
+                          <span className="text-[10px] font-extrabold text-blue-600 font-mono">{shelfCustomCardWidth}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="180"
+                          max="450"
+                          step="5"
+                          value={shelfCustomCardWidth}
+                          onChange={(e) => {
+                            const cw = Number(e.target.value);
+                            setShelfCustomCardWidth(cw);
+                            if (shelfCustomQrSize > cw - 40) {
+                              setShelfCustomQrSize(cw - 40);
+                            }
+                          }}
+                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold">ขนาด QR Code:</span>
+                          <span className="text-[10px] font-extrabold text-blue-600 font-mono">{shelfCustomQrSize}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="60"
+                          max={shelfCustomCardWidth - 40}
+                          step="5"
+                          value={shelfCustomQrSize}
+                          onChange={(e) => setShelfCustomQrSize(Number(e.target.value))}
+                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold">ขนาดอักษร:</span>
+                          <span className="text-[10px] font-extrabold text-blue-600 font-mono">{shelfCustomFontSize}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10"
+                          max="24"
+                          step="1"
+                          value={shelfCustomFontSize}
+                          onChange={(e) => setShelfCustomFontSize(Number(e.target.value))}
+                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold">ระยะขอบการ์ด:</span>
+                          <span className="text-[10px] font-extrabold text-blue-600 font-mono">{shelfCustomPadding}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="6"
+                          max="48"
+                          step="1"
+                          value={shelfCustomPadding}
+                          onChange={(e) => setShelfCustomPadding(Number(e.target.value))}
+                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
                     </div>
                   </div>
-                ))}
+                )}
+              </div>
+
+              {/* Printable batch container preview */}
+              <div 
+                id="printable-area-batch" 
+                className="grid gap-4 justify-center"
+                style={{
+                  gridTemplateColumns: `repeat(${shelfGridColumns}, minmax(0, 1fr))`
+                }}
+              >
+                {shelves.map((shelf) => {
+                  const cardWidth = shelfStickerSize === 'CUSTOM' ? shelfCustomCardWidth : shelfStickerSize === 'SM' ? 260 : shelfStickerSize === 'LG' ? 420 : 340;
+                  const qrSize = shelfStickerSize === 'CUSTOM' ? shelfCustomQrSize : shelfStickerSize === 'SM' ? 120 : shelfStickerSize === 'LG' ? 240 : 180;
+                  const fontSize = shelfStickerSize === 'CUSTOM' ? shelfCustomFontSize : shelfStickerSize === 'SM' ? 11 : shelfStickerSize === 'LG' ? 17 : 14;
+                  const padding = shelfStickerSize === 'CUSTOM' ? shelfCustomPadding : shelfStickerSize === 'SM' ? 16 : shelfStickerSize === 'LG' ? 32 : 24;
+
+                  return (
+                    <div 
+                      key={shelf.id} 
+                      className="print-card border-4 border-slate-950 rounded-2xl bg-white text-center shadow-xs transition-all duration-300 flex flex-col justify-between"
+                      style={{
+                        padding: `${padding}px`,
+                        maxWidth: `${cardWidth}px`,
+                        margin: '0 auto',
+                        width: '100%'
+                      }}
+                    >
+                      <div>
+                        <div className="text-[10px] text-slate-400 font-extrabold uppercase mb-1 tracking-wider">
+                          {shelf.zone || 'คลังสินค้าหลัก'}
+                        </div>
+                        <h3 
+                          className="font-black text-slate-950 uppercase m-0 leading-tight"
+                          style={{
+                            fontSize: `${fontSize + 6}px`
+                          }}
+                        >
+                          {shelf.name}
+                        </h3>
+                        <div 
+                          className="text-slate-400 font-bold uppercase tracking-wider mb-2"
+                          style={{
+                            fontSize: `${fontSize - 4}px`
+                          }}
+                        >
+                          STORAGE SHELF QR CODE
+                        </div>
+                      </div>
+
+                      <img
+                        src={getQrCodeUrlForShelf(shelf)}
+                        alt={`QR Code shelf ${shelf.name}`}
+                        className="mx-auto my-2 border border-slate-200 p-1 bg-white rounded-lg transition-all duration-300"
+                        style={{
+                          width: `${qrSize}px`,
+                          height: `${qrSize}px`,
+                        }}
+                        referrerPolicy="no-referrer"
+                      />
+
+                      <div>
+                        <p 
+                          className="text-slate-600 line-clamp-2 leading-relaxed border-t border-dashed border-slate-100 pt-1.5 mt-1.5"
+                          style={{
+                            fontSize: `${fontSize - 1}px`
+                          }}
+                        >
+                          {shelf.description || 'ไม่มีรายละเอียดเพิ่มเติม'}
+                        </p>
+                        <div 
+                          className="text-slate-400 font-mono mt-1 leading-none"
+                          style={{
+                            fontSize: `${fontSize - 4}px`
+                          }}
+                        >
+                          ID: {shelf.id}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -1849,104 +2323,131 @@ export default function ShelfManagement({
               </button>
               <button
                 onClick={() => {
-                  const printContent = document.getElementById('printable-area-batch');
-                  if (!printContent) return;
+                  const cardWidth = shelfStickerSize === 'CUSTOM' ? shelfCustomCardWidth : shelfStickerSize === 'SM' ? 260 : shelfStickerSize === 'LG' ? 420 : 340;
+                  const qrSize = shelfStickerSize === 'CUSTOM' ? shelfCustomQrSize : shelfStickerSize === 'SM' ? 120 : shelfStickerSize === 'LG' ? 240 : 180;
+                  const fontSize = shelfStickerSize === 'CUSTOM' ? shelfCustomFontSize : shelfStickerSize === 'SM' ? 11 : shelfStickerSize === 'LG' ? 17 : 14;
+                  const padding = shelfStickerSize === 'CUSTOM' ? shelfCustomPadding : shelfStickerSize === 'SM' ? 16 : shelfStickerSize === 'LG' ? 32 : 24;
+                  const cols = shelfGridColumns;
 
-                  const printWindow = window.open('', '', 'height=650,width=850');
-                  if (printWindow) {
-                    printWindow.document.write(`
-                      <html>
-                        <head>
-                          <title>พิมพ์ป้ายชั้นวางสินค้า QR Code - แบบชุด</title>
-                          <style>
-                            body { 
-                              font-family: Arial, sans-serif; 
-                              margin: 0; 
-                              padding: 20px; 
-                              background: #fff;
-                              text-align: center;
-                            }
-                            .batch-title {
-                              font-size: 18px;
-                              font-weight: bold;
-                              margin-bottom: 20px;
-                            }
+                  const fullHtml = `
+                    <html>
+                      <head>
+                        <title>พิมพ์ป้ายชั้นวางสินค้า QR Code - แบบชุด</title>
+                        <style>
+                          body { 
+                            font-family: Arial, sans-serif; 
+                            margin: 0; 
+                            padding: 20px; 
+                            background: #fff;
+                            text-align: center;
+                          }
+                          .batch-title {
+                            font-size: 18px;
+                            font-weight: bold;
+                            margin-bottom: 20px;
+                          }
+                          .grid-container {
+                            display: grid;
+                            grid-template-columns: repeat(${cols}, 1fr);
+                            gap: 20px;
+                            max-width: ${cols * (cardWidth + 40)}px;
+                            margin: 0 auto;
+                          }
+                          .print-card {
+                            border: 3px solid #000;
+                            border-radius: 12px;
+                            padding: ${padding}px;
+                            background: #fff;
+                            box-shadow: none;
+                            page-break-inside: avoid;
+                            width: 100%;
+                            max-width: ${cardWidth}px;
+                            margin: 0 auto;
+                            box-sizing: border-box;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: space-between;
+                          }
+                          .title { 
+                            font-size: ${fontSize + 6}px; 
+                            font-weight: bold; 
+                            margin: 0; 
+                            color: #000;
+                          }
+                          .qr-image { 
+                            width: ${qrSize}px; 
+                            height: ${qrSize}px; 
+                            margin: 10px auto;
+                            display: block;
+                          }
+                          .description { 
+                            font-size: ${fontSize - 1}px; 
+                            color: #333; 
+                            margin-top: 10px;
+                            border-top: 1px dashed #ccc;
+                            padding-top: 10px;
+                          }
+                          .footer-text {
+                            font-size: ${fontSize - 4}px;
+                            color: #888;
+                            margin-top: 5px;
+                          }
+                          .btn-print-trigger {
+                            background-color: #2563eb;
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            font-size: 14px;
+                            font-weight: bold;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            margin-bottom: 20px;
+                          }
+                          @media print {
+                            .btn-print-trigger { display: none; }
+                            body { padding: 0; }
                             .grid-container {
                               display: grid;
-                              grid-template-columns: repeat(2, 1fr);
+                              grid-template-columns: repeat(${cols}, 1fr);
                               gap: 20px;
-                              max-width: 800px;
-                              margin: 0 auto;
                             }
-                            .print-card {
-                              border: 3px solid #000;
-                              border-radius: 12px;
-                              padding: 20px;
-                              background: #fff;
-                              box-shadow: none;
-                              page-break-inside: avoid;
-                            }
-                            .title { 
-                              font-size: 24px; 
-                              font-weight: bold; 
-                              margin: 0; 
-                              color: #000;
-                            }
-                            .qr-image { 
-                              width: 160px; 
-                              height: 160px; 
-                              margin: 10px auto;
-                              display: block;
-                            }
-                            .description { 
-                              font-size: 11px; 
-                              color: #333; 
-                              margin-top: 10px;
-                              border-top: 1px dashed #ccc;
-                              padding-top: 10px;
-                            }
-                            .footer-text {
-                              font-size: 8px;
-                              color: #888;
-                              margin-top: 5px;
-                            }
-                            .btn-print-trigger {
-                              background-color: #2563eb;
-                              color: white;
-                              border: none;
-                              padding: 10px 20px;
-                              font-size: 14px;
-                              font-weight: bold;
-                              border-radius: 6px;
-                              cursor: pointer;
-                              margin-bottom: 20px;
-                            }
-                            @media print {
-                              .btn-print-trigger { display: none; }
-                              body { padding: 0; }
-                              .grid-container {
-                                display: grid;
-                                grid-template-columns: repeat(2, 1fr);
-                                gap: 20px;
-                              }
-                            }
-                          </style>
-                        </head>
-                        <body>
-                          <button class="btn-print-trigger" onclick="window.print()">กดปุ่มนี้เพื่อเริ่มพิมพ์ / บันทึก PDF</button>
-                          <div class="batch-title btn-print-trigger">ใบปะชั้นวางสินค้าคงคลังระบบทั้งหมด (${shelves.length} ป้าย)</div>
-                          <div class="grid-container">
-                            ${Array.from(printContent.children).map(child => `
+                          }
+                        </style>
+                      </head>
+                      <body>
+                        <button class="btn-print-trigger" onclick="window.print()">กดปุ่มนี้เพื่อเริ่มพิมพ์ / บันทึก PDF</button>
+                        <div class="batch-title btn-print-trigger">ใบปะชั้นวางสินค้าคงคลังระบบทั้งหมด (${shelves.length} ป้าย)</div>
+                        <div class="grid-container">
+                          ${shelves.map(shelf => {
+                            const shelfTitle = shelf.name;
+                            const shelfZone = shelf.zone || 'คลังสินค้าหลัก';
+                            const shelfDesc = shelf.description || 'ไม่มีรายละเอียดเพิ่มเติม';
+                            const qrUrl = getQrCodeUrlForShelf(shelf);
+                            return `
                               <div class="print-card">
-                                ${child.innerHTML}
+                                <div>
+                                  <div style="font-size: ${fontSize - 4}px; color: #888; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">
+                                    ${shelfZone}
+                                  </div>
+                                  <div class="title">${shelfTitle}</div>
+                                  <div style="font-size: ${fontSize - 3}px; color: #555; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                    STORAGE SHELF QR CODE
+                                  </div>
+                                </div>
+                                <img class="qr-image" src="${qrUrl}" referrerPolicy="no-referrer" />
+                                <div>
+                                  <div class="description">${shelfDesc}</div>
+                                  <div class="footer-text">ID: ${shelf.id}</div>
+                                </div>
                               </div>
-                            `).join('')}
-                          </div>
-                        </body>
-                      </html>
-                    `);
-                    printWindow.document.close();
-                  }
+                            `;
+                          }).join('')}
+                        </div>
+                      </body>
+                    </html>
+                  `;
+
+                  printHtmlContent(fullHtml);
                 }}
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
