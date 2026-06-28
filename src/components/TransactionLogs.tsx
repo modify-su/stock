@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ClipboardList, Search, ArrowDownLeft, ArrowUpRight, RotateCcw, Filter, User2, FileText, Calendar, Trash2, Lock } from 'lucide-react';
+import { ClipboardList, Search, ArrowDownLeft, ArrowUpRight, RotateCcw, Filter, User2, FileText, Calendar, Trash2, Lock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Transaction } from '../types';
 import ConfirmModal from './ConfirmModal';
 
@@ -13,6 +13,20 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
   // Filters state
   const [logSearch, setLogSearch] = useState('');
   const [logTypeFilter, setLogTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'RETURN'>('ALL');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
+  // Reset page when filters change
+  const [prevLogSearch, setPrevLogSearch] = useState(logSearch);
+  const [prevLogTypeFilter, setPrevLogTypeFilter] = useState(logTypeFilter);
+
+  if (logSearch !== prevLogSearch || logTypeFilter !== prevLogTypeFilter) {
+    setCurrentPage(1);
+    setPrevLogSearch(logSearch);
+    setPrevLogTypeFilter(logTypeFilter);
+  }
 
   // Custom confirmation state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -47,6 +61,12 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
 
   // Sort logs by date desc
   const sortedLogs = [...filteredLogs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  // Paginated logs
+  const totalPages = Math.ceil(sortedLogs.length / itemsPerPage) || 1;
+  const activePage = currentPage > totalPages ? totalPages : currentPage;
+  const startIndex = (activePage - 1) * itemsPerPage;
+  const paginatedLogs = sortedLogs.slice(startIndex, startIndex + itemsPerPage);
 
   return (
     <div id="logs-container" className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
@@ -128,7 +148,7 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
             ไม่พบรายการเคลื่อนไหวใดๆ ที่ตรงกับการค้นหาปัจจุบัน
           </div>
         ) : (
-          sortedLogs.map((log) => {
+          paginatedLogs.map((log) => {
             return (
               <div
                 key={log.id}
@@ -249,6 +269,78 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
           })
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {sortedLogs.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 pt-4 border-t border-slate-200">
+          <div className="text-xs text-slate-500 font-sans">
+            แสดง <span className="font-semibold text-slate-700">{startIndex + 1}</span> ถึง{" "}
+            <span className="font-semibold text-slate-700">
+              {Math.min(startIndex + itemsPerPage, sortedLogs.length)}
+            </span>{" "}
+            จากทั้งหมด <span className="font-semibold text-slate-700">{sortedLogs.length}</span> รายการเคลื่อนไหว
+          </div>
+          
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={activePage === 1}
+              className={`p-2 rounded-lg border text-slate-600 transition-all ${
+                activePage === 1
+                  ? "bg-slate-50 border-slate-100 text-slate-350 cursor-not-allowed opacity-50"
+                  : "bg-white border-slate-200 hover:bg-slate-50 cursor-pointer active:scale-95"
+              }`}
+              title="ย้อนกลับไปหน้าก่อนหน้า"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            
+            <div className="flex items-center gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => {
+                  return (
+                    p === 1 ||
+                    p === totalPages ||
+                    Math.abs(p - activePage) <= 1
+                  );
+                })
+                .map((p, idx, arr) => {
+                  const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
+                  return (
+                    <div key={p} className="flex items-center gap-1">
+                      {showEllipsisBefore && (
+                        <span className="text-slate-400 px-1 text-xs select-none">...</span>
+                      )}
+                      <button
+                        onClick={() => setCurrentPage(p)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                          activePage === p
+                            ? "bg-blue-600 text-white shadow-xs"
+                            : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-850"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={activePage === totalPages}
+              className={`p-2 rounded-lg border text-slate-600 transition-all ${
+                activePage === totalPages
+                  ? "bg-slate-50 border-slate-100 text-slate-350 cursor-not-allowed opacity-50"
+                  : "bg-white border-slate-200 hover:bg-slate-50 cursor-pointer active:scale-95"
+              }`}
+              title="ไปหน้าถัดไป"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <ConfirmModal
         isOpen={confirmDialog.isOpen}

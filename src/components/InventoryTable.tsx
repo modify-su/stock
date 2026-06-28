@@ -1,5 +1,5 @@
 import { useState, FormEvent } from 'react';
-import { Search, Plus, Edit2, Trash2, SlidersHorizontal, AlertCircle, ShoppingBag, Folder, Tag, MapPin, DollarSign, ArrowDown, ArrowUp, Lock } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, SlidersHorizontal, AlertCircle, ShoppingBag, Folder, Tag, MapPin, DollarSign, ArrowDown, ArrowUp, Lock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Product, Category, Shelf } from '../types';
 import ConfirmModal from './ConfirmModal';
 
@@ -48,6 +48,22 @@ export default function InventoryTable({
 }: InventoryTableProps) {
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
+  // Reset page when filters change
+  const [prevSearchQuery, setPrevSearchQuery] = useState(searchQuery);
+  const [prevCategory, setPrevCategory] = useState(selectedCategory);
+  const [prevLowStock, setPrevLowStock] = useState(isLowStockOnly);
+
+  if (searchQuery !== prevSearchQuery || selectedCategory !== prevCategory || isLowStockOnly !== prevLowStock) {
+    setCurrentPage(1);
+    setPrevSearchQuery(searchQuery);
+    setPrevCategory(selectedCategory);
+    setPrevLowStock(isLowStockOnly);
+  }
   
   // Sort State
   const [sortBy, setSortBy] = useState<'sku' | 'name' | 'quantity' | 'unit'>('sku');
@@ -225,6 +241,12 @@ export default function InventoryTable({
     }
     return 0;
   });
+
+  // Paginated products
+  const totalPages = Math.ceil(sortedProducts.length / itemsPerPage) || 1;
+  const activePage = currentPage > totalPages ? totalPages : currentPage;
+  const startIndex = (activePage - 1) * itemsPerPage;
+  const paginatedProducts = sortedProducts.slice(startIndex, startIndex + itemsPerPage);
 
   // Safe Thai Baht format
   const formatMoney = (val: number) => {
@@ -434,7 +456,7 @@ export default function InventoryTable({
                 </td>
               </tr>
             ) : (
-              sortedProducts.map((p) => {
+              paginatedProducts.map((p) => {
                 const isLow = p.quantity <= p.minStock;
                 const isOutOfStock = p.quantity === 0;
 
@@ -586,6 +608,78 @@ export default function InventoryTable({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {sortedProducts.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 pt-4 border-t border-slate-200">
+          <div className="text-xs text-slate-500 font-sans">
+            แสดง <span className="font-semibold text-slate-700">{startIndex + 1}</span> ถึง{" "}
+            <span className="font-semibold text-slate-700">
+              {Math.min(startIndex + itemsPerPage, sortedProducts.length)}
+            </span>{" "}
+            จากทั้งหมด <span className="font-semibold text-slate-700">{sortedProducts.length}</span> รายการ
+          </div>
+          
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={activePage === 1}
+              className={`p-2 rounded-lg border text-slate-600 transition-all ${
+                activePage === 1
+                  ? "bg-slate-50 border-slate-100 text-slate-350 cursor-not-allowed opacity-50"
+                  : "bg-white border-slate-200 hover:bg-slate-50 cursor-pointer active:scale-95"
+              }`}
+              title="ย้อนกลับไปหน้าก่อนหน้า"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            
+            <div className="flex items-center gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => {
+                  return (
+                    p === 1 ||
+                    p === totalPages ||
+                    Math.abs(p - activePage) <= 1
+                  );
+                })
+                .map((p, idx, arr) => {
+                  const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
+                  return (
+                    <div key={p} className="flex items-center gap-1">
+                      {showEllipsisBefore && (
+                        <span className="text-slate-400 px-1 text-xs select-none">...</span>
+                      )}
+                      <button
+                        onClick={() => setCurrentPage(p)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                          activePage === p
+                            ? "bg-blue-600 text-white shadow-xs"
+                            : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-850"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={activePage === totalPages}
+              className={`p-2 rounded-lg border text-slate-600 transition-all ${
+                activePage === totalPages
+                  ? "bg-slate-50 border-slate-100 text-slate-350 cursor-not-allowed opacity-50"
+                  : "bg-white border-slate-200 hover:bg-slate-50 cursor-pointer active:scale-95"
+              }`}
+              title="ไปหน้าถัดไป"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 1. Modal for ADDING Product */}
       {isAddOpen && (
