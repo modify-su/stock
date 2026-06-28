@@ -276,18 +276,71 @@ export default function SmartScanner({
 
       // Check for duplicate transaction
       const duplicateTx = checkDuplicateNo(data.orderId, data.trackingNo);
-      if (duplicateTx) {
-        playBeep('error');
-        setErrorMessage(`⚠️ ตรวจพบเลขออเดอร์/แทรคกิ้งนี้ (${data.trackingNo || data.orderId}) ได้ถูกทำรายการไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} โดยผู้ใช้ ${duplicateTx.operator} หากคุณต้องการทำซ้ำกรุณากดอนุญาตให้ทำรายการซ้ำด้านล่างครับ`);
+      
+      if (keepCameraActive) {
+        // AUTO SCAN FLOW
+        const allMatched = data.extractedItems && data.extractedItems.length > 0 && data.extractedItems.every(item => item.matched && item.matchedProduct);
+        
+        if (allMatched && !duplicateTx) {
+          if (!canRecordTransactions) {
+            playBeep('error');
+            setErrorMessage("❌ คุณไม่มีสิทธิ์ของพนักงานในการบันทึกรายการสินค้า (ระบบหยุดออโต้สแกน)");
+            setIsAutoScanActive(false);
+            return;
+          }
+
+          // Build transaction records
+          const txsToRecord: Omit<Transaction, 'id' | 'date'>[] = data.extractedItems.map(item => ({
+            productId: item.matchedProduct!.id,
+            productSku: item.matchedProduct!.sku,
+            productName: item.matchedProduct!.name,
+            type: data.detectedAction || 'OUT',
+            quantity: item.quantity,
+            referenceNo: data.trackingNo || data.orderId || 'AUTO_SCAN_AI',
+            reason: `ตัดสต๊อกอัตโนมัติ (ระบบสแกนต่อเนื่อง) ประเภท: ${
+              data.detectedAction === 'IN' ? 'รับสินค้า' : data.detectedAction === 'OUT' ? 'ส่งสินค้า' : 'คืนสินค้า'
+            }`,
+            operator: currentUser.name,
+            ...(data.detectedAction === 'RETURN' && { returnStatus: returnStatus })
+          }));
+
+          await onRecordMultipleTransactions(txsToRecord);
+          playBeep('success');
+          setSuccessMessage(`✅ [ออโต้สแกนสำเร็จ] บันทึกและตัดสต๊อกสินค้า ${txsToRecord.map(t => `${t.productSku} x${t.quantity}`).join(', ')} เรียบร้อย! (เลขแทรค/ออเดอร์: ${data.trackingNo || data.orderId || '-'})`);
+          
+          // Clear result for the next frame
+          setScanResult(null);
+        } else {
+          playBeep('error');
+          setIsAutoScanActive(false); // Stop auto scan to let user resolve manually
+
+          if (duplicateTx) {
+            setErrorMessage(`⚠️ [ออโต้สแกนหยุดทำงาน] ตรวจพบข้อมูลซ้ำ: เลขอ้างอิง (${data.trackingNo || data.orderId}) เคยถูกบันทึกไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} หากต้องการทำซ้ำกรุณาเปิดอนุญาตบันทึกซ้ำและกดบันทึกด้วยตนเองครับ`);
+          } else if (!data.extractedItems || data.extractedItems.length === 0) {
+            setErrorMessage(`❌ [ออโต้สแกนหยุดทำงาน] ไม่พบข้อมูลสินค้าจากใบปะหน้า กรุณาเพิ่มสินค้าหรือกรอก SKU และกดบันทึกด้วยตนเอง`);
+          } else {
+            const unmatchedItems = data.extractedItems.filter(item => !item.matched);
+            setErrorMessage(`❌ [ออโต้สแกนหยุดทำงาน] พบ SKU ที่จับคู่สินค้าในระบบไม่เจอ (${unmatchedItems.map(i => i.sku || 'ไม่ทราบ SKU').join(', ')}) กรุณาเลือกจับคู่สินค้าหรือแก้ไข SKU ด้วยตนเอง จากนั้นกดบันทึกและตัดสต๊อกด้านล่างครับ`);
+          }
+        }
       } else {
-        playBeep('success');
-        setSuccessMessage('🎉 สแกนวิเคราะห์ใบปะหน้าพัสดุสำเร็จ! AI ค้นหา SKU และรายการสินค้าเสร็จเรียบร้อย');
+        // MANUAL/UPLOAD SCAN FLOW
+        if (duplicateTx) {
+          playBeep('error');
+          setErrorMessage(`⚠️ ตรวจพบเลขออเดอร์/แทรคกิ้งนี้ (${data.trackingNo || data.orderId}) ได้ถูกทำรายการไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} โดยผู้ใช้ ${duplicateTx.operator} หากคุณต้องการทำซ้ำกรุณากดอนุญาตให้ทำรายการซ้ำด้านล่างครับ`);
+        } else {
+          playBeep('success');
+          setSuccessMessage('🎉 สแกนวิเคราะห์ใบปะหน้าพัสดุสำเร็จ! AI ค้นหา SKU และรายการสินค้าเสร็จเรียบร้อย');
+        }
       }
 
     } catch (err: any) {
       console.error(err);
       playBeep('error');
       setErrorMessage(`❌ ผิดพลาดในการวิเคราะห์ใบปะหน้า: ${err.message || 'ระบบหลังบ้านไม่ตอบสนอง'}`);
+      if (keepCameraActive) {
+        setIsAutoScanActive(false); // Stop auto scan if API throws error
+      }
     } finally {
       setIsLoading(false);
     }
