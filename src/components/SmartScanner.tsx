@@ -293,6 +293,44 @@ export default function SmartScanner({
     }
   };
 
+  const compressImage = (base64Str: string, maxDim: number = 960, quality: number = 0.8): Promise<string> => {
+    return new Promise((resolve) => {
+      // If not an image (e.g. PDF), bypass compression
+      if (!base64Str.startsWith('data:image/')) {
+        resolve(base64Str);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } else {
+          resolve(base64Str);
+        }
+      };
+      img.onerror = () => {
+        resolve(base64Str);
+      };
+      img.src = base64Str;
+    });
+  };
+
   const captureFrame = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
@@ -305,12 +343,28 @@ export default function SmartScanner({
       }
 
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      
+      // Optimize frame size (max 960px) for much faster upload & AI processing
+      const MAX_DIM = 960;
+      let w = video.videoWidth;
+      let h = video.videoHeight;
+      if (w > MAX_DIM || h > MAX_DIM) {
+        if (w > h) {
+          h = Math.round((h * MAX_DIM) / w);
+          w = MAX_DIM;
+        } else {
+          w = Math.round((w * MAX_DIM) / h);
+          h = MAX_DIM;
+        }
+      }
+      
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        // Reduce jpeg quality to 0.75 for extremely lightweight data transfer (around 50-90KB)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
         setUploadedImage(dataUrl);
         stopCamera();
         setActiveMode('UPLOAD');
@@ -327,12 +381,27 @@ export default function SmartScanner({
       }
 
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      
+      // Optimize frame size (max 800px) for superfast auto-scanning
+      const MAX_DIM = 800;
+      let w = video.videoWidth;
+      let h = video.videoHeight;
+      if (w > MAX_DIM || h > MAX_DIM) {
+        if (w > h) {
+          h = Math.round((h * MAX_DIM) / w);
+          w = MAX_DIM;
+        } else {
+          w = Math.round((w * MAX_DIM) / h);
+          h = MAX_DIM;
+        }
+      }
+
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
         setUploadedImage(dataUrl);
         // Do not stop camera, do not change mode, just send to API
         handleScanAPI(dataUrl, true);
@@ -364,10 +433,18 @@ export default function SmartScanner({
 
     if (file.type.startsWith('image/') || file.type === 'application/pdf') {
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         const resultBase64 = reader.result as string;
-        setUploadedImage(resultBase64);
-        handleScanAPI(resultBase64);
+        
+        if (file.type.startsWith('image/')) {
+          // Compress large photos to max 1024px to ensure rapid transmission & API response
+          const compressed = await compressImage(resultBase64, 1024, 0.8);
+          setUploadedImage(compressed);
+          handleScanAPI(compressed);
+        } else {
+          setUploadedImage(resultBase64);
+          handleScanAPI(resultBase64);
+        }
       };
       reader.readAsDataURL(file);
     } else {
