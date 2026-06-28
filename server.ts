@@ -36,9 +36,9 @@ async function generateContentWithFallback(params: {
   contents: any;
   config?: any;
 }) {
-  // We prefer gemini-2.5-flash as the primary fast and stable model,
-  // followed by gemini-1.5-flash as the fallback, and gemini-3.5-flash.
-  const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+  // We use gemini-3.5-flash as the primary fast and stable model for multimodal/text,
+  // followed by gemini-3.1-flash-lite as the fallback.
+  const models = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
   let lastError: any = null;
 
   for (const model of models) {

@@ -77,6 +77,7 @@ export default function SmartScanner({
 
   // Upload states
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   
   // PDF Text states
   const [pdfText, setPdfText] = useState('');
@@ -303,11 +304,10 @@ export default function SmartScanner({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFile = (file: File) => {
     if (!file) return;
 
-    if (file.type.startsWith('image/')) {
+    if (file.type.startsWith('image/') || file.type === 'application/pdf') {
       const reader = new FileReader();
       reader.onload = () => {
         const resultBase64 = reader.result as string;
@@ -316,8 +316,33 @@ export default function SmartScanner({
       };
       reader.readAsDataURL(file);
     } else {
-      setErrorMessage("❌ ระบบสแกนรูปภาพรองรับเฉพาะไฟล์รูปภาพ (JPG, PNG, WebP) เท่านั้นครับ หากเป็นไฟล์เอกสาร PDF กรุณาใช้แท็บ 'สแกนข้อความจาก PDF (Batch)' แทนได้เลยครับ");
+      setErrorMessage("❌ ระบบสแกนใบปะหน้ารองรับเฉพาะไฟล์รูปภาพ (JPG, PNG, WebP) หรือไฟล์เอกสาร PDF เท่านั้นครับ");
       playBeep('error');
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleFile(file);
     }
   };
 
@@ -535,6 +560,9 @@ export default function SmartScanner({
 
   return (
     <div id="smart-scanner-root" className="space-y-6">
+      {/* Hidden canvas used for capturing video frames */}
+      <canvas ref={canvasRef} className="hidden" style={{ display: 'none' }} />
+
       {/* Tab Navigation for modes */}
       <div className="flex border-b border-slate-200">
         <button
@@ -628,24 +656,39 @@ export default function SmartScanner({
             <div className="space-y-4">
               <div 
                 onClick={triggerFileSelect}
-                className="border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50/20 rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center group"
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center group ${
+                  isDragging 
+                    ? 'border-indigo-600 bg-indigo-50/50 scale-[1.02]' 
+                    : 'border-slate-300 hover:border-indigo-500 hover:bg-indigo-50/20'
+                }`}
               >
-                <Upload className="w-10 h-10 text-slate-400 group-hover:text-indigo-500 mb-3 transition-colors" />
-                <p className="text-sm font-bold text-slate-700">คลิกที่นี่เพื่อเลือกรูปภาพ หรือ ลากไฟล์รูปมาวาง</p>
-                <p className="text-xs text-slate-400 mt-1">รองรับไฟล์ JPG, PNG, WebP ใบปะหน้าพัสดุที่พิมพ์ออกมาแล้ว</p>
+                <Upload className={`w-10 h-10 mb-3 transition-colors ${isDragging ? 'text-indigo-600 animate-bounce' : 'text-slate-400 group-hover:text-indigo-500'}`} />
+                <p className="text-sm font-bold text-slate-700">คลิกที่นี่เพื่อเลือกไฟล์ หรือลากรูปภาพ/PDF มาวาง</p>
+                <p className="text-xs text-slate-400 mt-1">รองรับไฟล์ JPG, PNG, WebP และเอกสาร PDF ใบปะหน้าพัสดุ</p>
                 <input 
                   type="file" 
                   ref={fileInputRef}
                   onChange={handleFileUpload}
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   className="hidden" 
                 />
               </div>
 
               {uploadedImage && (
                 <div className="rounded-lg overflow-hidden border border-slate-300 bg-white p-2">
-                  <div className="text-xs font-bold text-slate-500 mb-1">ภาพที่ใช้วิเคราะห์ล่าสุด:</div>
-                  <img src={uploadedImage} alt="Uploaded" className="w-full h-auto max-h-60 object-contain rounded" />
+                  <div className="text-xs font-bold text-slate-500 mb-1.5">เอกสาร/ภาพที่ใช้วิเคราะห์ล่าสุด:</div>
+                  {uploadedImage.startsWith("data:application/pdf") ? (
+                    <div className="flex flex-col items-center justify-center p-6 bg-red-50 border border-red-100 rounded-lg">
+                      <FileText className="w-12 h-12 text-red-500 mb-1.5 animate-pulse" />
+                      <span className="text-xs font-bold text-slate-700">เอกสาร PDF ใบปะหน้าพัสดุ</span>
+                      <span className="text-[10px] text-slate-400 mt-0.5">ส่งเข้าระบบวิเคราะห์ด้วย AI แล้ว</span>
+                    </div>
+                  ) : (
+                    <img src={uploadedImage} alt="Uploaded" className="w-full h-auto max-h-60 object-contain rounded" />
+                  )}
                 </div>
               )}
             </div>
