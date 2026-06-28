@@ -18,7 +18,9 @@ import {
   RotateCcw,
   Plus,
   Minus,
-  Trash2
+  Trash2,
+  FlipHorizontal,
+  Scan
 } from 'lucide-react';
 import { Product, Transaction, TransactionType, ReturnStatus, UserProfile } from '../types';
 
@@ -74,6 +76,9 @@ export default function SmartScanner({
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isMirrored, setIsMirrored] = useState(false);
+  const [isAutoScanActive, setIsAutoScanActive] = useState(false);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
 
   // Upload states
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -166,15 +171,15 @@ export default function SmartScanner({
     }
   };
 
-  const startCamera = async () => {
+  const startCamera = async (currentFacingMode = facingMode, useDeviceId = selectedCameraId) => {
     setErrorMessage(null);
     stopCamera();
 
     try {
       const constraints: MediaStreamConstraints = {
-        video: selectedCameraId 
-          ? { deviceId: { exact: selectedCameraId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: useDeviceId 
+          ? { deviceId: { exact: useDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } }
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -215,10 +220,20 @@ export default function SmartScanner({
     }
   };
 
-  const handleCameraChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedCameraId(e.target.value);
+  const toggleFacingMode = () => {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextMode);
+    setSelectedCameraId(''); // clear ID to use facingMode constraint
     if (isCameraActive) {
-      setTimeout(() => startCamera(), 100);
+      setTimeout(() => startCamera(nextMode, ''), 100);
+    }
+  };
+
+  const handleCameraChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newId = e.target.value;
+    setSelectedCameraId(newId);
+    if (isCameraActive) {
+      setTimeout(() => startCamera(facingMode, newId), 100);
     }
   };
 
@@ -235,7 +250,7 @@ export default function SmartScanner({
     return duplicate || null;
   };
 
-  const handleScanAPI = async (base64Image: string) => {
+  const handleScanAPI = async (base64Image: string, keepCameraActive: boolean = false) => {
     setIsLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -299,10 +314,50 @@ export default function SmartScanner({
         setUploadedImage(dataUrl);
         stopCamera();
         setActiveMode('UPLOAD');
-        handleScanAPI(dataUrl);
+        handleScanAPI(dataUrl, false);
       }
     }
   };
+
+  const captureFrameForAutoScan = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+        return; // skip if video is not fully active
+      }
+
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        setUploadedImage(dataUrl);
+        // Do not stop camera, do not change mode, just send to API
+        handleScanAPI(dataUrl, true);
+      }
+    }
+  };
+
+  // Auto scan interval effect
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (isAutoScanActive && isCameraActive && activeMode === 'CAMERA') {
+      intervalId = setInterval(() => {
+        if (!isLoading) {
+          captureFrameForAutoScan();
+        }
+      }, 5000); // scan every 5 seconds
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isAutoScanActive, isCameraActive, activeMode, isLoading]);
 
   const handleFile = (file: File) => {
     if (!file) return;
@@ -717,6 +772,55 @@ export default function SmartScanner({
                     </div>
                   )}
 
+                  {/* Camera Utility Controls */}
+                  <div className="flex flex-wrap gap-2 items-center justify-between bg-white p-2.5 rounded-lg border border-slate-200 shadow-xs">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsMirrored(!isMirrored)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isMirrored
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                        title="กลับด้านภาพกล้องสำหรับการอ่านฉลากหรือบาร์โค้ดปกติ"
+                      >
+                        <FlipHorizontal className="w-3.5 h-3.5" />
+                        <span>{isMirrored ? 'สลับกลับปกติ 🔄' : 'สลับเป็นกระจก 🪞'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={toggleFacingMode}
+                        className="px-3 py-1.5 rounded-md text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all cursor-pointer flex items-center gap-1.5"
+                        title="สลับกล้องหน้า (เซลฟี่) หรือกล้องหลัง (กล้องหลักถ่ายพัสดุ)"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>สลับเลนส์ ({facingMode === 'environment' ? 'กล้องหลัง' : 'กล้องหน้า'})</span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextAuto = !isAutoScanActive;
+                        setIsAutoScanActive(nextAuto);
+                        if (nextAuto && !isCameraActive) {
+                          startCamera();
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isAutoScanActive
+                          ? 'bg-emerald-600 text-white animate-pulse shadow-md'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                      title="วิเคราะห์ตัดยอดโดยอัตโนมัติเมื่อวางพัสดุหน้ากล้องทุกๆ 5 วินาที"
+                    >
+                      <Scan className={`w-3.5 h-3.5 ${isAutoScanActive ? 'animate-spin' : ''}`} />
+                      <span>{isAutoScanActive ? 'ออโต้สแกน: เปิดอยู่ 🟢' : 'เปิดออโต้สแกน 🔍'}</span>
+                    </button>
+                  </div>
+
                   {/* Video Viewport */}
                   <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-black border border-slate-300 flex items-center justify-center">
                     <video
@@ -724,7 +828,9 @@ export default function SmartScanner({
                       autoPlay
                       playsInline
                       muted
-                      className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
+                      className={`absolute inset-0 w-full h-full object-cover ${
+                        isMirrored ? 'scale-x-[-1]' : 'scale-x-100'
+                      }`}
                     />
                     
                     {/* Floating Target Frame Guide */}
@@ -733,14 +839,25 @@ export default function SmartScanner({
                         <div className="w-4 h-4 border-t-2 border-l-2 border-indigo-500"></div>
                         <div className="w-4 h-4 border-t-2 border-r-2 border-indigo-500"></div>
                       </div>
-                      <span className="text-[10px] text-white bg-indigo-600/80 px-2 py-0.5 rounded self-center font-bold font-sans">
-                        วางใบลาเบลพัสดุให้อยู่ในกรอบนี้
+                      <span className="text-[10px] text-white bg-indigo-600/80 px-2 py-0.5 rounded self-center font-bold font-sans text-center">
+                        วางใบลาเบลพัสดุ/บาร์โค้ดสากลให้อยู่ในกรอบนี้
                       </span>
                       <div className="flex justify-between">
                         <div className="w-4 h-4 border-b-2 border-l-2 border-indigo-500"></div>
                         <div className="w-4 h-4 border-b-2 border-r-2 border-indigo-500"></div>
                       </div>
                     </div>
+
+                    {/* Auto Scan Indicator Overlay */}
+                    {isAutoScanActive && isCameraActive && (
+                      <div className="absolute top-3 left-3 bg-slate-950/85 border border-emerald-500/40 text-emerald-400 px-2.5 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-1.5 shadow-lg select-none">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span>ระบบสแกนอัตโนมัติทำงานอยู่ (ส่งตรวจทุก 5 วิ)</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Action Buttons */}
@@ -753,7 +870,7 @@ export default function SmartScanner({
                           className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-1.5 transition-all text-xs cursor-pointer shadow-md"
                         >
                           <Camera className="w-4 h-4 animate-pulse" />
-                          <span>กดถ่ายภาพ & วิเคราะห์ AI 📸</span>
+                          <span>กดถ่ายภาพสแกนแมนนวล 📸</span>
                         </button>
                         <button
                           onClick={stopCamera}
@@ -764,11 +881,11 @@ export default function SmartScanner({
                       </>
                     ) : (
                       <button
-                        onClick={startCamera}
+                        onClick={() => startCamera(facingMode, selectedCameraId)}
                         className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-1.5 transition-all text-xs cursor-pointer"
                       >
                         <RefreshCw className="w-4 h-4" />
-                        <span>เปิดใช้งานกล้องใหม่อีกครั้ง</span>
+                        <span>เปิดใช้งานกล้องอีกครั้ง</span>
                       </button>
                     )}
                   </div>
