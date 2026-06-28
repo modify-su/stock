@@ -18,11 +18,13 @@ import {
   FileSpreadsheet,
   QrCode,
   MapPin,
-  Printer
+  Printer,
+  Camera
 } from 'lucide-react';
 import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf } from './types';
 import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS } from './mockData';
 import DashboardStats from './components/DashboardStats';
+import SmartScanner from './components/SmartScanner';
 import InventoryTable from './components/InventoryTable';
 import ActionForms from './components/ActionForms';
 import TransactionLogs from './components/TransactionLogs';
@@ -384,7 +386,7 @@ export default function App() {
   // --- Filter states ---
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
-  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES'>('OVERVIEW');
+  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER'>('OVERVIEW');
 
   // Redirect non-ADMIN users away from admin-only tabs
   useEffect(() => {
@@ -898,6 +900,18 @@ export default function App() {
             <span>ภาพรวม & แดชบอร์ด</span>
           </button>
           <button
+            onClick={() => setActiveMenuTab('SCANNER')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
+              activeMenuTab === 'SCANNER'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs font-bold'
+                : 'text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100/80 hover:text-indigo-850 border border-indigo-100'
+            }`}
+          >
+            <Camera className="w-4 h-4 text-indigo-600 animate-pulse" />
+            <span className="font-bold">สแกนใบปะหน้า AI & บาร์โค้ด</span>
+            <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-sans uppercase animate-pulse font-bold">ใหม่</span>
+          </button>
+          <button
             onClick={() => setActiveMenuTab('OPERATIONS')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
               activeMenuTab === 'OPERATIONS'
@@ -1152,6 +1166,33 @@ export default function App() {
             canRecordTransactions={rolePermissions[currentUser.role].recordTransactions}
             currentUser={currentUser}
           />
+        )}
+
+        {activeMenuTab === 'SCANNER' && (
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
+            <div className="border-b border-slate-100 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Camera className="w-5 h-5 text-indigo-600 animate-pulse" />
+                  <span>ระบบสแกนใบปะหน้าด้วย AI & บาร์โค้ดสากล (Smart Scanner Mode)</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  ถ่ายภาพใบปะหน้าพัสดุ (จากกล้องมือถือ/เว็บบอร์ด) หรือ อัปโหลดรูปภาพ/ไฟล์ PDF สั่งงานตัดสต๊อกอัจฉริยะได้โดยไม่ต้องคีย์ข้อมูลเอง
+                </p>
+              </div>
+              <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 w-fit shrink-0">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
+                <span>ขับเคลื่อนด้วย Gemini AI</span>
+              </div>
+            </div>
+            
+            <SmartScanner
+              products={products}
+              onRecordMultipleTransactions={handleRecordMultipleTransactions}
+              canRecordTransactions={rolePermissions[currentUser.role].recordTransactions}
+              currentUser={currentUser}
+            />
+          </div>
         )}
 
         {activeMenuTab === 'LOGS' && (

@@ -1233,8 +1233,26 @@ export default function SmartScanner({
             ) : (
               /* File Drag-and-Drop and Placeholder options */
               <div className="flex flex-col gap-3">
+                {/* 1. Native Mobile Camera Button (Highly recommended for mobile browsers inside iframe) */}
+                <input
+                  id="ai-camera-capture-input"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => document.getElementById('ai-camera-capture-input')?.click()}
+                  className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2.5 shadow-md transition-all cursor-pointer transform active:scale-98 border-b-4 border-emerald-800"
+                >
+                  <Camera className="w-5 h-5 text-white animate-pulse" />
+                  <span>ถ่ายภาพใบปะหน้าทันที (กล้องมือถือ 100% คมชัดสุด)</span>
+                </button>
+
+                {/* 2. Drag & Drop or File Picker */}
                 <div 
-                  className="border-2 border-dashed border-slate-300 bg-white hover:bg-slate-50/50 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-colors relative"
+                  className="border-2 border-dashed border-slate-300 bg-white hover:bg-slate-50/50 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors relative"
                   onClick={() => document.getElementById('ai-file-input')?.click()}
                 >
                   <input
@@ -1244,24 +1262,25 @@ export default function SmartScanner({
                     onChange={handleFileUpload}
                     className="hidden"
                   />
-                  <div className="bg-blue-50 text-blue-600 p-3.5 rounded-full mb-3">
-                    <UploadCloud className="w-6 h-6" />
+                  <div className="bg-blue-50 text-blue-600 p-2.5 rounded-full mb-2">
+                    <UploadCloud className="w-5 h-5" />
                   </div>
                   <h5 className="font-bold text-slate-800 text-xs">
-                    ลากไฟล์รูปภาพ หรือไฟล์ PDF มาวางที่นี่ หรือคลิกเพื่ออัปโหลด
+                    เลือกรูปภาพที่มีอยู่ หรือไฟล์ PDF สติ๊กเกอร์รวมหลายแผ่น
                   </h5>
                   <p className="text-[10px] text-slate-500 mt-1 max-w-xs leading-relaxed">
-                    รองรับภาพถ่ายเดี่ยว (JPG, PNG) หรือ <strong>ไฟล์ PDF รวมใบปะหน้าจำนวนเยอะ (50 - 100 แผ่น)</strong> จาก Shopee, TikTok Shop, Lazada, Flash, Kerry, J&T เพื่อประมวลผลด่วนพร้อมกัน
+                    รองรับภาพจากคลัง หรือไฟล์ PDF ขนาดใหญ่ (50-100 หน้า) จาก Shopee, Lazada, TikTok Shop
                   </p>
                 </div>
 
+                {/* 3. Extra tools */}
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={startCamera}
-                    className="py-2 px-3 border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                    onClick={() => startCamera()}
+                    className="py-2 px-3 border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Camera className="w-4 h-4 text-blue-600" />
-                    <span>สแกนด้วยกล้องมือถือ/เว็บบอร์ด</span>
+                    <Camera className="w-4 h-4 text-slate-600" />
+                    <span>ใช้กล้องเว็บแคม (Webcam Live)</span>
                   </button>
                   <button
                     onClick={generateDemoLabel}
