@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e1b4b" />
+    </linearGradient>
+    <linearGradient id="accent-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+    <linearGradient id="scan-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0.0" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Rounded Base Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bg-grad)" />
+  
+  <!-- Main Accent Box Outer Glow -->
+  <g filter="url(#glow)">
+    <!-- Package Base (Isometric box top, left, right) -->
+    <!-- Top face -->
+    <path d="M256,120 L370,186 L256,252 L142,186 Z" fill="url(#accent-grad)" opacity="0.9" />
+    
+    <!-- Left face -->
+    <path d="M142,186 L256,252 L256,380 L142,314 Z" fill="#4f46e5" opacity="0.8" />
+    
+    <!-- Right face -->
+    <path d="M256,252 L370,186 L370,314 L256,380 Z" fill="#3730a3" opacity="0.85" />
+    
+    <!-- Box Details (Tapes/Lines) -->
+    <path d="M256,120 L256,252" stroke="#ffffff" stroke-width="4" stroke-dasharray="8 6" opacity="0.4" />
+    <path d="M142,186 L370,186" stroke="#ffffff" stroke-width="2" opacity="0.3" />
+  </g>
+  
+  <!-- Laser Scanning Line (Dynamic Tech Element) -->
+  <g filter="url(#glow)">
+    <!-- Scan gradient box -->
+    <polygon points="120,240 392,240 356,280 156,280" fill="url(#scan-grad)" opacity="0.5" />
+    <!-- Main Laser Line -->
+    <line x1="100" y1="240" x2="412" y2="240" stroke="#10b981" stroke-width="8" stroke-linecap="round" />
+  </g>
+  
+  <!-- Tech Target Corners -->
+  <path d="M80,140 L80,80 L140,80" fill="none" stroke="#6366f1" stroke-width="12" stroke-linecap="round" />
+  <path d="M432,140 L432,80 L372,80" fill="none" stroke="#6366f1" stroke-width="12" stroke-linecap="round" />
+  <path d="M80,372 L80,432 L140,432" fill="none" stroke="#6366f1" stroke-width="12" stroke-linecap="round" />
+  <path d="M432,372 L432,432 L372,432" fill="none" stroke="#6366f1" stroke-width="12" stroke-linecap="round" />
+  
+  <!-- AI Stars/Sparkles -->
+  <path d="M380,120 L385,130 L395,135 L385,140 L380,150 L375,140 L365,135 L375,130 Z" fill="#f59e0b" filter="url(#glow)" />
+  <path d="M130,340 L133,346 L139,349 L133,352 L130,358 L127,352 L121,349 L127,346 Z" fill="#f59e0b" />
+</svg>
