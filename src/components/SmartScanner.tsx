@@ -952,7 +952,7 @@ export default function SmartScanner({
                   </div>
 
                   {/* Video Viewport */}
-                  <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-black border border-slate-300 flex items-center justify-center">
+                  <div className="relative w-full aspect-square xs:aspect-[4/3] sm:aspect-[4/3] rounded-xl overflow-hidden bg-black border border-slate-300 flex items-center justify-center shadow-inner">
                     <video
                       ref={videoRef}
                       autoPlay
@@ -964,17 +964,17 @@ export default function SmartScanner({
                     />
                     
                     {/* Floating Target Frame Guide */}
-                    <div className="absolute inset-8 border-2 border-indigo-500/60 rounded-lg pointer-events-none flex flex-col justify-between p-2">
+                    <div className="absolute inset-3 sm:inset-6 border border-indigo-400/40 rounded-lg pointer-events-none flex flex-col justify-between p-2">
                       <div className="flex justify-between">
-                        <div className="w-4 h-4 border-t-2 border-l-2 border-indigo-500"></div>
-                        <div className="w-4 h-4 border-t-2 border-r-2 border-indigo-500"></div>
+                        <div className="w-6 h-6 border-t-4 border-l-4 border-indigo-500"></div>
+                        <div className="w-6 h-6 border-t-4 border-r-4 border-indigo-500"></div>
                       </div>
-                      <span className="text-[10px] text-white bg-indigo-600/80 px-2 py-0.5 rounded self-center font-bold font-sans text-center">
+                      <span className="text-[10px] sm:text-xs text-white bg-indigo-600/90 px-3 py-1 rounded-md self-center font-bold font-sans text-center shadow-md max-w-[90%]">
                         วางใบลาเบลพัสดุ/บาร์โค้ดสากลให้อยู่ในกรอบนี้
                       </span>
                       <div className="flex justify-between">
-                        <div className="w-4 h-4 border-b-2 border-l-2 border-indigo-500"></div>
-                        <div className="w-4 h-4 border-b-2 border-r-2 border-indigo-500"></div>
+                        <div className="w-6 h-6 border-b-4 border-l-4 border-indigo-500"></div>
+                        <div className="w-6 h-6 border-b-4 border-r-4 border-indigo-500"></div>
                       </div>
                     </div>
 

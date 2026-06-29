@@ -128,6 +128,33 @@ const DEFAULT_ROLE_PERMISSIONS: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermi
   }
 };
 
+const DEFAULT_MENU_LABELS = {
+  OVERVIEW: 'ภาพรวม & แดชบอร์ด',
+  SCANNER: 'ระบบสแกนพัสดุ',
+  OPERATIONS: 'บันทึกความเคลื่อนไหว',
+  INVENTORY: 'จัดการสต๊อกสินค้า',
+  LOGS: 'ประวัติทำรายการ (Ledger)',
+  SHELVES: 'จัดการชั้นวางสินค้า / QR Code',
+  SYNC: 'ซิงค์ & ส่งออกข้อมูล (Google Sheets / Excel / CSV)',
+  SETTINGS: 'ตั้งค่า & สิทธิ์ผู้ใช้',
+};
+
+const fontSizeClasses: Record<string, { btn: string; icon: string }> = {
+  xs: { btn: 'text-xs', icon: 'w-3.5 h-3.5' },
+  sm: { btn: 'text-sm', icon: 'w-4 h-4' },
+  base: { btn: 'text-base', icon: 'w-4.5 h-4.5' },
+  lg: { btn: 'text-lg', icon: 'w-5 h-5' },
+  xl: { btn: 'text-xl', icon: 'w-5.5 h-5.5' },
+};
+
+const paddingClasses: Record<string, string> = {
+  xs: 'px-2 py-1',
+  sm: 'px-3 py-1.5',
+  md: 'px-4 py-2.5',
+  lg: 'px-5 py-3.5',
+  xl: 'px-6 py-4',
+};
+
 export default function App() {
   // --- Auto-Wipe stale mock cache on initial load for fresh v3 deploy ---
   if (typeof window !== 'undefined' && !localStorage.getItem('inventory_modify_v3_cleared')) {
@@ -387,6 +414,37 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
   const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER'>('OVERVIEW');
+
+  // --- Customizable Menu configuration states ---
+  const [menuFontSize, setMenuFontSize] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('menu_font_size') || 'sm';
+    }
+    return 'sm';
+  });
+
+  const [menuPadding, setMenuPadding] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('menu_padding') || 'md';
+    }
+    return 'md';
+  });
+
+  const [menuLabels, setMenuLabels] = useState<Record<string, string>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('menu_labels');
+      if (saved) {
+        try {
+          return { ...DEFAULT_MENU_LABELS, ...JSON.parse(saved) };
+        } catch (e) {
+          return DEFAULT_MENU_LABELS;
+        }
+      }
+    }
+    return DEFAULT_MENU_LABELS;
+  });
+
+  const [isMenuCustomizerOpen, setIsMenuCustomizerOpen] = useState(false);
 
   // Redirect non-ADMIN users away from admin-only tabs
   useEffect(() => {
@@ -803,7 +861,18 @@ export default function App() {
   }
 
   return (
-    <div id="app-wrapper" className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
+    <div id="app-wrapper" className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans relative">
+      {/* Floating Gear Button in Top-Right Corner */}
+      <button
+        onClick={() => setIsMenuCustomizerOpen(true)}
+        className="fixed top-3 right-3 sm:top-4 sm:right-4 z-50 p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all duration-200 border-2 border-white cursor-pointer group flex items-center justify-center gap-1.5 animate-bounce"
+        style={{ animationDuration: '3s' }}
+        title="ปรับแต่งขนาดและชื่อปุ่มเมนู"
+      >
+        <SettingsIcon className="w-5 h-5 text-white animate-spin [animation-duration:10s] group-hover:rotate-90 transition-transform duration-300" />
+        <span className="text-xs font-bold font-sans pr-1">ปรับแต่งปุ่มเมนู ⚙️</span>
+      </button>
+
       {/* 1. Header Navigation Bar */}
       <nav id="app-navbar" className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -826,6 +895,16 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3 shrink-0">
+              {/* Menu Customizer Button in Top Right */}
+              <button 
+                onClick={() => setIsMenuCustomizerOpen(true)}
+                className="px-2.5 py-1.5 text-[11px] font-bold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100/80 border border-blue-200 rounded-lg transition-all cursor-pointer flex items-center gap-1 shrink-0 shadow-xs"
+                title="ปรับแต่งขนาดและชื่อปุ่มเมนู"
+              >
+                <SettingsIcon className="w-3.5 h-3.5 text-blue-600 animate-spin-hover" />
+                <span>⚙️ ตั้งค่าปุ่มเมนู</span>
+              </button>
+
               {/* Authenticated User Badge & Log Out */}
               <div className="flex items-center gap-2 pt-0.5">
                 <div className="hidden md:flex flex-col text-right">
@@ -887,118 +966,145 @@ export default function App() {
         </div>
 
         {/* Navigation Tabs Bar */}
-        <div className="bg-white border border-slate-200 rounded-xl p-1.5 flex flex-wrap gap-1 shadow-sm">
-          <button
-            onClick={() => setActiveMenuTab('OVERVIEW')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
-              activeMenuTab === 'OVERVIEW'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>ภาพรวม & แดชบอร์ด</span>
-          </button>
-          <button
-            onClick={() => setActiveMenuTab('SCANNER')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
-              activeMenuTab === 'SCANNER'
-                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs font-bold'
-                : 'text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100/80 hover:text-indigo-850 border border-indigo-100 animate-pulse'
-            }`}
-          >
-            <Camera className="w-4 h-4 text-indigo-600" />
-            <span className="font-bold">ระบบสแกนพัสดุ</span>
-            <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-sans uppercase font-bold">ใหม่</span>
-          </button>
-          <button
-            onClick={() => setActiveMenuTab('OPERATIONS')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
-              activeMenuTab === 'OPERATIONS'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-            }`}
-          >
-            <RefreshCcw className="w-4 h-4" />
-            <span>บันทึกความเคลื่อนไหว</span>
-            {preSelectedProductId && (
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
-            )}
-          </button>
-          <button
-            onClick={() => {
-              setActiveMenuTab('INVENTORY');
-              handleClearFilters();
-            }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
-              activeMenuTab === 'INVENTORY'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-            }`}
-          >
-            <ShoppingBag className="w-4 h-4" />
-            <span>จัดการสต๊อกสินค้า</span>
-            {products.filter(p => p.quantity <= p.minStock).length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-sm flex flex-col md:flex-row md:items-stretch lg:items-center md:justify-between gap-3 relative">
+          <div className="flex flex-wrap gap-1.5 items-center flex-grow">
+            <button
+              onClick={() => setActiveMenuTab('OVERVIEW')}
+              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
+                activeMenuTab === 'OVERVIEW'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              <LayoutDashboard className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+              <span>{menuLabels.OVERVIEW || 'ภาพรวม & แดชบอร์ด'}</span>
+            </button>
+            <button
+              onClick={() => setActiveMenuTab('SCANNER')}
+              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
+                activeMenuTab === 'SCANNER'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              <Camera className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+              <span>{menuLabels.SCANNER || 'ระบบสแกนพัสดุ'}</span>
+            </button>
+            <button
+              onClick={() => setActiveMenuTab('OPERATIONS')}
+              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
+                activeMenuTab === 'OPERATIONS'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              <RefreshCcw className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+              <span>{menuLabels.OPERATIONS || 'บันทึกความเคลื่อนไหว'}</span>
+              {preSelectedProductId && (
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setActiveMenuTab('INVENTORY');
+                handleClearFilters();
+              }}
+              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
+                activeMenuTab === 'INVENTORY'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              <ShoppingBag className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+              <span>{menuLabels.INVENTORY || 'จัดการสต๊อกสินค้า'}</span>
+              {products.filter(p => p.quantity <= p.minStock).length > 0 && (
+                <span className={`px-1.5 py-0.2 text-[10px] rounded-full [line-height:1] ${
+                  activeMenuTab === 'INVENTORY' ? 'bg-white text-blue-600 font-bold' : 'bg-orange-100 text-orange-705 font-bold border border-orange-200'
+                }`}>
+                  {products.filter(p => p.quantity <= p.minStock).length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveMenuTab('LOGS')}
+              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
+                activeMenuTab === 'LOGS'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              <History className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+              <span>{menuLabels.LOGS || 'ประวัติทำรายการ (Ledger)'}</span>
               <span className={`px-1.5 py-0.2 text-[10px] rounded-full [line-height:1] ${
-                activeMenuTab === 'INVENTORY' ? 'bg-white text-blue-600 font-bold' : 'bg-orange-100 text-orange-705 font-bold border border-orange-200'
+                activeMenuTab === 'LOGS' ? 'bg-white text-blue-600' : 'bg-slate-100 text-slate-600 font-medium border border-slate-200'
               }`}>
-                {products.filter(p => p.quantity <= p.minStock).length}
+                {transactions.length}
               </span>
+            </button>
+            <button
+              onClick={() => setActiveMenuTab('SHELVES')}
+              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
+                activeMenuTab === 'SHELVES'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              <MapPin className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+              <span>{menuLabels.SHELVES || 'จัดการชั้นวางสินค้า / QR Code'}</span>
+            </button>
+            {currentUser.role === 'ADMIN' && (
+              <>
+                <button
+                  onClick={() => setActiveMenuTab('SYNC')}
+                  className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                    fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+                  } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
+                    activeMenuTab === 'SYNC'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                  }`}
+                >
+                  <FileSpreadsheet className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+                  <span>{menuLabels.SYNC || 'ซิงค์ & ส่งออกข้อมูล (Google Sheets / Excel / CSV)'}</span>
+                </button>
+                <button
+                  onClick={() => setActiveMenuTab('SETTINGS')}
+                  className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                    fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+                  } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
+                    activeMenuTab === 'SETTINGS'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                  }`}
+                >
+                  <SettingsIcon className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+                  <span>{menuLabels.SETTINGS || 'ตั้งค่า & สิทธิ์ผู้ใช้'}</span>
+                </button>
+              </>
             )}
-          </button>
+          </div>
+
+          {/* Customization gear icon in top right / end of navigation bar */}
           <button
-            onClick={() => setActiveMenuTab('LOGS')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
-              activeMenuTab === 'LOGS'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-            }`}
+            onClick={() => setIsMenuCustomizerOpen(true)}
+            className="p-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-all duration-150 flex items-center gap-1.5 text-xs font-bold cursor-pointer shrink-0 border border-slate-200 hover:border-slate-300 bg-slate-50/50 self-end md:self-stretch justify-center"
+            title="ปรับแต่งขนาดและคำอธิบายปุ่มเมนู"
           >
-            <History className="w-4 h-4" />
-            <span>ประวัติทำรายการ (Ledger)</span>
-            <span className={`px-1.5 py-0.2 text-[10px] rounded-full [line-height:1] ${
-              activeMenuTab === 'LOGS' ? 'bg-white text-blue-600' : 'bg-slate-100 text-slate-600 font-medium border border-slate-200'
-            }`}>
-              {transactions.length}
-            </span>
+            <SettingsIcon className="w-4 h-4 text-blue-600 animate-pulse" />
+            <span>ปรับแต่งขนาด & ชื่อเมนู ⚙️</span>
           </button>
-          <button
-            onClick={() => setActiveMenuTab('SHELVES')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
-              activeMenuTab === 'SHELVES'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-            }`}
-          >
-            <MapPin className="w-4 h-4" />
-            <span>จัดการชั้นวางสินค้า / QR Code</span>
-          </button>
-          {currentUser.role === 'ADMIN' && (
-            <>
-              <button
-                onClick={() => setActiveMenuTab('SYNC')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
-                  activeMenuTab === 'SYNC'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-                }`}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>ซิงค์ & ส่งออกข้อมูล (Google Sheets / Excel / CSV)</span>
-              </button>
-              <button
-                onClick={() => setActiveMenuTab('SETTINGS')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 cursor-pointer ${
-                  activeMenuTab === 'SETTINGS'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-                }`}
-              >
-                <SettingsIcon className="w-4 h-4" />
-                <span>ตั้งค่า & สิทธิ์ผู้ใช้</span>
-              </button>
-            </>
-          )}
         </div>
 
         {/* Tab Contents */}
@@ -1255,6 +1361,182 @@ export default function App() {
           onRecordTransaction={handleRecordTransaction}
           onClose={handleCloseAuditModal}
         />
+      )}
+
+      {/* 6.6. Customizable Menu Modal */}
+      {isMenuCustomizerOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-indigo-700">
+                <SettingsIcon className="w-5 h-5 text-indigo-600 animate-spin-hover" />
+                <h3 className="text-lg font-bold text-slate-800">⚙️ ปรับแต่งปุ่มและชื่อเมนูระบบ</h3>
+              </div>
+              <button
+                onClick={() => setIsMenuCustomizerOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-50 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              คุณสามารถกำหนดขนาดของปุ่ม (Font Size & Padding) และเปลี่ยนคำอธิบายบนปุ่มเมนูทั้งหมดในระบบได้ตามต้องการ การตั้งค่านี้จะบันทึกไว้ในเบราว์เซอร์ของคุณโดยอัตโนมัติ
+            </p>
+
+            {/* Sizes & Paddings Settings */}
+            <div className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200/60">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">1. ปรับขนาดปุ่มเมนู (Button Resizing)</h4>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Font Size Selector */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700">ขนาดตัวอักษร (Text Size)</label>
+                  <div className="grid grid-cols-5 gap-1">
+                    {Object.keys(fontSizeClasses).map((sz) => (
+                      <button
+                        key={sz}
+                        type="button"
+                        onClick={() => setMenuFontSize(sz)}
+                        className={`py-1 text-xs font-medium rounded-md border text-center transition-all cursor-pointer ${
+                          menuFontSize === sz
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {sz.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Padding Selector */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700">ขนาดระยะห่าง (Button Padding)</label>
+                  <div className="grid grid-cols-5 gap-1">
+                    {Object.keys(paddingClasses).map((pd) => (
+                      <button
+                        key={pd}
+                        type="button"
+                        onClick={() => setMenuPadding(pd)}
+                        className={`py-1 text-xs font-medium rounded-md border text-center transition-all cursor-pointer ${
+                          menuPadding === pd
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {pd.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Preview Block */}
+              <div className="pt-2">
+                <span className="text-[11px] font-semibold text-slate-500 block mb-1">ตัวอย่างปุ่มเมนูที่คุณปรับแต่งขณะนี้:</span>
+                <div className="bg-white p-3 rounded-lg border border-slate-200 flex items-center justify-center">
+                  <button
+                    type="button"
+                    className={`flex items-center gap-2 bg-blue-600 text-white shadow-xs rounded-lg font-semibold pointer-events-none ${
+                      fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+                    } ${paddingClasses[menuPadding] || 'px-4 py-2.5'}`}
+                  >
+                    <Camera className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+                    <span>{menuLabels.SCANNER || 'ระบบสแกนพัสดุ'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Menu Labels Form */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">2. แก้ไขคำบนปุ่มเมนู (Button Names)</h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('คุณต้องการรีเซ็ตชื่อเมนูทั้งหมดกลับเป็นค่าตั้งต้นหรือไม่?')) {
+                      setMenuLabels(DEFAULT_MENU_LABELS);
+                      localStorage.setItem('menu_labels', JSON.stringify(DEFAULT_MENU_LABELS));
+                    }
+                  }}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline font-semibold cursor-pointer"
+                >
+                  ↩️ คืนค่าชื่อเดิมทั้งหมด
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[30vh] overflow-y-auto pr-1">
+                {Object.keys(DEFAULT_MENU_LABELS).map((key) => {
+                  const labelKey = key as keyof typeof DEFAULT_MENU_LABELS;
+                  const isAdminOnly = labelKey === 'SYNC' || labelKey === 'SETTINGS';
+
+                  return (
+                    <div key={key} className="space-y-1">
+                      <label className="text-[11px] font-semibold text-slate-600 flex items-center gap-1">
+                        <span>เมนู {key}</span>
+                        {isAdminOnly && (
+                          <span className="text-[9px] bg-amber-50 text-amber-700 px-1 rounded border border-amber-100 font-normal">เฉพาะ Admin</span>
+                        )}
+                      </label>
+                      <input
+                        type="text"
+                        value={menuLabels[labelKey] || ''}
+                        onChange={(e) => {
+                          const updated = { ...menuLabels, [labelKey]: e.target.value };
+                          setMenuLabels(updated);
+                          localStorage.setItem('menu_labels', JSON.stringify(updated));
+                        }}
+                        className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder={DEFAULT_MENU_LABELS[labelKey]}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const savedLabels = localStorage.getItem('menu_labels');
+                  const savedSize = localStorage.getItem('menu_font_size') || 'sm';
+                  const savedPadding = localStorage.getItem('menu_padding') || 'md';
+                  setMenuFontSize(savedSize);
+                  setMenuPadding(savedPadding);
+                  if (savedLabels) {
+                    try {
+                      setMenuLabels(JSON.parse(savedLabels));
+                    } catch (e) {
+                      setMenuLabels(DEFAULT_MENU_LABELS);
+                    }
+                  } else {
+                    setMenuLabels(DEFAULT_MENU_LABELS);
+                  }
+                  setIsMenuCustomizerOpen(false);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('menu_labels', JSON.stringify(menuLabels));
+                  localStorage.setItem('menu_font_size', menuFontSize);
+                  localStorage.setItem('menu_padding', menuPadding);
+                  setIsMenuCustomizerOpen(false);
+                }}
+                className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors cursor-pointer"
+              >
+                บันทึกการตั้งค่าเรียบร้อย ✓
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 7. Footer Accent */}
