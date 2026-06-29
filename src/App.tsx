@@ -861,18 +861,7 @@ export default function App() {
   }
 
   return (
-    <div id="app-wrapper" className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans relative">
-      {/* Floating Gear Button in Top-Right Corner */}
-      <button
-        onClick={() => setIsMenuCustomizerOpen(true)}
-        className="fixed top-3 right-3 sm:top-4 sm:right-4 z-50 p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all duration-200 border-2 border-white cursor-pointer group flex items-center justify-center gap-1.5 animate-bounce"
-        style={{ animationDuration: '3s' }}
-        title="ปรับแต่งขนาดและชื่อปุ่มเมนู"
-      >
-        <SettingsIcon className="w-5 h-5 text-white animate-spin [animation-duration:10s] group-hover:rotate-90 transition-transform duration-300" />
-        <span className="text-xs font-bold font-sans pr-1">ปรับแต่งปุ่มเมนู ⚙️</span>
-      </button>
-
+    <div id="app-wrapper" className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
       {/* 1. Header Navigation Bar */}
       <nav id="app-navbar" className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
