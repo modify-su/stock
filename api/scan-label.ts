@@ -90,13 +90,17 @@ export default async function handler(req: IncomingMessage & { method?: string }
   }
 
   try {
-    const rawBody = await getRawBody(req);
     let payload;
-    try {
-      payload = JSON.parse(rawBody);
-    } catch (e) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ error: "Invalid JSON body" }));
+    if ((req as any).body !== undefined && (req as any).body !== null && (req as any).body !== "") {
+      payload = typeof (req as any).body === "string" ? JSON.parse((req as any).body) : (req as any).body;
+    } else {
+      const rawBody = await getRawBody(req);
+      try {
+        payload = JSON.parse(rawBody);
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: "Invalid JSON body" }));
+      }
     }
 
     const { image } = payload;

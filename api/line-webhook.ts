@@ -55,7 +55,12 @@ export default async function handler(req: IncomingMessage & { query: any }, res
   }
 
   try {
-    const rawBody = await getRawBody(req);
+    let rawBody: string;
+    if ((req as any).body !== undefined && (req as any).body !== null && (req as any).body !== "") {
+      rawBody = typeof (req as any).body === "string" ? (req as any).body : JSON.stringify((req as any).body);
+    } else {
+      rawBody = await getRawBody(req);
+    }
     const signature = req.headers["x-line-signature"] as string;
 
     // 1. Parse payload to handle empty test pings instantly
