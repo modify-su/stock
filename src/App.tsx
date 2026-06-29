@@ -33,7 +33,7 @@ import SyncAndBackup from './components/SyncAndBackup';
 import LoginScreen from './components/LoginScreen';
 import ShelfManagement from './components/ShelfManagement';
 import ShelfAuditModal from './components/ShelfAuditModal';
-import { getCachedToken, syncProductsToSpreadsheet } from './googleSheetsService';
+
 
 // Import Firebase
 import { db } from './firebase';
@@ -390,21 +390,7 @@ export default function App() {
     localStorage.setItem('inventory_current_user', JSON.stringify(currentUser));
   }, [currentUser]);
 
-  // Real-time Background Auto-Sync to Google Sheets when products modify
-  useEffect(() => {
-    if (products.length > 0 && settings.googleSheetsId && settings.googleSheetsAutoSync) {
-      const token = getCachedToken();
-      if (token) {
-        syncProductsToSpreadsheet(token, settings.googleSheetsId, products)
-          .then(() => {
-            console.log('Google Sheets Live Auto-Synced successfully.');
-          })
-          .catch((err) => {
-            console.error('Auto-Sync to Sheets failed:', err);
-          });
-      }
-    }
-  }, [products, settings.googleSheetsId, settings.googleSheetsAutoSync]);
+
 
   useEffect(() => {
     localStorage.setItem('inventory_is_authenticated', String(isAuthenticated));
