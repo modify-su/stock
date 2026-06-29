@@ -227,131 +227,257 @@ function onEdit(e) {
 
   const handleCreateAndLinkSheet = async () => {
     if (!hasSettingsPermission) {
-      alert('🔒 ขออภัย คุณไม่มีสิทธิ์จัดการหรือผูกการตั้งค่าภายนอก');
+      setConfirmDialog({
+        isOpen: true,
+        title: '🔒 สิทธิ์ไม่เพียงพอ',
+        message: 'ขออภัย คุณไม่มีสิทธิ์จัดการหรือผูกการตั้งค่าภายนอก',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
       return;
     }
 
     const token = googleToken || getCachedToken();
     if (!token) {
-      alert('⚠️ กรุณาเข้าสู่ระบบด้วย Google ก่อนเพื่อเริ่มสร้างและผูกชีต');
+      setConfirmDialog({
+        isOpen: true,
+        title: '⚠️ บัญชีไม่ได้ลงชื่อเข้าใช้',
+        message: 'กรุณาเข้าสู่ระบบด้วย Google ก่อนเพื่อเริ่มสร้างและผูกชีต',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
       return;
     }
 
-    const conf = window.confirm(
-      '🌟 ยืนยันการสร้างเทมเพลต Google Spreadsheet ใหม่หรือไม่?\n' +
-      'ระบบจะทำการสร้างไฟล์สเปรดชีตชื่อสอดคล้องกันบนหน้าไดรฟ์ของท่าน พร้อมตกแต่งหัวตารางและล็อกโครงสร้างคิวบิกทันที'
-    );
-    if (!conf) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: '🌟 สร้าง Google Spreadsheet ใหม่',
+      message: 'ยืนยันการสร้างเทมเพลต Google Spreadsheet ใหม่หรือไม่?\nระบบจะทำการสร้างไฟล์สเปรดชีตชื่อสอดคล้องกันบนหน้าไดรฟ์ของท่าน พร้อมตกแต่งหัวตารางและล็อกโครงสร้างคิวบิกทันที',
+      confirmText: 'สร้างไฟล์ใหม่',
+      cancelText: 'ยกเลิก',
+      variant: 'info',
+      onConfirm: async () => {
+        setConfirmDialog(p => ({ ...p, isOpen: false }));
+        setIsSheetsBusy(true);
+        setGoogleSheetsStatus('กำลังส่งคำขอเข้า Google เพื่อสร้างสเปรดชีตใหม่...');
+        try {
+          const result = await createInventorySpreadsheet(token, settings.appName);
+          
+          // Update settings in Firestore
+          const updatedSettings = {
+            ...settings,
+            googleSheetsId: result.spreadsheetId,
+            googleSheetsUrl: result.spreadsheetUrl,
+            googleSheetsLastSyncedAt: new Date().toISOString()
+          };
+          await onUpdateSettings(updatedSettings);
 
-    setIsSheetsBusy(true);
-    setGoogleSheetsStatus('กำลังส่งคำขอเข้า Google เพื่อสร้างสเปรดชีตใหม่...');
-    try {
-      const result = await createInventorySpreadsheet(token, settings.appName);
-      
-      // Update settings in Firestore
-      const updatedSettings = {
-        ...settings,
-        googleSheetsId: result.spreadsheetId,
-        googleSheetsUrl: result.spreadsheetUrl,
-        googleSheetsLastSyncedAt: new Date().toISOString()
-      };
-      await onUpdateSettings(updatedSettings);
-
-      // Immediately sync current products to initialize template
-      setGoogleSheetsStatus('สร้างไฟล์สำเร็จแล้ว! กำลังเตรียมประจุข้อมูลสินค้าลงสเปรดชีตครั้งแรก...');
-      await syncProductsToSpreadsheet(token, result.spreadsheetId, products);
-      
-      setInputSpreadsheetId(result.spreadsheetId);
-      setGoogleSheetsStatus('🎉 สร้างสเปรดชีตเทมแพลตสต๊อกสินค้าหลัก และซิงก์ข้อมูลนำร่องสมบูรณ์แบบเรียบร้อยแล้ว!');
-      alert('🎉 สำเร็จ! สร้างไฟล์ Google Sheets และผูกเชื่อมระบบจัดการสต๊อกเรียบร้อยแล้ว');
-    } catch (err: any) {
-      console.error(err);
-      setGoogleSheetsStatus(`เกิดข้อผิดพลาดในการสร้างไฟล์: ${err.message || err}`);
-      alert(`❌ สร้างชีตล้มเหลว: ${err.message || err}`);
-    } finally {
-      setIsSheetsBusy(false);
-    }
+          // Immediately sync current products to initialize template
+          setGoogleSheetsStatus('สร้างไฟล์สำเร็จแล้ว! กำลังเตรียมประจุข้อมูลสินค้าลงสเปรดชีตครั้งแรก...');
+          await syncProductsToSpreadsheet(token, result.spreadsheetId, products);
+          
+          setInputSpreadsheetId(result.spreadsheetId);
+          setGoogleSheetsStatus('🎉 สร้างสเปรดชีตเทมแพลตสต๊อกสินค้าหลัก และซิงก์ข้อมูลนำร่องสมบูรณ์แบบเรียบร้อยแล้ว!');
+          
+          setConfirmDialog({
+            isOpen: true,
+            title: '🎉 สำเร็จ!',
+            message: 'สร้างไฟล์ Google Sheets และผูกเชื่อมระบบจัดการสต๊อกเรียบร้อยแล้ว',
+            isAlertOnly: true,
+            confirmText: 'ตกลง',
+            onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+          });
+        } catch (err: any) {
+          console.error(err);
+          setGoogleSheetsStatus(`เกิดข้อผิดพลาดในการสร้างไฟล์: ${err.message || err}`);
+          setConfirmDialog({
+            isOpen: true,
+            title: '❌ ล้มเหลว',
+            message: `สร้างชีตล้มเหลว: ${err.message || err}`,
+            isAlertOnly: true,
+            confirmText: 'ตกลง',
+            onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+          });
+        } finally {
+          setIsSheetsBusy(false);
+        }
+      }
+    });
   };
 
   const handlePushSync = async () => {
     const token = googleToken || getCachedToken();
     if (!token) {
-      alert('⚠️ กรุณาลงชื่อเข้าใช้ Google ก่อนเพื่อกดซิงค์ข้อมูล');
+      setConfirmDialog({
+        isOpen: true,
+        title: '⚠️ บัญชีไม่ได้ลงชื่อเข้าใช้',
+        message: 'กรุณาลงชื่อเข้าใช้ Google ก่อนเพื่อกดซิงค์ข้อมูล',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
       return;
     }
     const currentSheetId = settings.googleSheetsId;
     if (!currentSheetId) {
-      alert('⚠️ ขออภัย ไม่พบสเปรดชีตที่ผูกเชื่อมไว้ กรุณากดปุ่มสร้างใหม่หรือป้อนและบันทึก ID สำหรับใช้งานก่อน');
+      setConfirmDialog({
+        isOpen: true,
+        title: '⚠️ ไม่พบการผูกไฟล์',
+        message: 'ขออภัย ไม่พบสเปรดชีตที่ผูกเชื่อมไว้ กรุณากดปุ่มสร้างใหม่หรือป้อนและบันทึก ID สำหรับใช้งานก่อน',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
       return;
     }
 
-    const conf = window.confirm(
-      '⚠️ ยืนยันการบันทึกทับสต๊อกสินค้าไปยัง Google Sheets หรือไม่?\n' +
-      'ข้อมูลปัจจุบันในแถวข้อมูลสเปรดชีตจะถูกเขียนทับด้วยสถานะคลังเรียลไทม์ชุดปัจจุบันทันที'
-    );
-    if (!conf) return;
-
-    setIsSheetsBusy(true);
-    setGoogleSheetsStatus('กำลังถ่ายโอนข้อมูลสินค้าทั้งหมดไปยัง Google Sheets...');
-    try {
-      await syncProductsToSpreadsheet(token, currentSheetId, products);
-      
-      const updatedSettings = {
-        ...settings,
-        googleSheetsLastSyncedAt: new Date().toISOString()
-      };
-      await onUpdateSettings(updatedSettings);
-      
-      setGoogleSheetsStatus('✅ ซิงค์ข้อมูลขาส่งออกสินค้าทั้งหมดไปยัง Google Sheets สำเร็จเรียบร้อยแล้ว!');
-      alert('✅ ซิงค์ข้อมูลขาส่งออกสินค้าไปยัง Google Sheets เรียบร้อยแล้ว!');
-    } catch (err: any) {
-      console.error(err);
-      setGoogleSheetsStatus(`การซิงก์ข้อมูลขาส่งล้มเหลว: ${err.message || err}`);
-      alert(`❌ ซิงก์ล้มเหลว: ${err.message || err}`);
-    } finally {
-      setIsSheetsBusy(false);
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: '⚠️ ยืนยันเขียนทับสเปรดชีต',
+      message: 'ยืนยันการบันทึกทับสต๊อกสินค้าไปยัง Google Sheets หรือไม่?\nข้อมูลปัจจุบันในแถวข้อมูลสเปรดชีตจะถูกเขียนทับด้วยสถานะคลังเรียลไทม์ชุดปัจจุบันทันที',
+      confirmText: 'ส่งออกและเขียนทับ',
+      cancelText: 'ยกเลิก',
+      variant: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(p => ({ ...p, isOpen: false }));
+        setIsSheetsBusy(true);
+        setGoogleSheetsStatus('กำลังถ่ายโอนข้อมูลสินค้าทั้งหมดไปยัง Google Sheets...');
+        try {
+          await syncProductsToSpreadsheet(token, currentSheetId, products);
+          
+          const updatedSettings = {
+            ...settings,
+            googleSheetsLastSyncedAt: new Date().toISOString()
+          };
+          await onUpdateSettings(updatedSettings);
+          
+          setGoogleSheetsStatus('✅ ซิงค์ข้อมูลขาส่งออกสินค้าทั้งหมดไปยัง Google Sheets สำเร็จเรียบร้อยแล้ว!');
+          
+          setConfirmDialog({
+            isOpen: true,
+            title: '✅ สำเร็จ!',
+            message: 'ซิงค์ข้อมูลขาส่งออกสินค้าไปยัง Google Sheets เรียบร้อยแล้ว!',
+            isAlertOnly: true,
+            confirmText: 'ตกลง',
+            onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+          });
+        } catch (err: any) {
+          console.error(err);
+          setGoogleSheetsStatus(`การซิงก์ข้อมูลขาส่งล้มเหลว: ${err.message || err}`);
+          setConfirmDialog({
+            isOpen: true,
+            title: '❌ ล้มเหลว',
+            message: `ซิงก์ล้มเหลว: ${err.message || err}`,
+            isAlertOnly: true,
+            confirmText: 'ตกลง',
+            onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+          });
+        } finally {
+          setIsSheetsBusy(false);
+        }
+      }
+    });
   };
 
   const handlePullSync = async () => {
     if (!hasSettingsPermission) {
-      alert('🔒 ขออภัย คุณไม่มีสิทธิ์ซิงค์นำเข้า/แก้ไขข้อมูลหลักระดับระบบ');
+      setConfirmDialog({
+        isOpen: true,
+        title: '🔒 สิทธิ์ไม่เพียงพอ',
+        message: 'ขออภัย คุณไม่มีสิทธิ์ซิงค์นำเข้า/แก้ไขข้อมูลหลักระดับระบบ',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
       return;
     }
 
     const token = googleToken || getCachedToken();
     if (!token) {
-      alert('⚠️ กรุณาลงชื่อเข้าใช้ Google ก่อนเพื่อจะดึงข้อมูล');
+      setConfirmDialog({
+        isOpen: true,
+        title: '⚠️ บัญชีไม่ได้ลงชื่อเข้าใช้',
+        message: 'กรุณาลงชื่อเข้าใช้ Google ก่อนเพื่อจะดึงข้อมูล',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
       return;
     }
     const currentSheetId = settings.googleSheetsId;
     if (!currentSheetId) {
-      alert('⚠️ ไม่พบรหัสสเปรดชีตที่เชื่อมโยงในระบบฐานข้อมูลคลาวด์');
+      setConfirmDialog({
+        isOpen: true,
+        title: '⚠️ ไม่พบรหัสสเปรดชีต',
+        message: 'ไม่พบรหัสสเปรดชีตที่เชื่อมโยงในระบบฐานข้อมูลคลาวด์',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
       return;
     }
 
-    const conf = window.confirm(
-      '⚠️ ยืนยันดึงฐานข้อมูลกลับมาจาก Google Sheets หรือไม่?\n' +
-      'ระบบจะนำสินค้าทั้งหมดที่พบในแถวของแถบ Sheet1 มาอัปเดต / นำเข้า เข้าสู่ระบบคลังแอปชุดหลักทันที โดยอิงรหัส SKU เป็นหลัก'
-    );
-    if (!conf) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: '⚠️ ยืนยันการดึงข้อมูลจาก Google Sheets',
+      message: 'ยืนยันดึงฐานข้อมูลกลับมาจาก Google Sheets หรือไม่?\nระบบจะนำสินค้าทั้งหมดที่พบในแถวของแถบชีตมาอัปเดต / นำเข้า เข้าสู่ระบบคลังแอปชุดหลักทันที โดยอิงรหัส SKU เป็นหลัก',
+      confirmText: 'ดึงข้อมูล',
+      cancelText: 'ยกเลิก',
+      variant: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(p => ({ ...p, isOpen: false }));
+        setIsSheetsBusy(true);
+        setGoogleSheetsStatus('กำลังเชื่อมสายดึงข้อมูลสเปรดชีตลงคลังสินค้า...');
+        try {
+          const importedList = await fetchSpreadsheetProducts(token, currentSheetId);
+          if (importedList.length === 0) {
+            throw new Error('ไม่พบแถวข้อมูลสินค้าใดๆ (ยกเว้นหัวตาราง) ใน Google Sheet ของคุณ โปรดตรวจสอบความสมบูรณ์ระบุชีต');
+          }
 
-    setIsSheetsBusy(true);
-    setGoogleSheetsStatus('กำลังเชื่อมสายดึงข้อมูลสเปรดชีตลงคลังสินค้า...');
-    try {
-      const importedList = await fetchSpreadsheetProducts(token, currentSheetId);
-      if (importedList.length === 0) {
-        throw new Error('ไม่พบแถวข้อมูลสินค้าใดๆ (ยกเว้นหัวตาราง) ใน Google Sheet ของคุณ โปรดตรวจสอบความสมบูรณ์ระบุชีต');
+          // Delay slightly so the previous dialog closes cleanly before we open the options dialog
+          setTimeout(() => {
+            setConfirmDialog({
+              isOpen: true,
+              title: '💡 เลือกรูปแบบการซิงค์นำเข้า',
+              message: 'คุณต้องการ ล้างข้อมูลสต๊อกเดิมของระบบจัดส่งหลักออกทั้งหมด (Clear & Replace) หรือ ซิงค์สมทบเฉพาะรายการที่ไม่มีอยู่ / ปรับยอดปริมาณ (Merge & Update)?',
+              confirmText: 'ล้างแล้วเขียนทับ (Clear & Replace)',
+              cancelText: 'ซิงค์สมทบเพิ่มเติม (Merge & Update)',
+              variant: 'danger',
+              onConfirm: async () => {
+                setConfirmDialog(p => ({ ...p, isOpen: false }));
+                await executePullSync(importedList, true);
+              },
+              onCancel: async () => {
+                setConfirmDialog(p => ({ ...p, isOpen: false }));
+                await executePullSync(importedList, false);
+              }
+            });
+          }, 300);
+
+        } catch (err: any) {
+          console.error(err);
+          setGoogleSheetsStatus(`ดึงข้อมูลสต๊อกล้มเหลว: ${err.message || err}`);
+          setConfirmDialog({
+            isOpen: true,
+            title: '❌ ดึงข้อมูลล้มเหลว',
+            message: `ดึงข้อมูลล้มเหลว: ${err.message || err}`,
+            isAlertOnly: true,
+            confirmText: 'ตกลง',
+            onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+          });
+          setIsSheetsBusy(false);
+        }
       }
+    });
+  };
 
-      const overwriteChoice = window.confirm(
-        '💡 คุณต้องการ ล้างข้อมูลสต๊อกเดิมของระบบจัดส่งหลักออกทั้งหมด (Clear & Replace)\n' +
-        'หรือ ซิงค์สมทบเฉพาะรายการที่ไม่มีอยู่ / ปรับยอดปริมาณ (Merge & Update)?\n\n' +
-        '-> กด [ตกลง / OK] เพื่อ "ลบรายการสินค้าเดิมทั้งหมดแล้วเขียนทับใหม่"\n' +
-        '-> กด [ยกเลิก / Cancel] เพื่อ "ซิงค์เพิ่มเติมสมทบทับคีย์สากลสต๊อกสินค้า"'
-      );
-
-      await onImportProducts(importedList, overwriteChoice);
+  const executePullSync = async (importedList: any[], overwrite: boolean) => {
+    setIsSheetsBusy(true);
+    setGoogleSheetsStatus(overwrite ? 'กำลังรีเซ็ตและอัปโหลดเขียนทับรายการสินค้าใหม่...' : 'กำลังประมวลผลซิงค์สมทบรายการสินค้า...');
+    try {
+      await onImportProducts(importedList, overwrite);
 
       const updatedSettings = {
         ...settings,
@@ -360,11 +486,26 @@ function onEdit(e) {
       await onUpdateSettings(updatedSettings);
 
       setGoogleSheetsStatus(`✅ ดึงสินค้ารวมสำเร็จซิงค์ข้อมูลลงสต๊อกเรียบร้อยแล้วจำนวน ${importedList.length} รายการ!`);
-      alert(`🎉 ซิงค์กลับจาก Google Sheets สำเร็จ! นำเข้าข้อมูลสินค้าจำนวน ${importedList.length} รายการแล้ว`);
+      
+      setConfirmDialog({
+        isOpen: true,
+        title: '🎉 ซิงค์กลับสำเร็จ!',
+        message: `ซิงค์กลับจาก Google Sheets สำเร็จ! นำเข้าข้อมูลสินค้าจำนวน ${importedList.length} รายการแล้ว`,
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
     } catch (err: any) {
       console.error(err);
       setGoogleSheetsStatus(`ดึงข้อมูลสต๊อกล้มเหลว: ${err.message || err}`);
-      alert(`❌ ดึงข้อมูลล้มเหลว: ${err.message || err}`);
+      setConfirmDialog({
+        isOpen: true,
+        title: '❌ ดึงข้อมูลล้มเหลว',
+        message: `ดึงข้อมูลล้มเหลว: ${err.message || err}`,
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
     } finally {
       setIsSheetsBusy(false);
     }
@@ -373,7 +514,14 @@ function onEdit(e) {
   const handleLinkExistingSheetId = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!hasSettingsPermission) {
-      alert('🔒 ขออภัย คุณไม่มีสิทธิ์ซิงค์หรือผูกการตั้งค่าภายนอก');
+      setConfirmDialog({
+        isOpen: true,
+        title: '🔒 สิทธิ์ไม่เพียงพอ',
+        message: 'ขออภัย คุณไม่มีสิทธิ์ซิงค์หรือผูกการตั้งค่าภายนอก',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
       return;
     }
 
@@ -399,39 +547,69 @@ function onEdit(e) {
       await onUpdateSettings(updatedSettings);
 
       setGoogleSheetsStatus('🔗 ผูกและเชื่อมโยงรหัสสเปรดชีตรองรับเรียบร้อยแล้ว!');
-      alert('🔗 เชื่อมโยง Google Sheets เรียบร้อยแล้ว!');
+      
+      setConfirmDialog({
+        isOpen: true,
+        title: '🔗 เชื่อมโยงสำเร็จ',
+        message: 'เชื่อมโยง Google Sheets เรียบร้อยแล้ว!',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
     } catch (err: any) {
       console.error(err);
-      alert('❌ เชื่อมโยงล้มเหลว');
+      setConfirmDialog({
+        isOpen: true,
+        title: '❌ เชื่อมโยงล้มเหลว',
+        message: 'ไม่สามารถผูกเชื่อมสเปรดชีตได้ กรุณาตรวจสอบ ID อีกครั้ง',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
     } finally {
       setIsSheetsBusy(false);
     }
   };
 
-  const handleUnlinkSheet = async () => {
+  const handleUnlinkSheet = () => {
     if (!hasSettingsPermission) {
-      alert('🔒 ขออภัย คุณไม่มีสิทธิ์ผูก/ตัดการตั้งค่าระบบ');
+      setConfirmDialog({
+        isOpen: true,
+        title: '🔒 สิทธิ์ไม่เพียงพอ',
+        message: 'ขออภัย คุณไม่มีสิทธิ์ผูก/ตัดการตั้งค่าระบบ',
+        isAlertOnly: true,
+        confirmText: 'ตกลง',
+        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+      });
       return;
     }
 
-    const conf = window.confirm('⚠️ ยืนยันที่จะตัดสัมพันธ์ ปลดการเชื่อมโยงสเปรดชีตอันนี้ออกหรือไม่? (ไฟล์ใน Google Drive จะยังอยู่ปกติ)');
-    if (!conf) return;
-
-    setIsSheetsBusy(true);
-    try {
-      const updatedSettings = {
-        ...settings,
-        googleSheetsId: '',
-        googleSheetsUrl: '',
-      };
-      await onUpdateSettings(updatedSettings);
-      setInputSpreadsheetId('');
-      setGoogleSheetsStatus('ปลดการเชื่อมโยงสเปรดชีตออกเสร็จสิ้น');
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSheetsBusy(false);
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: '⚠️ ยืนยันถอนการเชื่อมโยง',
+      message: 'ยืนยันที่จะตัดสัมพันธ์ ปลดการเชื่อมโยงสเปรดชีตอันนี้ออกหรือไม่? (ไฟล์ใน Google Drive จะยังอยู่ตามปกติ)',
+      confirmText: 'ยืนยัน',
+      cancelText: 'ยกเลิก',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(p => ({ ...p, isOpen: false }));
+        setIsSheetsBusy(true);
+        try {
+          const updatedSettings = {
+            ...settings,
+            googleSheetsId: '',
+            googleSheetsUrl: '',
+          };
+          await onUpdateSettings(updatedSettings);
+          setInputSpreadsheetId('');
+          setGoogleSheetsStatus('ปลดการเชื่อมโยงสเปรดชีตออกเสร็จสิ้น');
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setIsSheetsBusy(false);
+        }
+      }
+    });
   };
 
   const handleExportProductsToCsv = () => {
