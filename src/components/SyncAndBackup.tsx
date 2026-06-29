@@ -27,6 +27,7 @@ import {
   fetchSpreadsheetProducts 
 } from '../googleSheetsService';
 import { User } from 'firebase/auth';
+import { auth } from '../firebase';
 
 interface SyncAndBackupProps {
   settings: AppSettings;
@@ -200,12 +201,63 @@ function onEdit(e) {
         setGoogleUser(result.user);
         setGoogleToken(result.accessToken);
         setGoogleSheetsStatus('เชื่อมต่อกับบัญชี Google สำเร็จแล้ว!');
+        
+        setConfirmDialog({
+          isOpen: true,
+          title: '🎉 เชื่อมต่อสำเร็จ!',
+          message: `เข้าสู่ระบบและเชื่อมต่อบัญชี Google (${result.user.email}) เรียบร้อยแล้ว`,
+          isAlertOnly: true,
+          confirmText: 'ตกลง',
+          onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+        });
       } else {
         setGoogleSheetsStatus('การเชื่อมต่อถูกปฏิเสธ');
       }
     } catch (err: any) {
-      console.error(err);
-      setGoogleSheetsStatus(`การเชื่อมโยงระบบล้มเหลว: ${err.message || err}`);
+      console.error('Sign-in Error details:', err);
+      const errCode = err.code || '';
+      const errMsg = err.message || '';
+      
+      setGoogleSheetsStatus(`การเชื่อมโยงระบบล้มเหลว: ${errCode || errMsg}`);
+
+      // Check for common auth error scenarios, especially on Vercel
+      const isVercel = window.location.hostname.includes('vercel.app') || window.location.hostname.includes('run.app');
+      const isUnauthorizedDomain = errCode === 'auth/unauthorized-domain' || errMsg.toLowerCase().includes('unauthorized domain') || errMsg.toLowerCase().includes('unauthorized_client');
+      const isPopupClosed = errCode === 'auth/popup-closed-by-user' || errMsg.toLowerCase().includes('popup-closed-by-user') || errMsg.toLowerCase().includes('closed by user');
+
+      const projectId = auth.app.options.projectId || 'innate-facet-klsxp';
+      const firebaseConsoleUrl = `https://console.firebase.google.com/project/${projectId}/authentication/settings`;
+
+      if (isUnauthorizedDomain || isVercel || isPopupClosed) {
+        setConfirmDialog({
+          isOpen: true,
+          title: '🔑 วิธีแก้: หน้าต่างป๊อปอัป Google ปิดตัวทันทีบน Vercel',
+          message: `เนื่องจากระบบความปลอดภัยของ Firebase Auth คุณจะต้องทำตามขั้นตอนดังนี้เพื่อให้สามารถเข้าสู่ระบบบนเว็บนี้ได้:\n\n` +
+            `1️⃣ ไปที่ Firebase Console โดยคลิกลิงก์ด้านล่างนี้:\n${firebaseConsoleUrl}\n\n` +
+            `2️⃣ ในหน้านั้น ไปที่แท็บ Settings -> เมนู "Authorized domains" (โดเมนที่ได้รับอนุญาต)\n\n` +
+            `3️⃣ กดปุ่ม "Add domain" แล้วนำชื่อโดเมนเว็บนี้กรอกลงไปเพื่อเปิดสิทธิ์การใช้งาน:\n👉 ${window.location.hostname}\n\n` +
+            `4️⃣ สำหรับ Safari หรือ Chrome บนมือถือ: หากป๊อปอัปยังถูกปิดอัตโนมัติ ให้เข้าไปตั้งค่าเบราว์เซอร์เพื่อ "อนุญาตป๊อปอัป (Allow Popups)" และ "อนุญาตคุกกี้จากบุคคลภายนอก (Allow Cross-Site Tracking/Cookies)"\n\n` +
+            `ลองทำตามขั้นตอนนี้แล้วกดปุ่มเชื่อมต่อใหม่อีกครั้งนะครับ!`,
+          isAlertOnly: true,
+          confirmText: 'รับทราบ (ก๊อปปี้ชื่อโดเมนและไปตั้งค่า)',
+          onConfirm: () => {
+            setConfirmDialog(p => ({ ...p, isOpen: false }));
+            try {
+              navigator.clipboard.writeText(window.location.hostname);
+            } catch (e) {}
+            window.open(firebaseConsoleUrl, '_blank');
+          },
+        });
+      } else {
+        setConfirmDialog({
+          isOpen: true,
+          title: '❌ เกิดข้อผิดพลาดในการเชื่อมต่อ',
+          message: `ไม่สามารถลงชื่อเข้าใช้ Google ได้:\n\nรหัสข้อผิดพลาด: ${errCode}\nรายละเอียด: ${errMsg}\n\nกรุณาตรวจสอบว่าคุณได้อนุญาตสิทธิ์ป๊อปอัปในเบราว์เซอร์แล้ว หรือลองเปลี่ยนไปใช้เบราว์เซอร์อื่น`,
+          isAlertOnly: true,
+          confirmText: 'ตกลง',
+          onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false })),
+        });
+      }
     } finally {
       setIsSheetsBusy(false);
     }
