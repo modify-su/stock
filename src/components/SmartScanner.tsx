@@ -949,25 +949,13 @@ export default function SmartScanner({
                       </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const nextAuto = !isAutoScanActive;
-                        setIsAutoScanActive(nextAuto);
-                        if (nextAuto && !isCameraActive) {
-                          startCamera();
-                        }
-                      }}
-                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                        isAutoScanActive
-                          ? 'bg-emerald-600 text-white animate-pulse shadow-md'
-                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                      }`}
-                      title="วิเคราะห์ตัดยอดโดยอัตโนมัติเมื่อวางพัสดุหน้ากล้องทุกๆ 5 วินาที"
+                    <div
+                      className="px-3 py-1.5 rounded-md text-xs font-bold transition-all bg-emerald-600 text-white animate-pulse shadow-md flex items-center gap-1.5 select-none"
+                      title="ระบบกำลังวิเคราะห์ตัดยอดโดยอัตโนมัติเมื่อตรวจพบพัสดุหน้ากล้องอย่างต่อเนื่อง"
                     >
-                      <Scan className={`w-3.5 h-3.5 ${isAutoScanActive ? 'animate-spin' : ''}`} />
-                      <span>{isAutoScanActive ? 'ออโต้สแกน: เปิดอยู่ 🟢' : 'เปิดออโต้สแกน 🔍'}</span>
-                    </button>
+                      <Scan className="w-3.5 h-3.5 animate-spin [animation-duration:4s]" />
+                      <span>ระบบออโต้สแกนกำลังทำงานอัตโนมัติ 🟢</span>
+                    </div>
                   </div>
 
                   {/* Video Viewport */}
