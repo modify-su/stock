@@ -330,15 +330,15 @@ export default function SmartScanner({
           setScanResult(null);
         } else {
           playBeep('error');
-          setIsAutoScanActive(false); // Stop auto scan to let user resolve manually
+          // Keep auto-scan active to support continuous automated scanning without pausing!
 
           if (duplicateTx) {
-            setErrorMessage(`⚠️ [ออโต้สแกนหยุดทำงาน] ตรวจพบข้อมูลซ้ำ: เลขอ้างอิง (${data.trackingNo || data.orderId}) เคยถูกบันทึกไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} หากต้องการทำซ้ำกรุณาเปิดอนุญาตบันทึกซ้ำและกดบันทึกด้วยตนเองครับ`);
+            setErrorMessage(`⚠️ [ตรวจพบข้อมูลซ้ำแต่ออโต้สแกนทำงานต่อ 🔍] เลขอ้างอิง (${data.trackingNo || data.orderId}) เคยถูกบันทึกไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} ระบบจะทำการสแกนกล่องถัดไปโดยอัตโนมัติ`);
           } else if (!data.extractedItems || data.extractedItems.length === 0) {
-            setErrorMessage(`❌ [ออโต้สแกนหยุดทำงาน] ไม่พบข้อมูลสินค้าจากใบปะหน้า กรุณาเพิ่มสินค้าหรือกรอก SKU และกดบันทึกด้วยตนเอง`);
+            setErrorMessage(`❌ [ตรวจพบข้อผิดพลาดแต่ออโต้สแกนทำงานต่อ 🔍] ไม่พบข้อมูลสินค้าจากใบปะหน้า ระบบจะทำการสแกนกล่องถัดไปโดยอัตโนมัติ`);
           } else {
             const unmatchedItems = data.extractedItems.filter(item => !item.matched);
-            setErrorMessage(`❌ [ออโต้สแกนหยุดทำงาน] พบ SKU ที่จับคู่สินค้าในระบบไม่เจอ (${unmatchedItems.map(i => i.sku || 'ไม่ทราบ SKU').join(', ')}) กรุณาเลือกจับคู่สินค้าหรือแก้ไข SKU ด้วยตนเอง จากนั้นกดบันทึกและตัดสต๊อกด้านล่างครับ`);
+            setErrorMessage(`❌ [ตรวจพบข้อผิดพลาดแต่ออโต้สแกนทำงานต่อ 🔍] พบ SKU ที่ไม่ตรงในระบบ (${unmatchedItems.map(i => i.sku || 'ไม่ทราบ SKU').join(', ')}) ระบบจะทำการสแกนกล่องถัดไปโดยอัตโนมัติ`);
           }
         }
       } else {
@@ -355,9 +355,9 @@ export default function SmartScanner({
     } catch (err: any) {
       console.error(err);
       playBeep('error');
-      setErrorMessage(`❌ ผิดพลาดในการวิเคราะห์ใบปะหน้า: ${err.message || 'ระบบหลังบ้านไม่ตอบสนอง'}`);
+      setErrorMessage(`❌ ผิดพลาดในการวิเคราะห์ใบปะหน้า: ${err.message || 'ระบบหลังบ้านไม่ตอบสนอง'} (ออโต้สแกนจะทำงานต่อโดยอัตโนมัติ)`);
       if (keepCameraActive) {
-        setIsAutoScanActive(false); // Stop auto scan if API throws error
+        // Keep auto-scanning active on transient backend or network errors as well!
       }
     } finally {
       setIsLoading(false);
