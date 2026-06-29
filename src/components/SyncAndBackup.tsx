@@ -904,6 +904,28 @@ function onEdit(e) {
             </div>
           </div>
 
+          {!googleToken && (
+            <div className="bg-amber-50 border border-amber-200/60 rounded-xl p-4 text-xs text-amber-900 space-y-2">
+              <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                <span className="text-sm">💡</span>
+                <span>ปุ่มเชื่อมต่อไม่ทำงาน หรือหน้าต่างป๊อปอัปปิดเองโดยไม่มีอะไรเกิดขึ้นใช่ไหม?</span>
+              </div>
+              <p className="text-[11px] text-amber-700 leading-relaxed">
+                เนื่องจากขณะนี้คุณกำลังใช้งานระบบในหน้าต่างจำลองพรีวิว (Iframe) ของ AI Studio หรือ Vercel ระบบรักษาความปลอดภัยของเว็บเบราว์เซอร์ยุคใหม่จะบล็อกคุกกี้สิทธิ์บุคคลที่สามและบล็อกป๊อปอัปอัตโนมัติ 
+              </p>
+              <div className="pt-1 flex flex-wrap gap-2 items-center">
+                <span className="font-semibold text-amber-800 text-[11px]">แก้ไขได้ง่ายๆ โดยเปิดแอปในแท็บใหม่เพื่อก้าวข้ามสิทธิ์พรีวิว:</span>
+                <button
+                  type="button"
+                  onClick={() => window.open(window.location.href, '_blank')}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10.5px] transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
+                >
+                  <span>👉 กดเปิดหน้าแอปในแท็บใหม่โดยตรง</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Connected Spreadsheet State Banner */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-200">
             {/* Left side: Spreadsheet Linkage Display */}
