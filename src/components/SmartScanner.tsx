@@ -64,7 +64,7 @@ export default function SmartScanner({
   canRecordTransactions,
   currentUser
 }: SmartScannerProps) {
-  const [activeMode, setActiveMode] = useState<'CAMERA' | 'UPLOAD' | 'PDF_TEXT'>('UPLOAD');
+  const [activeMode, setActiveMode] = useState<'CAMERA' | 'UPLOAD' | 'PDF_TEXT'>('CAMERA');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -77,7 +77,7 @@ export default function SmartScanner({
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isMirrored, setIsMirrored] = useState(false);
-  const [isAutoScanActive, setIsAutoScanActive] = useState(false);
+  const [isAutoScanActive, setIsAutoScanActive] = useState(true);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
 
   // Upload states
@@ -100,10 +100,25 @@ export default function SmartScanner({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Check if inside IFrame and list cameras
+  // Check if inside IFrame, list cameras, and auto start camera on mount
   useEffect(() => {
     setIsIframe(typeof window !== 'undefined' && window.self !== window.top);
-    checkCameras();
+    
+    const initScanner = async () => {
+      const videoDevices = await checkCameras();
+      if (videoDevices && videoDevices.length > 0) {
+        // Automatically start camera with a slight delay to ensure browser readiness
+        setTimeout(() => {
+          startCamera('environment', videoDevices[0].deviceId);
+        }, 500);
+      } else {
+        // Try direct fallback start
+        setTimeout(() => {
+          startCamera('environment', '');
+        }, 500);
+      }
+    };
+    initScanner();
 
     return () => {
       stopCamera();
@@ -154,7 +169,7 @@ export default function SmartScanner({
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
         setHasCamera(false);
-        return;
+        return [];
       }
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(device => device.kind === 'videoinput');
@@ -162,12 +177,15 @@ export default function SmartScanner({
       if (videoDevices.length > 0) {
         setSelectedCameraId(videoDevices[0].deviceId);
         setHasCamera(true);
+        return videoDevices;
       } else {
         setHasCamera(false);
+        return [];
       }
     } catch (err) {
       console.warn('Error enumerating cameras:', err);
       setHasCamera(false);
+      return [];
     }
   };
 
@@ -462,7 +480,7 @@ export default function SmartScanner({
     }
   };
 
-  // Auto scan interval effect
+  // Auto scan interval effect (Optimized to scan every 3 seconds for high responsiveness)
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
 
@@ -471,7 +489,7 @@ export default function SmartScanner({
         if (!isLoading) {
           captureFrameForAutoScan();
         }
-      }, 5000); // scan every 5 seconds
+      }, 3000); // scan every 3 seconds
     }
 
     return () => {
@@ -770,6 +788,7 @@ export default function SmartScanner({
         <button
           onClick={() => {
             setActiveMode('CAMERA');
+            setIsAutoScanActive(true);
             startCamera();
             setErrorMessage(null);
           }}
