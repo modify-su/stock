@@ -1,5 +1,9 @@
 import { initializeApp } from "firebase/app";
-import { initializeFirestore } from "firebase/firestore";
+import { 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager 
+} from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -13,9 +17,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with the databaseId and experimentalForceLongPolling to prevent offline connection issues in iframe
+// Initialize Firestore with local persistent caching and experimentalForceLongPolling 
+// to ensure instant updates and offline resilience, especially inside the AI Studio iframe.
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true
+  experimentalForceLongPolling: true,
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
 }, "ai-studio-d2035f6d-8e85-41ea-9141-eedfc5e93833");
 
 export const auth = getAuth(app);

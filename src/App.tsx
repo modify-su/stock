@@ -135,7 +135,7 @@ const DEFAULT_MENU_LABELS = {
   INVENTORY: 'จัดการสต๊อกสินค้า',
   LOGS: 'ประวัติทำรายการ (Ledger)',
   SHELVES: 'จัดการชั้นวางสินค้า / QR Code',
-  SYNC: 'ซิงค์ & ส่งออกข้อมูล (Google Sheets / Excel / CSV)',
+  SYNC: 'สำรอง & นำเข้าข้อมูล (CSV / Excel)',
   SETTINGS: 'ตั้งค่า & สิทธิ์ผู้ใช้',
 };
 
@@ -1054,7 +1054,7 @@ export default function App() {
                   }`}
                 >
                   <FileSpreadsheet className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-                  <span>{menuLabels.SYNC || 'ซิงค์ & ส่งออกข้อมูล (Google Sheets / Excel / CSV)'}</span>
+                  <span>{menuLabels.SYNC || 'สำรอง & นำเข้าข้อมูล (CSV / Excel)'}</span>
                 </button>
                 <button
                   onClick={() => setActiveMenuTab('SETTINGS')}

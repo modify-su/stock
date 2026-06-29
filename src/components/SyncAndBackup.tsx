@@ -556,51 +556,31 @@ const handleExportProductsToCsv = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Step 1: Connecting LINE OA */}
-          <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
-            <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>ขั้นตอนสร้างริชเมนูบน LINE OA (Rich Menu)</span>
-            </h4>
-            <ul className="space-y-2 text-xs text-slate-400 list-decimal pl-4 leading-relaxed">
-              <li>
-                ล็อกอินเข้าใช้งานระบบหลังบ้าน <a href="https://manager.line.me" target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold">LINE Official Account Manager</a>
-              </li>
-              <li>
-                ไปที่ที่ทำรายชื่อฝั่งซ้าย เลือกเมนู **"ริชเมนู" (Rich Menus)** ใต้หัวข้อหน้าหลัก
-              </li>
-              <li>
-                คลิกปุ่ม **"สร้างใหม่"** เพื่อกำหนดหน้าตาปุ่มคีย์ลัดบนแชตไลน์ของคุณ
-              </li>
-              <li>
-                ในขั้นตอนการตั้งค่าเทมเพลตปุ่มกด และการระบุแอ็กชัน (Action) ให้เลือกประเภทแอ็กชันเป็น <span className="font-bold text-slate-200">"ลิงก์" (Link)</span>
-              </li>
-              <li>
-                คัดลอกลิงก์ตัวเต็มด้านบน (ลิงก์แอปพอร์ตจริงที่คัดลอกได้) ไปวางลงในช่อง **URL ลิงก์** พร้อมใส่คำอธิบายปุ่มแชร์
-              </li>
-              <li>
-                กด **บันทึก** เป็นอันเปิดใช้งาน สองมือถือของลูกค้าและพนักงานก็จะเห็นริชเมนูสุดแสนสวยงาม กดใช้งานสต๊อกได้จากห้องแชตทันที
-              </li>
-            </ul>
-          </div>
-
-          {/* Step 2: Bypassing Unverified Warning */}
-          <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
-            <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              <span>วิธีแก้ปัญหา "ขอสิทธิ์เข้าถึง" / คำเตือนจาก Google</span>
-            </h4>
-            <div className="text-xs text-slate-400 space-y-2 leading-relaxed">
-              <p>
-                เนื่องจากแอปพลิเคชันตัวนี้เป็น **Custom / Private App** สำหรับคลังสินค้าของตนเอง ไม่ได้รับอนุญาตระดับพับบลิกสาธารณะจาก Google ทำให้เมื่อเราสั่งเชื่อม Google Sheets ระบบความปลอดภัยจะหยุดตรวจสอบสิทธิ์ชั่วคราวและแจ้งขึ้นเตือนว่า <span className="font-bold text-amber-400">"Google ยังไม่ได้ตรวจสอบแอปพลิเคชันนี้"</span>
-              </p>
-              <p className="bg-slate-900/50 p-2.5 rounded-lg border border-amber-950/30 text-amber-200 text-[11px] leading-relaxed">
-                📢 **วิธีแก้ปัญหา:** <br/>
-                คลิกคำว่า **"ขั้นสูง" (Advanced)** บริเวณแถบตัวเลือกมุมล่างซ้าย จากนั้นคลิกลิงก์คำว่า <span className="underline font-bold text-amber-300">"ไปยัง ... (ไม่ปลอดภัย)" (Go to ... (unsafe))</span> เพื่อทำงานลงสิทธิ์สเปรดชีตต่อไป จากนั้นกดยืนยันให้สิทธิ์เข้าถึง คุณก็จะเชื่อมชีตและอัปเดตข้อมูลรวมศูนย์กับฟังก์ชั่นในแอปได้ตามปกติอย่างร้อยเปอร์เซ็นต์!
-              </p>
-            </div>
-          </div>
+        <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
+          <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span>ขั้นตอนสร้างริชเมนูบน LINE OA (Rich Menu)</span>
+          </h4>
+          <ul className="space-y-2 text-xs text-slate-400 list-decimal pl-4 leading-relaxed">
+            <li>
+              ล็อกอินเข้าใช้งานระบบหลังบ้าน <a href="https://manager.line.me" target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold">LINE Official Account Manager</a>
+            </li>
+            <li>
+              ไปที่เมนูฝั่งซ้าย เลือก **"ริชเมนู" (Rich Menus)** ภายใต้หัวข้อหน้าหลัก
+            </li>
+            <li>
+              คลิกปุ่ม **"สร้างใหม่"** เพื่อกำหนดหน้าตาปุ่มคีย์ลัดบนแชตไลน์ของคุณ
+            </li>
+            <li>
+              ในขั้นตอนการตั้งค่าเทมเพลตปุ่มกด และการระบุแอ็กชัน (Action) ให้เลือกประเภทแอ็กชันเป็น <span className="font-bold text-slate-200">"ลิงก์" (Link)</span>
+            </li>
+            <li>
+              คัดลอกลิงก์ตัวเต็มด้านบน (ลิงก์แอปพอร์ตจริงที่คัดลอกได้) ไปวางลงในช่อง **URL ลิงก์** พร้อมใส่คำอธิบายปุ่มแชร์
+            </li>
+            <li>
+              กด **บันทึก** เป็นอันเปิดใช้งาน โทรศัพท์มือถือของลูกค้าและพนักงานจะเห็นริชเมนูสวยงาม และสามารถกดเช็คสต๊อกหรือทำรายการได้จากห้องแชตทันที
+            </li>
+          </ul>
         </div>
       </div>
 
