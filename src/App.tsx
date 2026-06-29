@@ -884,15 +884,17 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3 shrink-0">
-              {/* Menu Customizer Button in Top Right */}
-              <button 
-                onClick={() => setIsMenuCustomizerOpen(true)}
-                className="px-2.5 py-1.5 text-[11px] font-bold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100/80 border border-blue-200 rounded-lg transition-all cursor-pointer flex items-center gap-1 shrink-0 shadow-xs"
-                title="ปรับแต่งขนาดและชื่อปุ่มเมนู"
-              >
-                <SettingsIcon className="w-3.5 h-3.5 text-blue-600 animate-spin-hover" />
-                <span>⚙️ ตั้งค่าปุ่มเมนู</span>
-              </button>
+              {/* Menu Customizer Button in Top Right - ADMIN ONLY */}
+              {currentUser?.role === 'ADMIN' && (
+                <button 
+                  onClick={() => setIsMenuCustomizerOpen(true)}
+                  className="px-2.5 py-1.5 text-[11px] font-bold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100/80 border border-blue-200 rounded-lg transition-all cursor-pointer flex items-center gap-1 shrink-0 shadow-xs"
+                  title="ปรับแต่งขนาดและชื่อปุ่มเมนู"
+                >
+                  <SettingsIcon className="w-3.5 h-3.5 text-blue-600 animate-spin-hover" />
+                  <span>⚙️ ตั้งค่าปุ่มเมนู</span>
+                </button>
+              )}
 
               {/* Authenticated User Badge & Log Out */}
               <div className="flex items-center gap-2 pt-0.5">
@@ -1084,16 +1086,6 @@ export default function App() {
               </>
             )}
           </div>
-
-          {/* Customization gear icon in top right / end of navigation bar */}
-          <button
-            onClick={() => setIsMenuCustomizerOpen(true)}
-            className="p-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-all duration-150 flex items-center gap-1.5 text-xs font-bold cursor-pointer shrink-0 border border-slate-200 hover:border-slate-300 bg-slate-50/50 self-end md:self-stretch justify-center"
-            title="ปรับแต่งขนาดและคำอธิบายปุ่มเมนู"
-          >
-            <SettingsIcon className="w-4 h-4 text-blue-600 animate-pulse" />
-            <span>ปรับแต่งขนาด & ชื่อเมนู ⚙️</span>
-          </button>
         </div>
 
         {/* Tab Contents */}
@@ -1353,7 +1345,7 @@ export default function App() {
       )}
 
       {/* 6.6. Customizable Menu Modal */}
-      {isMenuCustomizerOpen && (
+      {currentUser?.role === 'ADMIN' && isMenuCustomizerOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
