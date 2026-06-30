@@ -42,25 +42,19 @@ async function generateContentWithFallback(params: {
   let lastError: any = null;
 
   for (const model of models) {
-    let attempts = 2; // Retry each model up to 2 times
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        console.log(`[AI] Attempting generateContent with model: ${model} (attempt ${attempt}/${attempts})`);
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: params.contents,
-          config: params.config,
-        });
-        console.log(`[AI] Successfully generated content using model: ${model}`);
-        return response;
-      } catch (err: any) {
-        lastError = err;
-        const errMsg = err?.message || String(err);
-        console.warn(`[AI] Error with model ${model} (attempt ${attempt}/${attempts}):`, errMsg);
-        
-        // Wait briefly before retrying
-        await new Promise(resolve => setTimeout(resolve, 600));
-      }
+    try {
+      console.log(`[AI] Attempting generateContent with model: ${model}`);
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: params.contents,
+        config: params.config,
+      });
+      console.log(`[AI] Successfully generated content using model: ${model}`);
+      return response;
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err?.message || String(err);
+      console.warn(`[AI] Error with model ${model}:`, errMsg);
     }
   }
 
@@ -140,43 +134,130 @@ async function startServer() {
                 productsList.push(doc.data());
               });
 
-              // Format context for Gemini
-              const productsContext = productsList.map(p => 
-                `- SKU: ${p.sku}, ชื่อ: ${p.name}, หมวดหมู่: ${p.category || 'ทั่วไป'}, คงเหลือ: ${p.quantity} ${p.unit || 'ชิ้น'}, จุดแจ้งเตือน: ${p.minStock} ${p.unit || 'ชิ้น'}, พิกัดหน่วยเก็บ: ${p.location || 'ไม่ได้ระบุ'}`
-              ).join("\n");
+              const lowerText = text.toLowerCase();
+              let replyText = "";
+              let processed = false;
 
-              let systemPrompt = "";
-              const customPrompt = settings.lineBotSystemPrompt || "";
+              // 1. Instant Greeting Router
+              const isGreeting = ["สวัสดี", "ดีครับ", "ดีค่ะ", "หวัดดี", "เริ่ม", "เริ่มต้น", "hello", "hi", "hey", "บอท", "bot"].some(keyword => lowerText.includes(keyword));
+              
+              // 2. Instant Low Stock Router
+              const isLowStockQuery = ["ใกล้หมด", "เหลือน้อย", "หมด", "เตือน", "แจ้งเตือน", "alert", "low stock", "out of stock"].some(keyword => lowerText.includes(keyword));
+              
+              // 3. Instant Summary Router
+              const isSummaryQuery = (["สรุป", "ภาพรวม", "ทั้งหมด", "summary", "report", "overview"].some(keyword => lowerText.includes(keyword)) && 
+                                     ["สต๊อก", "สินค้า", "คลัง", "stock", "product"].some(keyword => lowerText.includes(keyword))) || lowerText === "สต๊อก";
 
-              if (customPrompt) {
-                systemPrompt = customPrompt
-                  .replace(/\{\{productsContext\}\}/g, productsContext)
-                  .replace(/\{\{text\}\}/g, text);
+              if (isGreeting) {
+                replyText = `สวัสดีครับ! 📦 ผมคือ บอทคลังสินค้าอัจฉริยะ (AI Warehouse Assistant) ยินดีให้บริการครับ!
+
+คุณสามารถพิมพ์ถามคำสั่งด่วนเหล่านี้ได้เลยเพื่อการทำงานที่เร็วที่สุด (ระบบจะวิเคราะห์และดึงข้อมูลสดทันที):
+• ⚠️ พิมพ์ "สต๊อกใกล้หมด" เพื่อดูสินค้าที่เหลือน้อยเตือนภัย
+• 📊 พิมพ์ "สรุปสต๊อก" เพื่อดูรายงานภาพรวมคลังสินค้า
+• 🔍 พิมพ์ [ชื่อสินค้า หรือ รหัส SKU] เช่น "KP-GR" เพื่อเช็คยอดคงเหลือและพิกัดชั้นวางได้ทันที!
+
+ยินดีช่วยพนักงานทุกคนดูแลคลังสินค้าครับ! 😊`;
+                processed = true;
+              } else if (isLowStockQuery) {
+                const alertProducts = productsList.filter(p => (Number(p.quantity || 0) <= Number(p.minStock || 0)) || Number(p.quantity || 0) === 0);
+                if (alertProducts.length === 0) {
+                  replyText = `🎉 ยินดีด้วยครับ! ขณะนี้ไม่มีสินค้าใดที่ต่ำกว่าเกณฑ์แจ้งเตือนหรือใกล้หมดในคลังสินค้าเลยครับ ทุกรายการมีจำนวนเพียงพอปกติครับ 👍`;
+                } else {
+                  const listText = alertProducts.slice(0, 20).map((p, idx) => {
+                    const statusIcon = Number(p.quantity || 0) === 0 ? "❌ หมดเกลี้ยง" : "⚠️ ต่ำเกณฑ์";
+                    return `${idx + 1}. [${p.sku || 'ไม่มี SKU'}] ${p.name}\n   👉 คงเหลือ: *${p.quantity}* ${p.unit || 'ชิ้น'} (เกณฑ์เตือน: ${p.minStock})\n   📍 ชั้นวาง: ${p.location || 'ไม่ระบุ'} (${statusIcon})`;
+                  }).join("\n\n");
+
+                  const totalAlerts = alertProducts.length;
+                  const footer = totalAlerts > 20 ? `\n\n...และยังมีอีก ${totalAlerts - 20} รายการที่ใกล้หมดในคลัง` : "";
+                  replyText = `⚠️ รายงานสินค้าเหลือน้อยและต่ำกว่าเกณฑ์ (${totalAlerts} รายการ):\n\n${listText}${footer}\n\n💡 รีบจัดเตรียมเติมสต๊อกด่วนนะครับ!`;
+                }
+                processed = true;
+              } else if (isSummaryQuery) {
+                const totalProductsCount = productsList.length;
+                const totalItemsCount = productsList.reduce((sum, p) => sum + Number(p.quantity || 0), 0);
+                const outOfStockCount = productsList.filter(p => Number(p.quantity || 0) === 0).length;
+                const lowStockCount = productsList.filter(p => Number(p.quantity || 0) <= Number(p.minStock || 0) && Number(p.quantity || 0) > 0).length;
+
+                replyText = `📊 สรุปรายงานภาพรวมคลังสินค้าเรียลไทม์:\n
+• 📦 สินค้าทั้งหมดในระบบ: *${totalProductsCount}* รายการ
+• 🔢 จำนวนชิ้นรวมทั้งหมด: *${totalItemsCount}* ชิ้น
+• ❌ สินค้าหมดสต๊อก: *${outOfStockCount}* รายการ
+• ⚠️ สินค้าที่เหลือน้อยกว่าเกณฑ์: *${lowStockCount}* รายการ\n
+💡 พิมพ์ชื่อสินค้าหรือรหัส SKU เพื่อตรวจเช็กสต๊อกรายตัวได้เลยครับ!`;
+                processed = true;
               } else {
-                systemPrompt = `คุณคือผู้ดูแลบอร์ดจัดการคลังสินค้าอัจฉริยะประมวลผลด้วย AI (Warehouse Stock Assistant Bot) สื่อสารผ่านแอพ LINE ด้วยภาษาไทยที่กระชับ ชัดเจน เปี่ยมความช่วยเหลือ และเป็นมิตร
+                // Try smart keyword search in local database
+                const searchTerms = text.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+                const matchedProducts = productsList.filter(p => {
+                  const pName = (p.name || "").toLowerCase();
+                  const pSku = (p.sku || "").toLowerCase();
+                  const pCategory = (p.category || "").toLowerCase();
+                  const pLocation = (p.location || "").toLowerCase();
 
-นี่คือข้อมูลคงคลังสินค้าล่าสุดจริงภายในระบบ (เรียลไทม์):
+                  return searchTerms.some(term => {
+                    if (term.length < 2 && !term.match(/[0-9]/)) return false; // skip single non-numeric letters
+                    return pName.includes(term) || pSku.includes(term) || pCategory.includes(term) || pLocation.includes(term);
+                  });
+                });
+
+                // If we found exact specific matches (e.g. 1 to 5 items), answer instantly with exact real-time data
+                if (matchedProducts.length > 0 && matchedProducts.length <= 5) {
+                  const listText = matchedProducts.map((p, idx) => {
+                    const statusIcon = Number(p.quantity || 0) === 0 ? "❌ สินค้าหมดสต๊อก" : (Number(p.quantity || 0) <= Number(p.minStock || 0) ? "⚠️ ต่ำกว่าเกณฑ์เตือน" : "✅ สต๊อกปกติ");
+                    return `📦 [${idx + 1}/${matchedProducts.length}] ${p.name}\n• SKU: \`${p.sku || 'ไม่มี'}\`\n• หมวดหมู่: ${p.category || 'ทั่วไป'}\n• คงเหลือสต๊อก: *${p.quantity}* ${p.unit || 'ชิ้น'} (เกณฑ์เตือน: ${p.minStock})\n• พิกัดจัดเก็บ: 📍 *${p.location || 'ไม่ระบุ'}*\n• สถานะปัจจุบัน: ${statusIcon}`;
+                  }).join("\n\n");
+                  replyText = `🔍 ดึงข้อมูลสินค้าตรงคีย์เวิร์ด "${text}" สำเร็จ:\n\n${listText}`;
+                  processed = true;
+                } else {
+                  // Use Gemini but with highly optimized, slimmed down context!
+                  // Only pass matching items if found, or first 15 products to ensure we never bloat the context or timeout.
+                  const filteredProducts = matchedProducts.length > 0 ? matchedProducts.slice(0, 20) : productsList.slice(0, 15);
+                  const productsContext = filteredProducts.map(p => 
+                    `- SKU: ${p.sku}, ชื่อ: ${p.name}, หมวดหมู่: ${p.category || 'ทั่วไป'}, คงเหลือ: ${p.quantity} ${p.unit || 'ชิ้น'}, จุดแจ้งเตือน: ${p.minStock} ${p.unit || 'ชิ้น'}, พิกัดหน่วยเก็บ: ${p.location || 'ไม่ได้ระบุ'}`
+                  ).join("\n");
+
+                  let systemPrompt = "";
+                  const customPrompt = settings.lineBotSystemPrompt || "";
+
+                  if (customPrompt) {
+                    systemPrompt = customPrompt
+                      .replace(/\{\{productsContext\}\}/g, productsContext)
+                      .replace(/\{\{text\}\}/g, text);
+                  } else {
+                    systemPrompt = `คุณคือผู้ดูแลบอร์ดจัดการคลังสินค้าอัจฉริยะประมวลผลด้วย AI (Warehouse Stock Assistant Bot) สื่อสารผ่านแอพ LINE ด้วยภาษาไทยที่กระชับ ชัดเจน เปี่ยมความช่วยเหลือ และเป็นมิตร
+  
+นี่คือข้อมูลสต๊อกสินค้าที่ดึงตามความเกี่ยวข้องล่าสุดจริงภายในระบบ (เรียลไทม์):
 ${productsContext}
 
-พนักงานหรือผู้ใช้พิมพ์คำถามว่า: "${text}"
+พนักงานพิมพ์ถามคุณว่า: "${text}"
 
-โปรดทำตามข้อตกลงในการวิเคราะห์ข้อมูลเพื่อตอบพนักงาน:
-1. หากพนักงานกล่าวทักทาย เช่น "สวัสดี", "ดีครับ/ค่ะ" ให้ทักทายกลับและอธิบายงานที่ช่วยตรวจสอบได้ เช่น "สวัสดีครับ! ผมบอทคลังสินค้าอัจฉริยะ ยินดีให้ความช่วยเหลือครับ คุณสามารถพิมพ์ชื่อสินค้าเพื่อตรวจสต๊อก สอบถามพิกัดที่เก็บสินค้า หรือถามหาสินค้าใกล้เหลือน้อยได้เลยครับ! 📦"
-2. หากพิมพ์เกี่ยวกับสต๊อกเหลือน้อย หรือสินค้าใกล้หมด หรือแจ้งเตือน ให้ตรวจสอบสินค้าที่จำนวนเหลือน้อยกว่าค่าจุดแจ้งเตือน (minStock) หรือสต๊อกเป็น 0 แล้วสรุปออกมาเป็นรายการแยกย่อยที่เข้าใจเข้าใจง่าย เช่น "⚠️ สินค้าใกล้หมดในระบบมีดังนี้ครับ..."
-3. หากพิมพ์พิมพ์ชื่อสินค้าหรือส่วนหนึ่งของชื่อ หรือ SKU ทางร้าน ให้ตอบข้อมูลเฉพาะเจาะจง เช่น ชื่อสินค้า, จำนวนคงเหลือ, หน่วยนับ, พิกัดจานจัดเก็บ เพื่อแจ้งพนักงานอย่างมั่นใจ
-4. หากถามสินค้าบางชิ้นที่ไม่มีในรายการข้างต้นเลย ให้ระบุว่า "ขออภัยครับ ไม่พบรายการที่ตรงกับคีย์เวิร์ดนี้ในระบบคลังปัจจุบันครับ" อย่างสุภาพพร้อมบอกให้ลองพิมพ์ค้นหาด้วยรหัสหรือชื่ออื่น
-5. พยายามตอบเรียงเป็นข้อๆ (Bullet points) วงเล็บ และตัวหนาเพื่อให้แสดงผลผ่านหน้าจอแชต LINE บนมือถือได้งดงามและประหยัดพื้นที่มากที่สุด`;
-              }
+โปรดประมวลผลวิเคราะห์และปฏิบัติดังนี้:
+1. ตอบกลับด้วยความกระชับ ตรงประเด็น และถูกต้องตามสถิติตัวเลขข้างบน 100% ห้ามเดาตัวเลข
+2. จัดรูปแบบข้อความให้น่าอ่านด้วย Bullet points, ตัวหนา, หรืออิโมจิ เพื่อให้พนักงานดูแชตบนหน้าจอมือถือได้ชัดเจนที่สุด
+3. หากพนักงานพิมพ์ค้นหาแล้วไม่พบตรงกับรายการสต๊อก ให้บอกอย่างสุภาพว่าไม่พบข้อมูลและชวนให้พิมพ์ระบุด้วยชื่ออื่นหรือ SKU อื่นครับ`;
+                  }
 
-              let replyText = "";
-              try {
-                const geminiResponse = await generateContentWithFallback({
-                  contents: systemPrompt
-                });
-                replyText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
-              } catch (geminiError) {
-                console.error("Gemini Content Generation Error:", geminiError);
-                replyText = `ขออภัยครับ ระบบวิเคราะห์ AI ขัดข้องชั่วคราว: ${geminiError instanceof Error ? geminiError.message : String(geminiError)}`;
+                  try {
+                    const geminiResponse = await generateContentWithFallback({
+                      contents: systemPrompt
+                    });
+                    replyText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
+                  } catch (geminiError) {
+                    console.error("Gemini Content Generation Error:", geminiError);
+                    
+                    // Ultra-resilient local fallback so the user always gets their data!
+                    if (matchedProducts.length > 0) {
+                      const listText = matchedProducts.slice(0, 5).map((p) => {
+                        return `📦 ${p.name}\n• SKU: \`${p.sku}\`\n• คงเหลือ: *${p.quantity}* ${p.unit}\n• พิกัดจัดเก็บ: 📍 *${p.location || 'ไม่ระบุ'}*`;
+                      }).join("\n\n");
+                      replyText = `🔍 ดึงข้อมูลแบบออฟไลน์เรียลไทม์ให้สำเร็จ (เนื่องจาก Google AI ขัดข้องชั่วคราว):\n\n${listText}`;
+                    } else {
+                      replyText = `ขออภัยครับ ระบบประมวลผล AI ขัดข้องชั่วคราว โปรดระบุชื่อสินค้าหรือรหัส SKU เพื่อค้นหาจากฐานข้อมูลตรงได้เลยครับ!`;
+                    }
+                  }
+                  processed = true;
+                }
               }
 
               // Reply back to LINE using native fetch API
