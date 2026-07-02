@@ -614,27 +614,67 @@ export default function App() {
   // Update existing product meta properties
   const handleUpdateProduct = async (updatedProduct: Product) => {
     const originalProduct = products.find(p => p.id === updatedProduct.id);
-    if (originalProduct && originalProduct.quantity !== updatedProduct.quantity) {
-      const diff = updatedProduct.quantity - originalProduct.quantity;
-      const txId = `tx-${Date.now()}`;
-      const newTx: Transaction = {
-        id: txId,
-        productId: updatedProduct.id,
-        productSku: updatedProduct.sku,
-        productName: updatedProduct.name,
-        type: diff > 0 ? 'IN' : 'OUT',
-        quantity: Math.abs(diff),
-        date: new Date().toISOString(),
-        reason: `ปรับปรุงข้อมูลสต๊อกปัจจุบันโดยตรงจากหน้าจอแก้ไขสินค้า (เดิม: ${originalProduct.quantity} -> ใหม่: ${updatedProduct.quantity})`,
-        operator: currentUser?.name || 'ผู้ดูแลระบบ',
-      };
-      
+    if (originalProduct) {
+      const qDiff = updatedProduct.quantity - (originalProduct.quantity || 0);
+      const wDiff = (updatedProduct.wholesaleStock || 0) - (originalProduct.wholesaleStock || 0);
+
       const batch = writeBatch(db);
+      let txIdSuffix = 0;
+
+      // Check if it's a direct withdrawal (wDiff < 0 and qDiff === -wDiff, meaning we transferred from wholesaleStock to quantity)
+      if (wDiff < 0 && qDiff === -wDiff) {
+        const txId = `tx-${Date.now()}-${txIdSuffix++}`;
+        const newTx: Transaction = {
+          id: txId,
+          productId: updatedProduct.id,
+          productSku: updatedProduct.sku,
+          productName: updatedProduct.name,
+          type: 'OUT',
+          quantity: Math.abs(wDiff),
+          date: new Date().toISOString(),
+          reason: `เบิกสินค้าจากคลังสินค้าหลัก (คลังใหญ่) มาแบ่งจำหน่าย/พร้อมขาย [คลังใหญ่: ${originalProduct.wholesaleStock || 0} ➡️ ${updatedProduct.wholesaleStock || 0}, สต๊อกพร้อมขาย: ${originalProduct.quantity || 0} ➡️ ${updatedProduct.quantity || 0}]`,
+          operator: currentUser?.name || 'ผู้ดูแลระบบ',
+        };
+        batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
+      } else {
+        // Handle them separately or general edits
+        if (qDiff !== 0) {
+          const txId = `tx-${Date.now()}-${txIdSuffix++}`;
+          const newTx: Transaction = {
+            id: txId,
+            productId: updatedProduct.id,
+            productSku: updatedProduct.sku,
+            productName: updatedProduct.name,
+            type: qDiff > 0 ? 'IN' : 'OUT',
+            quantity: Math.abs(qDiff),
+            date: new Date().toISOString(),
+            reason: `ปรับปรุงข้อมูลสต๊อกพร้อมขายโดยตรง (เดิม: ${originalProduct.quantity} -> ใหม่: ${updatedProduct.quantity})`,
+            operator: currentUser?.name || 'ผู้ดูแลระบบ',
+          };
+          batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
+        }
+
+        if (wDiff !== 0) {
+          const txId = `tx-${Date.now()}-${txIdSuffix++}`;
+          const newTx: Transaction = {
+            id: txId,
+            productId: updatedProduct.id,
+            productSku: updatedProduct.sku,
+            productName: updatedProduct.name,
+            type: wDiff > 0 ? 'IN' : 'OUT',
+            quantity: Math.abs(wDiff),
+            date: new Date().toISOString(),
+            reason: `ปรับปรุงข้อมูลคลังสินค้าหลัก (คลังใหญ่) โดยตรง (เดิม: ${originalProduct.wholesaleStock || 0} -> ใหม่: ${updatedProduct.wholesaleStock || 0})`,
+            operator: currentUser?.name || 'ผู้ดูแลระบบ',
+          };
+          batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
+        }
+      }
+
       batch.set(doc(db, 'products', updatedProduct.id), cleanFirestoreData({
         ...updatedProduct,
         updatedAt: new Date().toISOString()
       }));
-      batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
       await batch.commit();
     } else {
       await setDoc(doc(db, 'products', updatedProduct.id), cleanFirestoreData({

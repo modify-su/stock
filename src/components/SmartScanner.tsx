@@ -68,7 +68,7 @@ export default function SmartScanner({
   canRecordTransactions,
   currentUser
 }: SmartScannerProps) {
-  const [activeMode, setActiveMode] = useState<'CAMERA' | 'UPLOAD' | 'PDF_TEXT'>('CAMERA');
+  const [activeMode, setActiveMode] = useState<'CAMERA' | 'UPLOAD' | 'PDF_TEXT'>('UPLOAD');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -105,23 +105,12 @@ export default function SmartScanner({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Check if inside IFrame, list cameras, and auto start camera on mount
+  // Check if inside IFrame and enumerate cameras on mount
   useEffect(() => {
     setIsIframe(typeof window !== 'undefined' && window.self !== window.top);
     
     const initScanner = async () => {
-      const videoDevices = await checkCameras();
-      if (videoDevices && videoDevices.length > 0) {
-        // Automatically start camera with a slight delay to ensure browser readiness
-        setTimeout(() => {
-          startCamera('environment', videoDevices[0].deviceId);
-        }, 500);
-      } else {
-        // Try direct fallback start
-        setTimeout(() => {
-          startCamera('environment', '');
-        }, 500);
-      }
+      await checkCameras();
     };
     initScanner();
 

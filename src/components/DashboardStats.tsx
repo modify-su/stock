@@ -19,6 +19,7 @@ export default function DashboardStats({
   // Calculations
   const totalSku = products.length;
   const totalUnits = products.reduce((sum, p) => sum + p.quantity, 0);
+  const totalWholesaleUnits = products.reduce((sum, p) => sum + (p.wholesaleStock || 0), 0);
   
   // Low stock calculation
   const lowStockProducts = products.filter((p) => p.quantity <= p.minStock);
@@ -59,17 +60,28 @@ export default function DashboardStats({
       {/* Total Inventory Stock Stat */}
       <div 
         id="stat-units" 
-        className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex items-center justify-between hover:border-slate-350 transition-colors"
+        className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between hover:border-slate-350 transition-colors"
       >
-        <div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">จำนวนสินค้าในคลัง</p>
-          <h3 className="text-3xl font-bold mt-1 text-slate-800">{totalUnits} <span className="text-xs font-normal text-slate-400">หน่วยรวม</span></h3>
-          <p className="text-xs text-slate-500 flex items-center gap-1 mt-1 font-medium">
-            นับตามหน่วยที่กำหนดไว้ของแต่ละสินค้า
-          </p>
+        <div className="flex items-start justify-between w-full">
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">ภาพรวมจำนวนสินค้าในระบบ</p>
+            <h3 className="text-2xl font-bold mt-1 text-slate-800">
+              {totalUnits + totalWholesaleUnits} <span className="text-xs font-normal text-slate-400">หน่วยรวมทั้งหมด</span>
+            </h3>
+          </div>
+          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg">
+            <Package className="w-5 h-5" />
+          </div>
         </div>
-        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
-          <Package className="w-6 h-6" />
+        <div className="mt-2.5 pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-2 text-[11px]">
+          <div>
+            <p className="text-slate-400 font-medium">📦 คลังสินค้าหลัก (คลังใหญ่)</p>
+            <p className="font-bold text-slate-800 text-sm mt-0.5">{totalWholesaleUnits} หน่วย</p>
+          </div>
+          <div>
+            <p className="text-slate-400 font-medium">🛒 กำลังจำหน่าย (พร้อมขาย)</p>
+            <p className="font-bold text-emerald-600 text-sm mt-0.5">{totalUnits} หน่วย</p>
+          </div>
         </div>
       </div>
 

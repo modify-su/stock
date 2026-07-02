@@ -19,7 +19,7 @@ const firebaseConfig = {
 
 // Initialize Firebase App
 const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, "ai-studio-stockmanagements-d2035f6d-8e85-41ea-9141-eedfc5e93833");
+const db = getFirestore(firebaseApp, "ai-studio-d2035f6d-8e85-41ea-9141-eedfc5e93833");
 
 // Initialize Gemini
 const ai = new GoogleGenAI({

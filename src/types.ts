@@ -3,7 +3,8 @@ export interface Product {
   sku: string;
   name: string;
   category: string;
-  quantity: number;
+  quantity: number; // สต๊อกกำลังจำหน่าย / พร้อมขาย
+  wholesaleStock?: number; // จำนวนสินค้าในคลังหลัก / สต๊อกคลังใหญ่ (รอเบิก)
   minStock: number;
   unit: string;
   location: string;

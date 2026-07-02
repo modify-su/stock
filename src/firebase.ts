@@ -18,7 +18,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-const DB_ID = "ai-studio-stockmanagements-d2035f6d-8e85-41ea-9141-eedfc5e93833";
+const DB_ID = "ai-studio-d2035f6d-8e85-41ea-9141-eedfc5e93833";
 
 let firestoreDb;
 
