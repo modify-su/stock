@@ -57,6 +57,8 @@ interface ScanResult {
   labelType: string;
   detectedAction: 'IN' | 'OUT' | 'RETURN';
   extractedItems: ExtractedItem[];
+  processed?: boolean;
+  errorMessage?: string;
 }
 
 export default function SmartScanner({
@@ -854,9 +856,88 @@ export default function SmartScanner({
     }));
   };
 
+  // Confirm and submit a SINGLE Transaction (Deduct a single shipping label immediately)
+  const handleConfirmSingleTransaction = async (labelIdx: number) => {
+    const result = scanResults[labelIdx];
+    if (!result) return;
+
+    if (!canRecordTransactions) {
+      setErrorMessage("❌ คุณไม่มีสิทธิ์ของพนักงานในการบันทึกรายการสินค้า (สิทธิ์ของคุณถูกจำกัด)");
+      playBeep('error');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const txsToRecord: Omit<Transaction, 'id' | 'date'>[] = [];
+      
+      // Validate duplicates
+      if (!allowDuplicateForce) {
+        const duplicateTx = checkDuplicateNo(result.orderId, result.trackingNo);
+        if (duplicateTx) {
+          throw new Error(`ใบปะหน้านี้ (เลขอ้างอิง: ${result.trackingNo || result.orderId || 'ไม่ระบุ'}) เคยลงคลังไปแล้ว หากยืนยันจะทำซ้ำ กรุณาติ๊กเลือก 'อนุญาตให้บันทึกซ้ำ' ด้านล่างก่อนกดยืนยันครับ`);
+        }
+      }
+
+      for (const item of result.extractedItems) {
+        if (!item.matched || !item.matchedProduct) {
+          continue;
+        }
+
+        const txData: Omit<Transaction, 'id' | 'date'> = {
+          productId: item.matchedProduct.id,
+          productSku: item.matchedProduct.sku,
+          productName: item.matchedProduct.name,
+          type: actionType,
+          quantity: item.quantity,
+          referenceNo: result.trackingNo || result.orderId || `SCAN_SINGLE_${labelIdx + 1}`,
+          reason: `ตัดสต๊อกอัตโนมัติด้วยระบบสแกนใบปะหน้า AI (เดี่ยว - ประเภท: ${actionType === 'IN' ? 'รับสินค้า' : actionType === 'OUT' ? 'ส่งสินค้า' : 'คืนสินค้า'})`,
+          operator: currentUser.name,
+          ...(actionType === 'RETURN' && { returnStatus: returnStatus })
+        };
+
+        txsToRecord.push(txData);
+      }
+
+      if (txsToRecord.length === 0) {
+        throw new Error("ไม่มีสินค้าใดในใบปะหน้านี้ที่รหัส SKU ตรงกับระบบคลังปัจจุบัน กรุณาแก้ไขรหัส SKU ให้ถูกต้องก่อนกดยืนยันบันทึกครับ");
+      }
+
+      await onRecordMultipleTransactions(txsToRecord);
+      
+      playBeep('success');
+      setSuccessMessage(`🎉 บันทึกรายการสต๊อกสำเร็จจากใบปะหน้า ${result.trackingNo || result.orderId || `ที่ ${labelIdx + 1}`} จำนวน ${txsToRecord.length} ชิ้นสินค้าเรียบร้อยแล้ว!`);
+      
+      setScanResults(prev => {
+        const copy = [...prev];
+        if (copy[labelIdx]) {
+          copy[labelIdx] = {
+            ...copy[labelIdx],
+            processed: true
+          };
+        }
+        return copy;
+      });
+
+    } catch (err: any) {
+      console.error(err);
+      playBeep('error');
+      setErrorMessage(`❌ ผิดพลาดในการบันทึกสต๊อกใบนี้: ${err.message || 'บันทึกสต๊อกล้มเหลว'}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Confirm and submit BATCH Transactions at once
   const handleConfirmTransactions = async () => {
-    if (scanResults.length === 0) return;
+    // Only process labels that have NOT been processed yet
+    const pendingResults = scanResults.filter(r => !r.processed);
+    if (pendingResults.length === 0) {
+      setSuccessMessage("✨ ทุกรายการสแกนในคิวได้รับการตัดคลัง/บันทึกเรียบร้อยหมดแล้วครับ!");
+      return;
+    }
 
     if (!canRecordTransactions) {
       setErrorMessage("❌ คุณไม่มีสิทธิ์ของพนักงานในการบันทึกรายการสินค้า (สิทธิ์ของคุณถูกจำกัด)");
@@ -873,6 +954,7 @@ export default function SmartScanner({
 
       for (let i = 0; i < scanResults.length; i++) {
         const result = scanResults[i];
+        if (result.processed) continue; // Skip already processed ones
         
         // Validate duplicates before recording
         if (!allowDuplicateForce) {
@@ -914,10 +996,10 @@ export default function SmartScanner({
       await onRecordMultipleTransactions(txsToRecord);
       
       playBeep('success');
-      setSuccessMessage(`🎉 บันทึกรายการตัดคลังสต๊อกทั้งหมดจำนวน ${txsToRecord.length} ชิ้นสินค้า จากใบปะหน้าทั้งหมด ${scanResults.length} ใบเสร็จเรียบร้อยแล้ว!`);
+      setSuccessMessage(`🎉 บันทึกรายการตัดคลังสต๊อกสำเร็จจำนวน ${txsToRecord.length} ชิ้นสินค้า จากใบปะหน้าที่เลือกทั้งหมด ${pendingResults.length} ใบเสร็จเรียบร้อยแล้ว!`);
       
-      // Clear results
-      setScanResults([]);
+      // Mark all pending ones as processed
+      setScanResults(prev => prev.map(r => r.processed ? r : { ...r, processed: true }));
       setUploadedImages([]);
       setPdfText('');
 
@@ -1451,24 +1533,42 @@ export default function SmartScanner({
                   const isExpanded = !!expandedIndices[labelIdx];
                   const matchedCount = label.extractedItems.filter(i => i.matched).length;
                   const totalCount = label.extractedItems.length;
+                  const allItemsMatched = label.extractedItems.length > 0 && label.extractedItems.every(i => i.matched);
                   const isLabelDuplicate = checkDuplicateNo(label.orderId, label.trackingNo);
+                  const isProcessed = !!label.processed;
 
                   return (
                     <div 
                       key={labelIdx} 
                       className={`border rounded-xl overflow-hidden transition-all duration-200 ${
-                        isLabelDuplicate 
-                          ? 'border-rose-200 bg-rose-50/10' 
-                          : 'border-slate-200 bg-white shadow-xs'
+                        isProcessed
+                          ? 'border-emerald-200 bg-emerald-50/5 opacity-85'
+                          : isLabelDuplicate 
+                            ? 'border-rose-250 bg-rose-50/10' 
+                            : allItemsMatched
+                              ? 'border-emerald-200 bg-white hover:border-emerald-300 shadow-sm'
+                              : 'border-amber-300 bg-amber-50/5'
                       }`}
                     >
                       {/* Accordion Card Header */}
                       <div 
                         onClick={() => toggleExpand(labelIdx)}
-                        className="p-3 bg-slate-100/50 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                        className={`p-3 flex items-center justify-between gap-3 cursor-pointer transition-colors select-none ${
+                          isProcessed
+                            ? 'bg-emerald-50/20'
+                            : allItemsMatched
+                              ? 'bg-emerald-50/10 hover:bg-emerald-50/20'
+                              : 'bg-amber-50/20 hover:bg-amber-50/40'
+                        }`}
                       >
                         <div className="flex-1 min-w-0 flex items-center gap-2">
-                          <span className="w-5 h-5 bg-indigo-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shrink-0">
+                          <span className={`w-5 h-5 text-[10px] font-bold rounded-full flex items-center justify-center shrink-0 ${
+                            isProcessed
+                              ? 'bg-emerald-600 text-white'
+                              : allItemsMatched
+                                ? 'bg-emerald-500 text-white'
+                                : 'bg-amber-500 text-white animate-pulse'
+                          }`}>
                             {labelIdx + 1}
                           </span>
                           <div className="truncate text-xs">
@@ -1476,13 +1576,37 @@ export default function SmartScanner({
                               {label.trackingNo ? `แทรค: ${label.trackingNo}` : (label.orderId ? `ออเดอร์: ${label.orderId}` : 'พัสดุใหม่ไม่ระบุชื่อ')}
                             </span>
                             <span className="text-[10px] text-slate-400 block mt-0.5">
-                              {label.labelType !== 'UNKNOWN' ? label.labelType : 'บิลพิมพ์จากระบบ'} | ตรงในระบบ: <strong className="text-indigo-600">{matchedCount}/{totalCount} รายการ</strong>
+                              {label.labelType !== 'UNKNOWN' ? label.labelType : 'บิลพิมพ์จากระบบ'} 
+                              {isProcessed ? (
+                                <strong className="text-emerald-600 ml-1.5 font-bold">| ✅ บันทึกสต๊อกสำเร็จแล้ว</strong>
+                              ) : (
+                                <>
+                                  {' '} | ตรงในระบบ:{' '}
+                                  <strong className={allItemsMatched ? "text-emerald-600 font-bold" : "text-amber-600 font-bold animate-pulse"}>
+                                    {matchedCount}/{totalCount} รายการ
+                                  </strong>
+                                </>
+                              )}
                             </span>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2">
-                          {isLabelDuplicate && (
+                          {isProcessed ? (
+                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5">
+                              <Check className="w-2.5 h-2.5" /> บันทึกแล้ว
+                            </span>
+                          ) : allItemsMatched ? (
+                            <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-md">
+                              ตรงคลังทั้งหมด
+                            </span>
+                          ) : (
+                            <span className="bg-amber-100 border border-amber-200 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-md animate-pulse">
+                              ข้อมูลไม่ตรง ({totalCount - matchedCount} รายการ)
+                            </span>
+                          )}
+
+                          {isLabelDuplicate && !isProcessed && (
                             <span className="bg-rose-100 text-rose-800 text-[8px] font-bold px-1.5 py-0.5 rounded-md animate-pulse">
                               ซ้ำ
                             </span>
@@ -1504,15 +1628,39 @@ export default function SmartScanner({
                       {/* Accordion Content */}
                       {isExpanded && (
                         <div className="p-3 border-t border-slate-200/50 space-y-3 bg-white">
+                          {/* Warnings and Status Banners */}
+                          {isProcessed ? (
+                            <div className="p-2 bg-emerald-50 text-emerald-800 text-[11px] rounded-lg border border-emerald-100 flex items-center gap-1.5">
+                              <Check className="w-4 h-4 shrink-0" />
+                              <span><strong>บันทึกสำเร็จ:</strong> รายการใบปะหน้านี้ได้รับการหักลบและบันทึกลงคลังสต๊อกสำเร็จแล้ว</span>
+                            </div>
+                          ) : !allItemsMatched ? (
+                            <div className="p-2.5 bg-rose-50 text-rose-900 text-[11px] rounded-lg border border-rose-150 flex flex-col gap-1">
+                              <div className="flex items-center gap-1.5 font-bold">
+                                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 animate-bounce" />
+                                <span>แจ้งเตือน: ตรวจพบรหัสสินค้าที่ไม่ตรงกับระบบคลัง!</span>
+                              </div>
+                              <p className="text-slate-600 pl-5">
+                                รหัสสินค้าด้านล่างขึ้นแถบสีแดงและมีสถานะว่า "ไม่พบ SKU" กรุณาแก้ไขรหัสสินค้าให้ถูกต้องตรงตามระบบคลัง หรือลบแถวที่ไม่เกี่ยวข้องออก และกดยืนยันบันทึกเพื่อดำเนินการต่อ
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="p-2 bg-emerald-50/50 text-emerald-800 text-[11px] rounded-lg border border-emerald-100/50 flex items-center gap-1.5">
+                              <Check className="w-4 h-4 shrink-0 text-emerald-600" />
+                              <span>รหัสสินค้าถูกต้องครบถ้วนตามฐานข้อมูล สามารถกด "ตัดสต๊อกใบนี้เลย" ได้ทันที</span>
+                            </div>
+                          )}
+
                           {/* Reference Metadata Fields */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50/70 p-2.5 rounded-lg border border-slate-100 text-xs">
                             <div>
                               <label className="block text-[10px] font-bold text-slate-400 uppercase">เลขอ้างอิงขนส่ง (Tracking No.):</label>
                               <input
                                 type="text"
+                                disabled={isProcessed}
                                 value={label.trackingNo}
                                 onChange={(e) => handleTrackingNoChange(labelIdx, e.target.value)}
-                                className="w-full mt-1 px-2 py-0.5 border border-slate-200 rounded bg-white font-bold font-sans text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                className="w-full mt-1 px-2 py-0.5 border border-slate-200 rounded bg-white font-bold font-sans text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-60"
                                 placeholder="ไม่มีเลขแทรคกิ้ง"
                               />
                             </div>
@@ -1528,14 +1676,16 @@ export default function SmartScanner({
                           <div className="space-y-1.5">
                             <div className="flex justify-between items-center">
                               <span className="text-[11px] font-bold text-slate-600">รายการสินค้าในพัสดุชิ้นนี้:</span>
-                              <button
-                                type="button"
-                                onClick={() => addNewItemRow(labelIdx)}
-                                className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5 cursor-pointer"
-                              >
-                                <Plus className="w-3 h-3" />
-                                <span>เพิ่มสินค้าแถวใหม่</span>
-                              </button>
+                              {!isProcessed && (
+                                <button
+                                  type="button"
+                                  onClick={() => addNewItemRow(labelIdx)}
+                                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>เพิ่มสินค้าแถวใหม่</span>
+                                </button>
+                              )}
                             </div>
 
                             <div className="border border-slate-100 rounded-lg overflow-hidden divide-y divide-slate-100">
@@ -1543,15 +1693,25 @@ export default function SmartScanner({
                                 <p className="p-3 text-center text-slate-400 italic text-[11px]">ไม่มีสินค้าวิเคราะห์ได้ในใบปะหน้านี้</p>
                               ) : (
                                 label.extractedItems.map((item, idx) => (
-                                  <div key={idx} className="p-2.5 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                                  <div 
+                                    key={idx} 
+                                    className={`p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-colors ${
+                                      isProcessed 
+                                        ? 'bg-slate-50/50'
+                                        : item.matched 
+                                          ? 'bg-white' 
+                                          : 'bg-rose-50/40 border-l-2 border-rose-500'
+                                    }`}
+                                  >
                                     {/* Left Side: SKU Matching */}
                                     <div className="flex-1 space-y-1">
                                       <div className="flex items-center gap-1.5">
                                         <input
                                           type="text"
+                                          disabled={isProcessed}
                                           value={item.sku}
                                           onChange={(e) => handleItemSkuChange(labelIdx, idx, e.target.value)}
-                                          className="px-2 py-0.5 border border-slate-200 rounded font-mono font-bold text-[11px] uppercase w-32 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          className="px-2 py-0.5 border border-slate-200 rounded font-mono font-bold text-[11px] uppercase w-32 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-60"
                                           placeholder="รหัส SKU สินค้า"
                                         />
                                         
@@ -1561,9 +1721,9 @@ export default function SmartScanner({
                                             <span>ตรงในคลัง</span>
                                           </span>
                                         ) : (
-                                          <span className="bg-slate-100 text-slate-500 text-[9px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 shrink-0 animate-pulse">
+                                          <span className="bg-red-100 text-red-800 text-[9px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 shrink-0 animate-pulse">
                                             <X className="w-2.5 h-2.5" />
-                                            <span>ไม่พบ SKU นี้</span>
+                                            <span>ไม่พบ SKU</span>
                                           </span>
                                         )}
                                       </div>
@@ -1576,7 +1736,7 @@ export default function SmartScanner({
                                           </p>
                                         </div>
                                       ) : (
-                                        <p className="text-[9px] text-slate-400 italic line-clamp-1">ชื่อตามใบปะ: {item.productName || 'ไม่ระบุรหัส SKU สินค้า'}</p>
+                                        <p className="text-[9px] text-red-600 font-semibold line-clamp-1">ชื่อตามใบปะ: {item.productName || 'ไม่ระบุรหัส SKU สินค้า'}</p>
                                       )}
                                     </div>
 
@@ -1585,34 +1745,65 @@ export default function SmartScanner({
                                       <div className="flex items-center border border-slate-200 rounded bg-slate-50">
                                         <button
                                           type="button"
+                                          disabled={isProcessed}
                                           onClick={() => updateItemQuantity(labelIdx, idx, -1)}
-                                          className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer"
+                                          className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer disabled:opacity-30"
                                         >
                                           <Minus className="w-2.5 h-2.5" />
                                         </button>
                                         <span className="px-2 text-[11px] font-bold text-slate-800 min-w-6 text-center">{item.quantity}</span>
                                         <button
                                           type="button"
+                                          disabled={isProcessed}
                                           onClick={() => updateItemQuantity(labelIdx, idx, 1)}
-                                          className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer"
+                                          className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer disabled:opacity-30"
                                         >
                                           <Plus className="w-2.5 h-2.5" />
                                         </button>
                                       </div>
 
-                                      <button
-                                        type="button"
-                                        onClick={() => removeItem(labelIdx, idx)}
-                                        className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-rose-50 cursor-pointer"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
+                                      {!isProcessed && (
+                                        <button
+                                          type="button"
+                                          onClick={() => removeItem(labelIdx, idx)}
+                                          className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-rose-50 cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 ))
                               )}
                             </div>
                           </div>
+
+                          {/* Individual Sheet Save Action */}
+                          {!isProcessed && (
+                            <div className="pt-2 flex justify-end">
+                              {allItemsMatched ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmSingleTransaction(labelIdx)}
+                                  disabled={isLoading}
+                                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-bold py-1.5 px-3 rounded text-[11px] flex items-center gap-1 cursor-pointer shadow-sm transition-all"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>⚡ ตัดสต๊อกใบนี้เลย (ตรงในระบบ)</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmSingleTransaction(labelIdx)}
+                                  disabled={isLoading}
+                                  className="bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white font-bold py-1.5 px-3 rounded text-[11px] flex items-center gap-1 cursor-pointer shadow-sm transition-all"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>📝 กดยืนยันบันทึก (มีส่วนไม่ตรง)</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

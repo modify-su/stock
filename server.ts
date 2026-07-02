@@ -19,7 +19,7 @@ const firebaseConfig = {
 
 // Initialize Firebase App
 const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, "ai-studio-d2035f6d-8e85-41ea-9141-eedfc5e93833");
+const db = getFirestore(firebaseApp, "ai-studio-stockmanagements-d2035f6d-8e85-41ea-9141-eedfc5e93833");
 
 // Initialize Gemini
 const ai = new GoogleGenAI({
@@ -36,9 +36,9 @@ async function generateContentWithFallback(params: {
   contents: any;
   config?: any;
 }) {
-  // We use gemini-3.5-flash as the primary fast and stable model for multimodal/text,
-  // followed by gemini-3.1-flash-lite as the fallback.
-  const models = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+  // We use gemini-2.5-flash, gemini-2.5-pro, and gemini-2.0-flash as the primary fast and stable models for multimodal/text,
+  // followed by gemini-3.5-flash and others as the fallback.
+  const models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"];
   let lastError: any = null;
 
   for (const model of models) {
@@ -399,6 +399,8 @@ ${productsContext}
         }
       }
 
+      console.log(`[Scan Label] Received file with mimeType: ${mimeType}, base64 length: ${base64Data.length}`);
+
       const imagePart = {
         inlineData: {
           mimeType: mimeType,
@@ -408,11 +410,13 @@ ${productsContext}
 
       const promptPart = {
         text: "วิเคราะห์เอกสารหรือภาพถ่ายนี้ซึ่งเป็นใบปะหน้าพัสดุ (Shipping Label), ใบสั่งซื้อ (Order Receipt), หรือใบจัดส่งพัสดุจากแพลตฟอร์มต่างๆ เช่น Shopee, TikTok Shop, Lazada หรือขนส่งอื่นๆ (Flash, J&T, Kerry, ไปรษณีย์ไทย)\n\n" +
-              "**คำแนะนำสำคัญสำหรับระบบสแกนหลายใบ (Multi-page/Batch Scanning)**:\n" +
-              "- หากไฟล์นี้มีรูปภาพหรือเอกสารใบปะหน้าหลายใบ (เช่น ไฟล์ PDF ที่มีหลายหน้า หรือใบปะหน้าที่อยู่เรียงกันหลายๆ ใบ) กรุณาวิเคราะห์และสแกนทุกใบ ทุกหน้า ห้ามตกหล่นเด็ดขาด! แล้วนำมาใส่ในอาร์เรย์ 'labels'\n" +
-              "- สำหรับแต่ละใบปะหน้า ให้ค้นหาเลขที่สั่งซื้อ (Order ID), เลขแทรคกิ้งขนส่ง (Tracking Number), และรายชื่อสินค้าพร้อมรหัส SKU สินค้าและจำนวนชิ้น (Quantity)\n" +
-              "- ค้นหา SKU ในตารางรายการที่ระบุ 'Seller SKU', 'รหัสสินค้า', 'ชื่อสินค้า', 'จำนวน' หรือ 'Qty'\n" +
-              "- กรุณาทำความสะอาดรหัส SKU โดยตัดเว้นวรรคที่ไม่จำเป็นออก และแปลงให้อยู่ในโครงสร้าง JSON ที่กำหนด",
+              "**คำแนะนำสำคัญระดับวิกฤตสำหรับไฟล์ที่มีหลายหน้า / หลายใบปะหน้า (CRITICAL MULTI-PAGE/BATCH SCANNING INSTRUCTION)**:\n" +
+              "- เอกสารหรือไฟล์ PDF นี้มีจำนวนหน้าหลายหน้า (เช่น 7 หน้า หรือจำนวนหลายหน้า) แต่ละหน้าคือใบปะหน้าพัสดุสำหรับผู้รับและรายการสินค้าคนละใบกัน\n" +
+              "- คุณ 'ต้อง' วิเคราะห์และสแกนถอดข้อมูลจาก 'ทุกหน้า' ครบถ้วน ห้ามข้ามหน้า ห้ามละเว้น และห้ามตกหล่นใบใดใบหนึ่งเด็ดขาด! สแกนตั้งแต่หน้า 1 ถึงหน้าสุดท้าย\n" +
+              "- สำหรับแต่ละหน้าของเอกสาร ให้สแกนถอดข้อมูลแยกกันออกมาเป็น 1 รายการในอาร์เรย์ 'labels' เสมอ ดังนั้นหากอัปโหลด PDF เข้ามา 7 หน้า อาร์เรย์ 'labels' จะต้องมีไอเทมข้อมูลใบปะหน้าพัสดุแยกตามหน้าครบถ้วนทั้ง 7 ไอเทมแยกกัน ห้ามรวบข้อมูลทุกหน้าเหลือเพียงใบเดียวหรือข้ามข้อมูลหน้าใดๆ เป็นอันขาด\n" +
+              "- ในแต่ละหน้า ให้พยายามแกะข้อมูลหาเลขที่สั่งซื้อ (Order ID), เลขแทรคกิ้งขนส่ง (Tracking Number), และรายชื่อสินค้าพร้อมรหัส SKU สินค้า และจำนวนสินค้า (Quantity) ของหน้านั้นๆ\n" +
+              "- ค้นหารหัส SKU ในตารางรายการที่ระบุ 'Seller SKU', 'รหัสสินค้า', 'ชื่อสินค้า', 'จำนวน' หรือ 'Qty' ในแต่ละหน้า\n" +
+              "- กรุณาทำความสะอาดรหัส SKU โดยตัดเว้นวรรคที่ไม่จำเป็นออก และจัดให้อยู่ในโครงสร้าง JSON ที่กำหนดอย่างเคร่งครัด",
       };
 
       const response = await generateContentWithFallback({
@@ -459,8 +463,11 @@ ${productsContext}
       const result = JSON.parse(jsonText);
       const rawLabels = result.labels || [];
 
+      console.log(`[Scan Label] AI returned ${rawLabels.length} labels in JSON.`);
+
       // Fallback if the AI returned a flat legacy object instead of an array of labels
       if (rawLabels.length === 0 && (result.orderId || result.trackingNo || (result.extractedItems && result.extractedItems.length > 0))) {
+        console.log(`[Scan Label] Applying flat fallback for legacy structure.`);
         rawLabels.push({
           orderId: result.orderId || "",
           trackingNo: result.trackingNo || "",
