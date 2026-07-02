@@ -33,6 +33,7 @@ import SyncAndBackup from './components/SyncAndBackup';
 import LoginScreen from './components/LoginScreen';
 import ShelfManagement from './components/ShelfManagement';
 import ShelfAuditModal from './components/ShelfAuditModal';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 
 // Import Firebase
@@ -941,6 +942,9 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* PWA Installation Assistant Banner */}
+        <PWAInstallPrompt />
 
         {/* Navigation Tabs Bar */}
         <div className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-sm flex flex-col md:flex-row md:items-stretch lg:items-center md:justify-between gap-3 relative">
