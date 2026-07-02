@@ -75,12 +75,12 @@ export default function DashboardStats({
         </div>
         <div className="mt-2.5 pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-2 text-[11px]">
           <div>
-            <p className="text-slate-400 font-medium">📦 คลังสินค้าหลัก (คลังใหญ่)</p>
-            <p className="font-bold text-slate-800 text-sm mt-0.5">{totalWholesaleUnits} หน่วย</p>
-          </div>
-          <div>
             <p className="text-slate-400 font-medium">🛒 กำลังจำหน่าย (พร้อมขาย)</p>
             <p className="font-bold text-emerald-600 text-sm mt-0.5">{totalUnits} หน่วย</p>
+          </div>
+          <div>
+            <p className="text-slate-400 font-medium">📦 คลังสินค้าหลัก (คลังใหญ่)</p>
+            <p className="font-bold text-slate-800 text-sm mt-0.5">{totalWholesaleUnits} หน่วย</p>
           </div>
         </div>
       </div>
