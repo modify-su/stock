@@ -407,7 +407,12 @@ ${productsContext}
       };
 
       const promptPart = {
-        text: "วิเคราะห์ภาพถ่ายนี้ซึ่งเป็นใบปะหน้าพัสดุ (Shipping Label), ใบสั่งซื้อ (Order Receipt), ใบจัดส่งพัสดุจากแพลตฟอร์มต่างๆ เช่น Shopee, TikTok Shop, Lazada หรือบิลระบบขนส่งอื่นๆ (Flash, J&T, Kerry, ไปรษณีย์ไทย) ค้นหาเลขที่สั่งซื้อ (Order ID), เลขแทรคกิ้งขนส่ง (Tracking Number), และรายชื่อสินค้าพร้อมรหัส SKU สินค้าและจำนวนชิ้น (Quantity) \n\nข้อแนะนำสำหรับแพลตฟอร์ม:\n- สำหรับ TikTok Shop: ค้นหาสินค้าในตารางรายการที่มักมีคำว่า 'Seller SKU', 'รหัสสินค้า', 'ชื่อสินค้า', 'จำนวน' หรือ 'Qty'\n- สำหรับ Shopee: ค้นหาส่วนของรายการจัดส่งท้ายฉลากพัสดุหรือมุมขวาบน/ล่าง ที่มักมีคำว่า 'SKU', 'Parent SKU', 'จำนวน/Qty' หรือรหัสย่อสินค้า\n- กรุณาทำความสะอาดรหัส SKU โดยตัดเว้นวรรคที่ไม่จำเป็นออก และแปลงให้อยู่ในโครงสร้าง JSON ที่กำหนด",
+        text: "วิเคราะห์เอกสารหรือภาพถ่ายนี้ซึ่งเป็นใบปะหน้าพัสดุ (Shipping Label), ใบสั่งซื้อ (Order Receipt), หรือใบจัดส่งพัสดุจากแพลตฟอร์มต่างๆ เช่น Shopee, TikTok Shop, Lazada หรือขนส่งอื่นๆ (Flash, J&T, Kerry, ไปรษณีย์ไทย)\n\n" +
+              "**คำแนะนำสำคัญสำหรับระบบสแกนหลายใบ (Multi-page/Batch Scanning)**:\n" +
+              "- หากไฟล์นี้มีรูปภาพหรือเอกสารใบปะหน้าหลายใบ (เช่น ไฟล์ PDF ที่มีหลายหน้า หรือใบปะหน้าที่อยู่เรียงกันหลายๆ ใบ) กรุณาวิเคราะห์และสแกนทุกใบ ทุกหน้า ห้ามตกหล่นเด็ดขาด! แล้วนำมาใส่ในอาร์เรย์ 'labels'\n" +
+              "- สำหรับแต่ละใบปะหน้า ให้ค้นหาเลขที่สั่งซื้อ (Order ID), เลขแทรคกิ้งขนส่ง (Tracking Number), และรายชื่อสินค้าพร้อมรหัส SKU สินค้าและจำนวนชิ้น (Quantity)\n" +
+              "- ค้นหา SKU ในตารางรายการที่ระบุ 'Seller SKU', 'รหัสสินค้า', 'ชื่อสินค้า', 'จำนวน' หรือ 'Qty'\n" +
+              "- กรุณาทำความสะอาดรหัส SKU โดยตัดเว้นวรรคที่ไม่จำเป็นออก และแปลงให้อยู่ในโครงสร้าง JSON ที่กำหนด",
       };
 
       const response = await generateContentWithFallback({
@@ -417,30 +422,53 @@ ${productsContext}
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              orderId: { type: Type.STRING, description: "เลขที่สั่งซื้อ หรือเลขอ้างอิงออเดอร์ หากพบในใบลาเบล" },
-              trackingNo: { type: Type.STRING, description: "เลขแทรคกิ้งขนส่งพัสดุ (Tracking Number) เช่น SPX..., TH..., KER... หากพบ" },
-              labelType: { type: Type.STRING, description: "ประเภทของเอกสารที่สแกน เช่น 'SHIP_LABEL' (ใบปะหน้าขนส่ง), 'INBOUND_RECEIPT' (ใบรับของเข้า), 'BARCODE_TAG' (ป้ายบาร์โค้ดสินค้า), หรือ 'UNKNOWN'" },
-              detectedAction: { type: Type.STRING, description: "วัตถุประสงค์ในการทำรายการที่คาดเดาจากใบลาเบล: 'OUT' (ส่งของออก), 'IN' (รับของเข้า), หรือ 'UNKNOWN'" },
-              extractedItems: {
+              labels: {
                 type: Type.ARRAY,
-                description: "รายการสินค้าที่แกะข้อมูลได้จากใบลาเบล",
+                description: "รายการใบปะหน้าพัสดุทั้งหมดที่แกะข้อมูลได้จากไฟล์ (รองรับเอกสารหลายหน้าแยกตามชิ้น)",
                 items: {
                   type: Type.OBJECT,
                   properties: {
-                    sku: { type: Type.STRING, description: "รหัส SKU หรือรหัสโมเดลสินค้า (พิมพ์ใหญ่, ลบช่องว่างออก)" },
-                    productName: { type: Type.STRING, description: "ชื่อหรือรายละเอียดสินค้าสั้นๆ" },
-                    quantity: { type: Type.NUMBER, description: "จำนวนสินค้าชิ้นในรายการนั้นๆ หากไม่ระบุให้เป็น 1" }
+                    orderId: { type: Type.STRING, description: "เลขที่สั่งซื้อ หรือเลขอ้างอิงออเดอร์ หากพบในใบลาเบลนี้" },
+                    trackingNo: { type: Type.STRING, description: "เลขแทรคกิ้งขนส่งพัสดุ (Tracking Number) เช่น SPX..., TH..., KER... หากพบ" },
+                    labelType: { type: Type.STRING, description: "ประเภทเอกสาร เช่น 'SHIP_LABEL' (ใบปะหน้าขนส่ง), 'INBOUND_RECEIPT' (ใบรับของเข้า), 'BARCODE_TAG' (ป้ายบาร์โค้ด), หรือ 'UNKNOWN'" },
+                    detectedAction: { type: Type.STRING, description: "วัตถุประสงค์ความเคลื่อนไหว: 'OUT' (ส่งของออก), 'IN' (รับของเข้า), หรือ 'UNKNOWN'" },
+                    extractedItems: {
+                      type: Type.ARRAY,
+                      description: "รายการสินค้าที่แกะข้อมูลได้จากใบปะหน้าใบนี้",
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          sku: { type: Type.STRING, description: "รหัส SKU หรือรหัสโมเดลสินค้า (พิมพ์ใหญ่, ลบช่องว่างออก)" },
+                          productName: { type: Type.STRING, description: "ชื่อหรือรายละเอียดสินค้าสั้นๆ" },
+                          quantity: { type: Type.NUMBER, description: "จำนวนสินค้าชิ้นในรายการนั้นๆ หากไม่ระบุให้เป็น 1" }
+                        },
+                        required: ["sku", "productName", "quantity"]
+                      }
+                    }
                   },
-                  required: ["sku", "productName", "quantity"]
+                  required: ["extractedItems"]
                 }
               }
-            }
+            },
+            required: ["labels"]
           }
         }
       });
 
       const jsonText = response.text || "{}";
       const result = JSON.parse(jsonText);
+      const rawLabels = result.labels || [];
+
+      // Fallback if the AI returned a flat legacy object instead of an array of labels
+      if (rawLabels.length === 0 && (result.orderId || result.trackingNo || (result.extractedItems && result.extractedItems.length > 0))) {
+        rawLabels.push({
+          orderId: result.orderId || "",
+          trackingNo: result.trackingNo || "",
+          labelType: result.labelType || "UNKNOWN",
+          detectedAction: result.detectedAction || "UNKNOWN",
+          extractedItems: result.extractedItems || []
+        });
+      }
 
       // Query live products from Firestore to find matching items
       const productsSnap = await getDocs(collection(db, "products"));
@@ -449,54 +477,74 @@ ${productsContext}
         allProducts.push({ id: doc.id, ...doc.data() });
       });
 
-      // Match each extracted item
-      const enrichedItems = (result.extractedItems || []).map((item: any) => {
-        const cleanSku = (item.sku || "").trim().toLowerCase();
-        const cleanName = (item.productName || "").trim().toLowerCase();
+      // Enrich items for each detected label
+      const enrichedLabels = rawLabels.map((label: any) => {
+        const enrichedItems = (label.extractedItems || []).map((item: any) => {
+          const cleanSku = (item.sku || "").trim().toLowerCase();
+          const cleanName = (item.productName || "").trim().toLowerCase();
 
-        // Exact match by SKU
-        let matchedProduct = allProducts.find(
-          (p) => (p.sku || "").trim().toLowerCase() === cleanSku
-        );
-
-        // Partial match by SKU if exact match fails
-        if (!matchedProduct && cleanSku) {
-          matchedProduct = allProducts.find(
-            (p) => (p.sku || "").trim().toLowerCase().includes(cleanSku) || cleanSku.includes((p.sku || "").trim().toLowerCase())
+          // Exact match by SKU
+          let matchedProduct = allProducts.find(
+            (p) => (p.sku || "").trim().toLowerCase() === cleanSku
           );
-        }
 
-        // Partial match by product name if SKU match fails
-        if (!matchedProduct && cleanName) {
-          matchedProduct = allProducts.find(
-            (p) => (p.name || "").trim().toLowerCase().includes(cleanName) || cleanName.includes((p.name || "").trim().toLowerCase())
-          );
-        }
+          // Partial match by SKU if exact match fails
+          if (!matchedProduct && cleanSku) {
+            matchedProduct = allProducts.find(
+              (p) => (p.sku || "").trim().toLowerCase().includes(cleanSku) || cleanSku.includes((p.sku || "").trim().toLowerCase())
+            );
+          }
+
+          // Partial match by product name if SKU match fails
+          if (!matchedProduct && cleanName) {
+            matchedProduct = allProducts.find(
+              (p) => (p.name || "").trim().toLowerCase().includes(cleanName) || cleanName.includes((p.name || "").trim().toLowerCase())
+            );
+          }
+
+          return {
+            sku: item.sku || "",
+            productName: item.productName || "",
+            quantity: item.quantity || 1,
+            matched: !!matchedProduct,
+            matchedProduct: matchedProduct ? {
+              id: matchedProduct.id,
+              sku: matchedProduct.sku,
+              name: matchedProduct.name,
+              quantity: matchedProduct.quantity,
+              unit: matchedProduct.unit || "ชิ้น",
+              location: matchedProduct.location || "ไม่ได้ระบุ",
+              weight: matchedProduct.weight,
+              weightUnit: matchedProduct.weightUnit,
+            } : null
+          };
+        });
 
         return {
-          sku: item.sku || "",
-          productName: item.productName || "",
-          quantity: item.quantity || 1,
-          matched: !!matchedProduct,
-          matchedProduct: matchedProduct ? {
-            id: matchedProduct.id,
-            sku: matchedProduct.sku,
-            name: matchedProduct.name,
-            quantity: matchedProduct.quantity,
-            unit: matchedProduct.unit || "ชิ้น",
-            location: matchedProduct.location || "ไม่ได้ระบุ",
-            weight: matchedProduct.weight,
-            weightUnit: matchedProduct.weightUnit,
-          } : null
+          orderId: label.orderId || "",
+          trackingNo: label.trackingNo || "",
+          labelType: label.labelType || "UNKNOWN",
+          detectedAction: label.detectedAction || "UNKNOWN",
+          extractedItems: enrichedItems
         };
       });
 
+      // Get first label for backward compatibility flat response
+      const firstLabel = enrichedLabels[0] || {
+        orderId: "",
+        trackingNo: "",
+        labelType: "UNKNOWN",
+        detectedAction: "UNKNOWN",
+        extractedItems: []
+      };
+
       return res.status(200).json({
-        orderId: result.orderId || "",
-        trackingNo: result.trackingNo || "",
-        labelType: result.labelType || "UNKNOWN",
-        detectedAction: result.detectedAction || "UNKNOWN",
-        extractedItems: enrichedItems
+        orderId: firstLabel.orderId,
+        trackingNo: firstLabel.trackingNo,
+        labelType: firstLabel.labelType,
+        detectedAction: firstLabel.detectedAction,
+        extractedItems: firstLabel.extractedItems,
+        labels: enrichedLabels
       });
 
     } catch (err: any) {

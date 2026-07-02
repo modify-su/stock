@@ -20,9 +20,11 @@ import {
   Minus,
   Trash2,
   FlipHorizontal,
-  Scan
+  Scan,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import { Product, Transaction, TransactionType, ReturnStatus, UserProfile } from '../types';
+import { Product, Transaction, ReturnStatus, UserProfile } from '../types';
 
 interface SmartScannerProps {
   products: Product[];
@@ -81,19 +83,20 @@ export default function SmartScanner({
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
 
   // Upload states
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<Array<{ name: string; type: string; data: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   
   // PDF Text states
   const [pdfText, setPdfText] = useState('');
   const [pdfPageNo, setPdfPageNo] = useState(1);
 
-  // Scan analysis results
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  // Scan analysis results (Batch processing support)
+  const [scanResults, setScanResults] = useState<ScanResult[]>([]);
   const [actionType, setActionType] = useState<'IN' | 'OUT' | 'RETURN'>('OUT');
   const [returnStatus, setReturnStatus] = useState<ReturnStatus>('RE_STOCK');
-  const [referenceNo, setReferenceNo] = useState('');
   const [allowDuplicateForce, setAllowDuplicateForce] = useState(false);
+  const [expandedIndices, setExpandedIndices] = useState<Record<number, boolean>>({ 0: true });
 
   // Refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -268,6 +271,133 @@ export default function SmartScanner({
     return duplicate || null;
   };
 
+  // Dynamic Batch Analysis of Multiple Files (Images or PDFs)
+  const handleMultipleFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+
+    setIsLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setUploadProgress({ current: 0, total: files.length });
+
+    const resultsToAppend: ScanResult[] = [];
+    const previewsToAppend: Array<{ name: string; type: string; data: string }> = [];
+    let hasError = false;
+    let errText = "";
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadProgress({ current: i + 1, total: files.length });
+
+        // Read file to base64
+        const fileBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("ไม่สามารถอ่านไฟล์ได้"));
+          reader.readAsDataURL(file);
+        });
+
+        let targetData = fileBase64;
+        if (file.type.startsWith('image/')) {
+          targetData = await compressImage(fileBase64, 1024, 0.8);
+        }
+
+        // Store file preview metadata
+        previewsToAppend.push({
+          name: file.name,
+          type: file.type,
+          data: file.type.startsWith('image/') ? targetData : fileBase64
+        });
+
+        // Call scan-label API for this file (supporting multi-page PDFs inside the endpoint!)
+        try {
+          const res = await fetch('/api/scan-label', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: targetData })
+          });
+
+          if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.error || `ไฟล์ที่ ${i + 1} วิเคราะห์ล้มเหลว`);
+          }
+
+          const data = await res.json();
+          if (data.labels && Array.isArray(data.labels) && data.labels.length > 0) {
+            resultsToAppend.push(...data.labels);
+          } else {
+            resultsToAppend.push({
+              orderId: data.orderId || '',
+              trackingNo: data.trackingNo || '',
+              labelType: data.labelType || 'UNKNOWN',
+              detectedAction: data.detectedAction || 'OUT',
+              extractedItems: data.extractedItems || []
+            });
+          }
+        } catch (fileErr: any) {
+          console.error(`Error processing file ${file.name}:`, fileErr);
+          hasError = true;
+          errText += `• ไฟล์ "${file.name}": ${fileErr.message || "ล้มเหลว"}\n`;
+        }
+      }
+
+      setUploadedImages(prev => [...prev, ...previewsToAppend]);
+
+      if (resultsToAppend.length > 0) {
+        setScanResults(prev => {
+          const next = [...prev, ...resultsToAppend];
+          
+          // Auto-expand newly added scan results
+          setExpandedIndices(ex => {
+            const nextEx = { ...ex };
+            const startIndex = prev.length;
+            resultsToAppend.forEach((_, idx) => {
+              nextEx[startIndex + idx] = true;
+            });
+            return nextEx;
+          });
+          
+          return next;
+        });
+
+        playBeep('success');
+        let successStr = `🎉 สแกนสำเร็จทั้งหมด ${resultsToAppend.length} ใบปะหน้าพัสดุ!`;
+        if (hasError) {
+          successStr += ` (มีข้อผิดพลาดบางไฟล์:\n${errText})`;
+        }
+        setSuccessMessage(successStr);
+
+        // Check duplicates for newly scanned labels
+        let hasDuplicate = false;
+        let duplicateNames = "";
+        resultsToAppend.forEach((label) => {
+          const duplicateTx = checkDuplicateNo(label.orderId, label.trackingNo);
+          if (duplicateTx) {
+            hasDuplicate = true;
+            duplicateNames += `${label.trackingNo || label.orderId || 'ไม่ทราบเลข'}, `;
+          }
+        });
+
+        if (hasDuplicate) {
+          playBeep('error');
+          setErrorMessage(`⚠️ ตรวจพบเลขอ้างอิงใบปะหน้าบางชิ้น (${duplicateNames.slice(0, -2)}) เคยทำรายการลงคลังไปแล้ว หากต้องการบันทึกสต๊อกซ้ำ กรุณาติ๊กเลือก 'อนุญาตให้ลงรายการซ้ำ' ด้านล่างครับ`);
+        }
+
+      } else {
+        throw new Error(`เกิดข้อผิดพลาดในการสแกนไฟล์ทั้งหมด:\n${errText}`);
+      }
+
+    } catch (err: any) {
+      console.error(err);
+      playBeep('error');
+      setErrorMessage(`❌ ไม่สามารถวิเคราะห์ไฟล์ชุดนี้ได้: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+      setUploadProgress(null);
+    }
+  };
+
   const handleScanAPI = async (base64Image: string, keepCameraActive: boolean = false) => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -286,18 +416,28 @@ export default function SmartScanner({
         throw new Error(errData.error || 'การส่งวิเคราะห์ล้มเหลว');
       }
 
-      const data: ScanResult = await res.json();
-      
-      setScanResult(data);
-      setActionType(data.detectedAction || 'OUT');
-      setReferenceNo(data.trackingNo || data.orderId || '');
+      const data = await res.json();
+      const newLabels: ScanResult[] = [];
 
-      // Check for duplicate transaction
-      const duplicateTx = checkDuplicateNo(data.orderId, data.trackingNo);
-      
+      if (data.labels && Array.isArray(data.labels) && data.labels.length > 0) {
+        newLabels.push(...data.labels);
+      } else {
+        newLabels.push({
+          orderId: data.orderId || '',
+          trackingNo: data.trackingNo || '',
+          labelType: data.labelType || 'UNKNOWN',
+          detectedAction: data.detectedAction || 'OUT',
+          extractedItems: data.extractedItems || []
+        });
+      }
+
       if (keepCameraActive) {
-        // AUTO SCAN FLOW
-        const allMatched = data.extractedItems && data.extractedItems.length > 0 && data.extractedItems.every(item => item.matched && item.matchedProduct);
+        // AUTO SCAN FLOW - Process 1st label directly to make it instantaneous
+        const firstLabel = newLabels[0];
+        if (!firstLabel) return;
+
+        const duplicateTx = checkDuplicateNo(firstLabel.orderId, firstLabel.trackingNo);
+        const allMatched = firstLabel.extractedItems && firstLabel.extractedItems.length > 0 && firstLabel.extractedItems.every(item => item.matched && item.matchedProduct);
         
         if (allMatched && !duplicateTx) {
           if (!canRecordTransactions) {
@@ -308,57 +448,76 @@ export default function SmartScanner({
           }
 
           // Build transaction records
-          const txsToRecord: Omit<Transaction, 'id' | 'date'>[] = data.extractedItems.map(item => ({
+          const txsToRecord: Omit<Transaction, 'id' | 'date'>[] = firstLabel.extractedItems.map(item => ({
             productId: item.matchedProduct!.id,
             productSku: item.matchedProduct!.sku,
             productName: item.matchedProduct!.name,
-            type: data.detectedAction || 'OUT',
+            type: firstLabel.detectedAction || 'OUT',
             quantity: item.quantity,
-            referenceNo: data.trackingNo || data.orderId || 'AUTO_SCAN_AI',
+            referenceNo: firstLabel.trackingNo || firstLabel.orderId || 'AUTO_SCAN_AI',
             reason: `ตัดสต๊อกอัตโนมัติ (ระบบสแกนต่อเนื่อง) ประเภท: ${
-              data.detectedAction === 'IN' ? 'รับสินค้า' : data.detectedAction === 'OUT' ? 'ส่งสินค้า' : 'คืนสินค้า'
+              firstLabel.detectedAction === 'IN' ? 'รับสินค้า' : firstLabel.detectedAction === 'OUT' ? 'ส่งสินค้า' : 'คืนสินค้า'
             }`,
             operator: currentUser.name,
-            ...(data.detectedAction === 'RETURN' && { returnStatus: returnStatus })
+            ...(firstLabel.detectedAction === 'RETURN' && { returnStatus: returnStatus })
           }));
 
           await onRecordMultipleTransactions(txsToRecord);
           playBeep('success');
-          setSuccessMessage(`✅ [ออโต้สแกนสำเร็จ] บันทึกและตัดสต๊อกสินค้า ${txsToRecord.map(t => `${t.productSku} x${t.quantity}`).join(', ')} เรียบร้อย! (เลขแทรค/ออเดอร์: ${data.trackingNo || data.orderId || '-'})`);
+          setSuccessMessage(`✅ [ออโต้สแกนสำเร็จ] บันทึกและตัดสต๊อกสินค้า ${txsToRecord.map(t => `${t.productSku} x${t.quantity}`).join(', ')} เรียบร้อย! (เลขแทรค/ออเดอร์: ${firstLabel.trackingNo || firstLabel.orderId || '-'})`);
           
-          // Clear result for the next frame
-          setScanResult(null);
+          // Clear current scan state for next frames
+          setScanResults([]);
         } else {
           playBeep('error');
-          // Keep auto-scan active to support continuous automated scanning without pausing!
-
           if (duplicateTx) {
-            setErrorMessage(`⚠️ [ตรวจพบข้อมูลซ้ำแต่ออโต้สแกนทำงานต่อ 🔍] เลขอ้างอิง (${data.trackingNo || data.orderId}) เคยถูกบันทึกไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} ระบบจะทำการสแกนกล่องถัดไปโดยอัตโนมัติ`);
-          } else if (!data.extractedItems || data.extractedItems.length === 0) {
+            setErrorMessage(`⚠️ [ตรวจพบข้อมูลซ้ำแต่ออโต้สแกนทำงานต่อ 🔍] เลขอ้างอิง (${firstLabel.trackingNo || firstLabel.orderId}) เคยถูกบันทึกไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} ระบบจะทำการสแกนกล่องถัดไปโดยอัตโนมัติ`);
+          } else if (!firstLabel.extractedItems || firstLabel.extractedItems.length === 0) {
             setErrorMessage(`❌ [ตรวจพบข้อผิดพลาดแต่ออโต้สแกนทำงานต่อ 🔍] ไม่พบข้อมูลสินค้าจากใบปะหน้า ระบบจะทำการสแกนกล่องถัดไปโดยอัตโนมัติ`);
           } else {
-            const unmatchedItems = data.extractedItems.filter(item => !item.matched);
+            const unmatchedItems = firstLabel.extractedItems.filter(item => !item.matched);
             setErrorMessage(`❌ [ตรวจพบข้อผิดพลาดแต่ออโต้สแกนทำงานต่อ 🔍] พบ SKU ที่ไม่ตรงในระบบ (${unmatchedItems.map(i => i.sku || 'ไม่ทราบ SKU').join(', ')}) ระบบจะทำการสแกนกล่องถัดไปโดยอัตโนมัติ`);
           }
         }
       } else {
-        // MANUAL/UPLOAD SCAN FLOW
-        if (duplicateTx) {
+        // MANUAL/UPLOAD SCAN FLOW - Append to list
+        setScanResults(prev => {
+          const next = [...prev, ...newLabels];
+          setExpandedIndices(ex => {
+            const nextEx = { ...ex };
+            const startIndex = prev.length;
+            newLabels.forEach((_, idx) => {
+              nextEx[startIndex + idx] = true;
+            });
+            return nextEx;
+          });
+          return next;
+        });
+
+        // Check for duplicates in manual scan
+        let hasDuplicate = false;
+        let duplicateNames = "";
+        newLabels.forEach((label) => {
+          const duplicateTx = checkDuplicateNo(label.orderId, label.trackingNo);
+          if (duplicateTx) {
+            hasDuplicate = true;
+            duplicateNames += `${label.trackingNo || label.orderId || 'ไม่ทราบเลข'}, `;
+          }
+        });
+
+        if (hasDuplicate) {
           playBeep('error');
-          setErrorMessage(`⚠️ ตรวจพบเลขออเดอร์/แทรคกิ้งนี้ (${data.trackingNo || data.orderId}) ได้ถูกทำรายการไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} โดยผู้ใช้ ${duplicateTx.operator} หากคุณต้องการทำซ้ำกรุณากดอนุญาตให้ทำรายการซ้ำด้านล่างครับ`);
+          setErrorMessage(`⚠️ ตรวจพบเลขอ้างอิงใบปะหน้าพัสดุบางชิ้น (${duplicateNames.slice(0, -2)}) เคยทำรายการลงสต๊อกไปแล้ว หากต้องการบันทึกสต๊อกซ้ำ กรุณาติ๊กเลือก 'อนุญาตให้ลงรายการซ้ำ' ด้านล่างครับ`);
         } else {
           playBeep('success');
-          setSuccessMessage('🎉 สแกนวิเคราะห์ใบปะหน้าพัสดุสำเร็จ! AI ค้นหา SKU และรายการสินค้าเสร็จเรียบร้อย');
+          setSuccessMessage(`🎉 สแกนวิเคราะห์ใบปะหน้าพัสดุสำเร็จ! ถอดข้อมูลได้เพิ่มอีก ${newLabels.length} ใบปะหน้า`);
         }
       }
 
     } catch (err: any) {
       console.error(err);
       playBeep('error');
-      setErrorMessage(`❌ ผิดพลาดในการวิเคราะห์ใบปะหน้า: ${err.message || 'ระบบหลังบ้านไม่ตอบสนอง'} (ออโต้สแกนจะทำงานต่อโดยอัตโนมัติ)`);
-      if (keepCameraActive) {
-        // Keep auto-scanning active on transient backend or network errors as well!
-      }
+      setErrorMessage(`❌ ผิดพลาดในการวิเคราะห์ใบปะหน้า: ${err.message || 'ระบบหลังบ้านไม่ตอบสนอง'}`);
     } finally {
       setIsLoading(false);
     }
@@ -408,7 +567,7 @@ export default function SmartScanner({
       
       // Check if video is loaded and playing
       if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
-        setErrorMessage("❌ ไม่สามารถถ่ายภาพได้: กล้องเว็บแคมยังโหลดภาพไม่เสร็จ หรือถูกจำกัดสิทธิ์โดยเบราว์เซอร์ แนะนำให้เปิดในแท็บใหม่ หรืออัปโหลดรูปภาพใบปะหน้าแทนครับ");
+        setErrorMessage("❌ ไม่สามารถถ่ายภาพได้: กล้องเว็บแคมยังโหลดภาพไม่เสร็จ แนะนำให้เปิดในแท็บใหม่ หรืออัปโหลดไฟล์แทนครับ");
         playBeep('error');
         return;
       }
@@ -434,9 +593,8 @@ export default function SmartScanner({
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        // Reduce jpeg quality to 0.75 for extremely lightweight data transfer (around 50-90KB)
         const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
-        setUploadedImage(dataUrl);
+        setUploadedImages([{ name: "captured_frame.jpg", type: "image/jpeg", data: dataUrl }]);
         stopCamera();
         setActiveMode('UPLOAD');
         handleScanAPI(dataUrl, false);
@@ -452,8 +610,6 @@ export default function SmartScanner({
       }
 
       const canvas = canvasRef.current;
-      
-      // Optimize frame size (max 800px) for superfast auto-scanning
       const MAX_DIM = 800;
       let w = video.videoWidth;
       let h = video.videoHeight;
@@ -473,8 +629,7 @@ export default function SmartScanner({
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        setUploadedImage(dataUrl);
-        // Do not stop camera, do not change mode, just send to API
+        setUploadedImages([{ name: "autoscan_frame.jpg", type: "image/jpeg", data: dataUrl }]);
         handleScanAPI(dataUrl, true);
       }
     }
@@ -499,35 +654,10 @@ export default function SmartScanner({
     };
   }, [isAutoScanActive, isCameraActive, activeMode, isLoading]);
 
-  const handleFile = (file: File) => {
-    if (!file) return;
-
-    if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const resultBase64 = reader.result as string;
-        
-        if (file.type.startsWith('image/')) {
-          // Compress large photos to max 1024px to ensure rapid transmission & API response
-          const compressed = await compressImage(resultBase64, 1024, 0.8);
-          setUploadedImage(compressed);
-          handleScanAPI(compressed);
-        } else {
-          setUploadedImage(resultBase64);
-          handleScanAPI(resultBase64);
-        }
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setErrorMessage("❌ ระบบสแกนใบปะหน้ารองรับเฉพาะไฟล์รูปภาพ (JPG, PNG, WebP) หรือไฟล์เอกสาร PDF เท่านั้นครับ");
-      playBeep('error');
-    }
-  };
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFile(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleMultipleFiles(Array.from(files));
     }
   };
 
@@ -543,9 +673,9 @@ export default function SmartScanner({
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      handleFile(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleMultipleFiles(Array.from(files));
     }
   };
 
@@ -591,24 +721,28 @@ export default function SmartScanner({
       const results = data.results || [];
       if (results.length > 0) {
         const firstPageResult = results[0];
-        setScanResult({
+        
+        const newResult: ScanResult = {
           orderId: firstPageResult.orderId || '',
           trackingNo: firstPageResult.trackingNo || '',
           labelType: firstPageResult.labelType || 'UNKNOWN',
           detectedAction: firstPageResult.detectedAction || 'OUT',
           extractedItems: firstPageResult.extractedItems || []
-        });
+        };
 
-        setActionType(firstPageResult.detectedAction === 'IN' ? 'IN' : 'OUT');
-        setReferenceNo(firstPageResult.trackingNo || firstPageResult.orderId || '');
+        setScanResults(prev => {
+          const next = [...prev, newResult];
+          setExpandedIndices(ex => ({ ...ex, [next.length - 1]: true }));
+          return next;
+        });
 
         const duplicateTx = checkDuplicateNo(firstPageResult.orderId, firstPageResult.trackingNo);
         if (duplicateTx) {
           playBeep('error');
-          setErrorMessage(`⚠️ ตรวจพบเลขออเดอร์/แทรคกิ้งนี้ (${firstPageResult.trackingNo || firstPageResult.orderId}) ได้ถูกทำรายการตัดคลังไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} หากต้องการลงรายการซ้ำกรุณากดยอมรับซ้ำครับ`);
+          setErrorMessage(`⚠️ ตรวจพบเลขออเดอร์/แทรคกิ้งนี้ (${firstPageResult.trackingNo || firstPageResult.orderId}) ได้เคยทำรายการตัดคลังไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} กรุณาเลือก 'อนุญาตให้ลงรายการซ้ำ' ด้านล่างหากต้องการบันทึกสต๊อกซ้ำครับ`);
         } else {
           playBeep('success');
-          setSuccessMessage('🎉 ถอดข้อความ PDF และจำลองการตัดสต๊อกเสร็จสิ้น!');
+          setSuccessMessage('🎉 ถอดข้อความ PDF และเพิ่มเข้าสู่รายการตรวจสอบสต๊อกเรียบร้อย!');
         }
       } else {
         throw new Error('ไม่พบข้อมูลผลลัพธ์การสแกนในเนื้อความที่ส่งไป');
@@ -624,21 +758,35 @@ export default function SmartScanner({
   };
 
   // Modify quantities & item values in local result list
-  const updateItemQuantity = (index: number, change: number) => {
-    if (!scanResult) return;
-    const items = [...scanResult.extractedItems];
-    items[index].quantity = Math.max(1, items[index].quantity + change);
-    setScanResult({ ...scanResult, extractedItems: items });
+  const updateItemQuantity = (labelIdx: number, itemIdx: number, change: number) => {
+    setScanResults(prev => {
+      const copy = [...prev];
+      if (!copy[labelIdx]) return prev;
+      const items = [...copy[labelIdx].extractedItems];
+      items[itemIdx] = {
+        ...items[itemIdx],
+        quantity: Math.max(1, items[itemIdx].quantity + change)
+      };
+      copy[labelIdx] = { ...copy[labelIdx], extractedItems: items };
+      return copy;
+    });
   };
 
-  const removeItem = (index: number) => {
-    if (!scanResult) return;
-    const items = scanResult.extractedItems.filter((_, i) => i !== index);
-    setScanResult({ ...scanResult, extractedItems: items });
+  const removeItem = (labelIdx: number, itemIdx: number) => {
+    setScanResults(prev => {
+      const copy = [...prev];
+      if (!copy[labelIdx]) return prev;
+      const items = copy[labelIdx].extractedItems.filter((_, i) => i !== itemIdx);
+      copy[labelIdx] = { ...copy[labelIdx], extractedItems: items };
+      return copy;
+    });
   };
 
-  const addNewItemRow = () => {
-    if (!scanResult) return;
+  const removeLabel = (labelIdx: number) => {
+    setScanResults(prev => prev.filter((_, i) => i !== labelIdx));
+  };
+
+  const addNewItemRow = (labelIdx: number) => {
     const newItem: ExtractedItem = {
       sku: '',
       productName: 'เพิ่มสินค้าแบบกำหนดเอง',
@@ -646,43 +794,69 @@ export default function SmartScanner({
       matched: false,
       matchedProduct: null
     };
-    setScanResult({
-      ...scanResult,
-      extractedItems: [...scanResult.extractedItems, newItem]
+    setScanResults(prev => {
+      const copy = [...prev];
+      if (!copy[labelIdx]) return prev;
+      copy[labelIdx] = {
+        ...copy[labelIdx],
+        extractedItems: [...copy[labelIdx].extractedItems, newItem]
+      };
+      return copy;
     });
   };
 
-  const handleItemSkuChange = (index: number, val: string) => {
-    if (!scanResult) return;
-    const items = [...scanResult.extractedItems];
+  const handleItemSkuChange = (labelIdx: number, itemIdx: number, val: string) => {
     const cleanSku = val.trim();
-    items[index].sku = cleanSku;
-
     // Try to match on-the-fly
     const matched = products.find(p => p.sku.toLowerCase() === cleanSku.toLowerCase());
-    if (matched) {
-      items[index].matched = true;
-      items[index].matchedProduct = {
-        id: matched.id,
-        sku: matched.sku,
-        name: matched.name,
-        quantity: matched.quantity,
-        unit: matched.unit || 'ชิ้น',
-        location: matched.location || 'ไม่ได้ระบุ',
-        weight: matched.weight,
-        weightUnit: matched.weightUnit,
-      };
-    } else {
-      items[index].matched = false;
-      items[index].matchedProduct = null;
-    }
+    const matchedProduct = matched ? {
+      id: matched.id,
+      sku: matched.sku,
+      name: matched.name,
+      quantity: matched.quantity,
+      unit: matched.unit || 'ชิ้น',
+      location: matched.location || 'ไม่ได้ระบุ',
+      weight: matched.weight,
+      weightUnit: matched.weightUnit,
+    } : null;
 
-    setScanResult({ ...scanResult, extractedItems: items });
+    setScanResults(prev => {
+      const copy = [...prev];
+      if (!copy[labelIdx]) return prev;
+      const items = [...copy[labelIdx].extractedItems];
+      items[itemIdx] = {
+        ...items[itemIdx],
+        sku: cleanSku,
+        matched: !!matched,
+        matchedProduct: matchedProduct
+      };
+      copy[labelIdx] = { ...copy[labelIdx], extractedItems: items };
+      return copy;
+    });
   };
 
-  // Handle confirming and submitting the transactions
+  const handleTrackingNoChange = (labelIdx: number, val: string) => {
+    setScanResults(prev => {
+      const copy = [...prev];
+      if (!copy[labelIdx]) return prev;
+      copy[labelIdx] = {
+        ...copy[labelIdx],
+        trackingNo: val
+      };
+      return copy;
+    });
+  };
+
+  const toggleExpand = (idx: number) => {
+    setExpandedIndices(prev => ({
+      ...prev,
+      [idx]: !prev[idx]
+    }));
+  };
+
+  // Confirm and submit BATCH Transactions at once
   const handleConfirmTransactions = async () => {
-    if (!scanResult || scanResult.extractedItems.length === 0) return;
+    if (scanResults.length === 0) return;
 
     if (!canRecordTransactions) {
       setErrorMessage("❌ คุณไม่มีสิทธิ์ของพนักงานในการบันทึกรายการสินค้า (สิทธิ์ของคุณถูกจำกัด)");
@@ -690,54 +864,61 @@ export default function SmartScanner({
       return;
     }
 
-    // Check duplicate once again
-    if (!allowDuplicateForce) {
-      const duplicateTx = checkDuplicateNo(scanResult.orderId, scanResult.trackingNo);
-      if (duplicateTx) {
-        setErrorMessage("⚠️ ไม่สามารถลงรายการซ้ำได้ กรุณาติ๊กเลือก 'อนุญาตให้ลงรายการซ้ำ' หากมั่นใจว่าพัสดุนี้ต้องการทำรายการมากกว่า 1 ครั้ง");
-        playBeep('error');
-        return;
-      }
-    }
-
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
       const txsToRecord: Omit<Transaction, 'id' | 'date'>[] = [];
+      let duplicateDetails = "";
 
-      for (const item of scanResult.extractedItems) {
-        if (!item.matched || !item.matchedProduct) {
-          // Skip or handle unmatched items - for robust safety, we only record transactions for matched items in the database!
-          continue;
+      for (let i = 0; i < scanResults.length; i++) {
+        const result = scanResults[i];
+        
+        // Validate duplicates before recording
+        if (!allowDuplicateForce) {
+          const duplicateTx = checkDuplicateNo(result.orderId, result.trackingNo);
+          if (duplicateTx) {
+            duplicateDetails += `• ใบปะหน้าที่ ${i + 1} (เลขอ้างอิง: ${result.trackingNo || result.orderId || 'ไม่ระบุ'}) เคยลงคลังไปแล้ว\n`;
+          }
         }
 
-        const txData: Omit<Transaction, 'id' | 'date'> = {
-          productId: item.matchedProduct.id,
-          productSku: item.matchedProduct.sku,
-          productName: item.matchedProduct.name,
-          type: actionType,
-          quantity: item.quantity,
-          referenceNo: referenceNo || scanResult.trackingNo || scanResult.orderId || 'SCAN_AI',
-          reason: `ตัดสต๊อกอัตโนมัติด้วยระบบสแกนใบปะหน้า AI (ประเภท: ${actionType === 'IN' ? 'รับสินค้า' : actionType === 'OUT' ? 'ส่งสินค้า' : 'คืนสินค้า'})`,
-          operator: currentUser.name,
-          ...(actionType === 'RETURN' && { returnStatus: returnStatus })
-        };
+        for (const item of result.extractedItems) {
+          if (!item.matched || !item.matchedProduct) {
+            continue;
+          }
 
-        txsToRecord.push(txData);
+          const txData: Omit<Transaction, 'id' | 'date'> = {
+            productId: item.matchedProduct.id,
+            productSku: item.matchedProduct.sku,
+            productName: item.matchedProduct.name,
+            type: actionType,
+            quantity: item.quantity,
+            referenceNo: result.trackingNo || result.orderId || `SCAN_BATCH_${i+1}`,
+            reason: `ตัดสต๊อกอัตโนมัติด้วยระบบสแกนใบปะหน้า AI (ประเภท: ${actionType === 'IN' ? 'รับสินค้า' : actionType === 'OUT' ? 'ส่งสินค้า' : 'คืนสินค้า'})`,
+            operator: currentUser.name,
+            ...(actionType === 'RETURN' && { returnStatus: returnStatus })
+          };
+
+          txsToRecord.push(txData);
+        }
+      }
+
+      if (duplicateDetails && !allowDuplicateForce) {
+        throw new Error(`พบเลขออเดอร์/แทรคกิ้งที่ซ้ำในระบบดังนี้:\n${duplicateDetails}\nกรุณาเลือกติ๊ก 'อนุญาตให้ลงรายการซ้ำ' ด้านล่างหากต้องการบันทึกสต๊อกทับลงคลังครับ`);
       }
 
       if (txsToRecord.length === 0) {
-        throw new Error("ไม่มีสินค้าใดในใบปะหน้านี้ที่ตรงกับรหัส SKU ในฐานข้อมูลคลังปัจจุบัน กรุณาตรวจสอบรหัส SKU หรือจับคู่สินค้าให้ถูกต้องก่อนกดบันทึกครับ");
+        throw new Error("ไม่มีรายการสินค้าใดที่จับคู่รหัส SKU ตรงกับระบบคลังปัจจุบัน กรุณาแก้ไข SKU ให้ตรงกับในระบบก่อนกดยืนยันบันทึกครับ");
       }
 
       await onRecordMultipleTransactions(txsToRecord);
       
       playBeep('success');
-      setSuccessMessage(`🎉 บันทึกรายการสแกนจำนวน ${txsToRecord.length} รายการลงสต๊อกเรียบร้อย!`);
-      // Clear result list
-      setScanResult(null);
-      setUploadedImage(null);
+      setSuccessMessage(`🎉 บันทึกรายการตัดคลังสต๊อกทั้งหมดจำนวน ${txsToRecord.length} ชิ้นสินค้า จากใบปะหน้าทั้งหมด ${scanResults.length} ใบเสร็จเรียบร้อยแล้ว!`);
+      
+      // Clear results
+      setScanResults([]);
+      setUploadedImages([]);
       setPdfText('');
 
     } catch (err: any) {
@@ -750,8 +931,8 @@ export default function SmartScanner({
   };
 
   const resetScanner = () => {
-    setScanResult(null);
-    setUploadedImage(null);
+    setScanResults([]);
+    setUploadedImages([]);
     setPdfText('');
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -782,7 +963,7 @@ export default function SmartScanner({
         >
           <div className="flex items-center justify-center gap-2">
             <Upload className="w-4 h-4" />
-            <span>อัปโหลดรูปภาพใบปะหน้า</span>
+            <span>อัปโหลดหลายไฟล์รูปภาพ/PDF</span>
           </div>
         </button>
         <button
@@ -870,29 +1051,37 @@ export default function SmartScanner({
                 }`}
               >
                 <Upload className={`w-10 h-10 mb-3 transition-colors ${isDragging ? 'text-indigo-600 animate-bounce' : 'text-slate-400 group-hover:text-indigo-500'}`} />
-                <p className="text-sm font-bold text-slate-700">คลิกที่นี่เพื่อเลือกไฟล์ หรือลากรูปภาพ/PDF มาวาง</p>
-                <p className="text-xs text-slate-400 mt-1">รองรับไฟล์ JPG, PNG, WebP และเอกสาร PDF ใบปะหน้าพัสดุ</p>
+                <p className="text-sm font-bold text-slate-700">คลิกที่นี่เพื่อเลือกหลายไฟล์ หรือลากรูปภาพ/PDF มาวาง</p>
+                <p className="text-xs text-slate-400 mt-1">สแกนพร้อมกันได้หลายไฟล์ | ไฟล์ PDF 1 ไฟล์ก็สแกนได้ทุกหน้า!</p>
                 <input 
                   type="file" 
                   ref={fileInputRef}
                   onChange={handleFileUpload}
                   accept="image/*,application/pdf"
                   className="hidden" 
+                  multiple={true}
                 />
               </div>
 
-              {uploadedImage && (
-                <div className="rounded-lg overflow-hidden border border-slate-300 bg-white p-2">
-                  <div className="text-xs font-bold text-slate-500 mb-1.5">เอกสาร/ภาพที่ใช้วิเคราะห์ล่าสุด:</div>
-                  {uploadedImage.startsWith("data:application/pdf") ? (
-                    <div className="flex flex-col items-center justify-center p-6 bg-red-50 border border-red-100 rounded-lg">
-                      <FileText className="w-12 h-12 text-red-500 mb-1.5 animate-pulse" />
-                      <span className="text-xs font-bold text-slate-700">เอกสาร PDF ใบปะหน้าพัสดุ</span>
-                      <span className="text-[10px] text-slate-400 mt-0.5">ส่งเข้าระบบวิเคราะห์ด้วย AI แล้ว</span>
-                    </div>
-                  ) : (
-                    <img src={uploadedImage} alt="Uploaded" className="w-full h-auto max-h-60 object-contain rounded" />
-                  )}
+              {uploadedImages.length > 0 && (
+                <div className="rounded-lg border border-slate-300 bg-white p-3 space-y-2">
+                  <div className="text-xs font-bold text-slate-500 flex justify-between">
+                    <span>เอกสารที่เลือกสแกน ({uploadedImages.length} ไฟล์):</span>
+                    <button onClick={() => setUploadedImages([])} className="text-[10px] text-red-500 hover:underline">ล้างทั้งหมด</button>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
+                    {uploadedImages.map((img, idx) => (
+                      <div key={idx} className="flex items-center gap-2 pt-1.5 first:pt-0">
+                        {img.type === 'application/pdf' ? (
+                          <FileText className="w-6 h-6 text-red-500 shrink-0" />
+                        ) : (
+                          <img src={img.data} alt={img.name} className="w-6 h-6 object-cover rounded shrink-0 border border-slate-200" />
+                        )}
+                        <span className="text-[11px] text-slate-600 truncate flex-1 font-mono">{img.name}</span>
+                        <span className="text-[9px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.2 rounded shrink-0">โหลดแล้ว</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -992,7 +1181,7 @@ export default function SmartScanner({
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                         </span>
-                        <span>ระบบสแกนอัตโนมัติทำงานอยู่ (ส่งตรวจทุก 5 วิ)</span>
+                        <span>ระบบสแกนอัตโนมัติทำงานอยู่ (ส่งตรวจทุก 3 วิ)</span>
                       </div>
                     )}
                   </div>
@@ -1091,100 +1280,90 @@ export default function SmartScanner({
           </div>
         </div>
 
-        {/* Right Column: Scan Results and confirmation */}
+        {/* Right Column: Scan Results and confirmation (Batch layout) */}
         <div className="md:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-5">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
             <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
               <Check className="w-4 h-4 text-emerald-500" />
-              <span>ผลการวิเคราะห์และถอดรหัสของ AI</span>
+              <span>ผลการวิเคราะห์และถอดรหัสของ AI {scanResults.length > 0 && `(${scanResults.length} ชิ้นพัสดุ)`}</span>
             </h4>
-            {scanResult && (
+            {scanResults.length > 0 && (
               <button
                 onClick={resetScanner}
                 className="text-xs text-rose-500 hover:text-rose-700 font-bold flex items-center gap-1 transition-all"
               >
-                <X className="w-3.5 h-3.5" />
-                <span>ล้างข้อมูลสแกน</span>
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>ล้างคิวสแกนทั้งหมด</span>
               </button>
             )}
           </div>
 
-          {/* Loading Overlay State */}
+          {/* Loading Overlay State (Supporting Batch Upload Progress) */}
           {isLoading && (
             <div className="p-12 text-center flex flex-col items-center justify-center space-y-3 bg-indigo-50/20 rounded-xl border border-indigo-100/50">
               <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-              <p className="text-xs font-bold text-slate-700">Gemini AI กำลังวิเคราะห์ฉลากใบปะหน้าสินค้าอัจฉริยะ...</p>
-              <p className="text-[10px] text-slate-400">กรุณารอสักครู่ ระบบกำลังจับคู่ SKU รหัสสินค้า กับยอดสต๊อกในระบบปัจจุบัน</p>
+              <p className="text-xs font-bold text-slate-700">Gemini AI กำลังวิเคราะห์ถอดข้อมูลด้วยระบบอัจฉริยะ...</p>
+              {uploadProgress ? (
+                <div className="w-full max-w-xs space-y-1">
+                  <div className="flex justify-between text-[10px] text-indigo-700 font-bold">
+                    <span>กำลังประมวลผลไฟล์...</span>
+                    <span>{uploadProgress.current} / {uploadProgress.total}</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div className="bg-indigo-600 h-1.5 transition-all duration-300" style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}></div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[10px] text-slate-400">กรุณารอสักครู่ ระบบกำลังเปรียบเทียบ SKU และจัดเตรียมความถูกต้องให้คุณ</p>
+              )}
             </div>
           )}
 
-          {/* Status Message Notification inside Column */}
+          {/* Error Message Notifications inside Column */}
           {errorMessage && !isLoading && (
             <div className="bg-rose-50 border border-rose-200 text-rose-900 p-3.5 rounded-lg text-xs space-y-2">
               <div className="flex items-center gap-2">
                 <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                <span className="font-bold">ตรวจสอบข้อมูล / คำเตือน:</span>
+                <span className="font-bold">ข้อมูลการลงคลัง / คำแจ้งเตือนความถูกต้อง:</span>
               </div>
-              <p className="text-slate-700 leading-relaxed">{errorMessage}</p>
+              <p className="text-slate-700 leading-relaxed whitespace-pre-line">{errorMessage}</p>
               
-              {errorMessage.includes('⚠️ ตรวจพบเลขออเดอร์/แทรคกิ้งนี้') && (
-                <div className="pt-1.5">
-                  <label className="flex items-center gap-2 bg-white/70 px-3 py-1.5 border border-rose-300 rounded-md cursor-pointer text-slate-800 text-[11px] font-bold">
-                    <input
-                      type="checkbox"
-                      checked={allowDuplicateForce}
-                      onChange={(e) => setAllowDuplicateForce(e.target.checked)}
-                      className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                    />
-                    <span>อนุญาตให้ทำรายการซ้ำสำหรับพัสดุนี้ (บันทึกสต๊อกซ้ำ)</span>
-                  </label>
-                </div>
-              )}
+              <div className="pt-1.5">
+                <label className="flex items-center gap-2 bg-white/70 px-3 py-1.5 border border-rose-300 rounded-md cursor-pointer text-slate-800 text-[11px] font-bold">
+                  <input
+                    type="checkbox"
+                    checked={allowDuplicateForce}
+                    onChange={(e) => setAllowDuplicateForce(e.target.checked)}
+                    className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  <span>อนุญาตให้บันทึกซ้ำ (ในกรณีที่หน้าพัสดุนี้ตั้งใจบันทึกสต๊อกซ้ำ)</span>
+                </label>
+              </div>
             </div>
           )}
 
           {successMessage && !isLoading && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-950 p-3.5 rounded-lg text-xs flex items-start gap-2 animate-fade-in">
               <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-              <p className="font-medium">{successMessage}</p>
+              <div className="font-medium whitespace-pre-line">{successMessage}</div>
             </div>
           )}
 
           {/* No results prompt */}
-          {!scanResult && !isLoading && (
+          {scanResults.length === 0 && !isLoading && (
             <div className="p-12 text-center border border-dashed border-slate-200 rounded-xl space-y-2">
               <Sparkles className="w-8 h-8 text-indigo-300 mx-auto animate-pulse" />
-              <p className="text-xs font-bold text-slate-500">ยังไม่มีข้อมูลการสแกน</p>
-              <p className="text-[11px] text-slate-400">กรุณาอัปโหลดรูปภาพใบปะหน้า, กดถ่ายภาพด้วยกล้องสด หรือวางเนื้อหาบิลจาก PDF เพื่อถอด SKU และตัดยอดสต๊อกเรียลไทม์</p>
+              <p className="text-xs font-bold text-slate-500">ยังไม่มีข้อมูลในคิวสแกนของคุณ</p>
+              <p className="text-[11px] text-slate-400">กรุณาอัปโหลดรูปภาพใบปะหน้า, ลากไฟล์ PDF หลายหน้ามาวาง, หรือวางบิลข้อความเพื่อตรวจเช็คสต๊อกแบบกลุ่มได้ทันที</p>
             </div>
           )}
 
-          {/* Extracted items checklist panel */}
-          {scanResult && !isLoading && (
+          {/* Batch Scan Results Display Panel */}
+          {scanResults.length > 0 && !isLoading && (
             <div className="space-y-4 animate-fade-in">
-              {/* Reference Metadata Fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase">เลขอ้างอิงขนส่ง (Tracking No.) / บิล:</label>
-                  <input
-                    type="text"
-                    value={referenceNo}
-                    onChange={(e) => setReferenceNo(e.target.value)}
-                    className="w-full mt-1 px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white font-bold font-sans text-slate-800"
-                    placeholder="ไม่ได้ระบุเลขแทรคกิ้ง"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase">เลขออเดอร์สั่งซื้อ (Order ID):</label>
-                  <p className="mt-1 px-2.5 py-1 text-xs font-mono font-bold bg-slate-100 rounded text-slate-700 min-h-[26px] flex items-center">
-                    {scanResult.orderId || 'ไม่พบในใบลาเบล'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Action type setup */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-700">เลือกประเภทความเคลื่อนไหวคลังพัสดุนี้:</label>
+              {/* Batch Action type setup */}
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+                <label className="block text-xs font-bold text-slate-700">ประเภทความเคลื่อนไหวสต๊อกของกลุ่มนี้:</label>
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
@@ -1223,152 +1402,241 @@ export default function SmartScanner({
                     <span>รับคืน (RETURN - คืนสินค้า)</span>
                   </button>
                 </div>
+
+                {actionType === 'RETURN' && (
+                  <div className="pt-2 border-t border-slate-200/50 text-xs space-y-1.5">
+                    <span className="font-bold text-amber-950 block">สถานะพัสดุรับคืน (Return Disposition):</span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setReturnStatus('RE_STOCK')}
+                        className={`px-3 py-1.5 rounded-md font-semibold text-[11px] transition-all cursor-pointer border ${
+                          returnStatus === 'RE_STOCK'
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-white text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        คืนเข้าคลังขายต่อ (Re-stock)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReturnStatus('DAMAGED_WRITE_OFF')}
+                        className={`px-3 py-1.5 rounded-md font-semibold text-[11px] transition-all cursor-pointer border ${
+                          returnStatus === 'DAMAGED_WRITE_OFF'
+                            ? 'bg-red-600 text-white border-red-600'
+                            : 'bg-white text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        สินค้าชำรุดคัดทิ้ง (Write-off)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReturnStatus('PENDING_INSPECT')}
+                        className={`px-3 py-1.5 rounded-md font-semibold text-[11px] transition-all cursor-pointer border ${
+                          returnStatus === 'PENDING_INSPECT'
+                            ? 'bg-amber-600 text-white border-amber-600'
+                            : 'bg-white text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        รอตรวจสอบสภาพ (Pending Inspect)
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* If RETURN is selected, show Return Status Selector */}
-              {actionType === 'RETURN' && (
-                <div className="bg-amber-50/50 p-3 rounded-lg border border-amber-200 text-xs space-y-1.5">
-                  <span className="font-bold text-amber-950 block">สถานะพัสดุรับคืน (Return Disposition):</span>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setReturnStatus('RE_STOCK')}
-                      className={`px-3 py-1.5 rounded-md font-semibold text-[11px] transition-all cursor-pointer border ${
-                        returnStatus === 'RE_STOCK'
-                          ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-white text-slate-600 border-slate-200'
-                      }`}
-                    >
-                      คืนเข้าคลังขายต่อ (Re-stock)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setReturnStatus('DAMAGED_WRITE_OFF')}
-                      className={`px-3 py-1.5 rounded-md font-semibold text-[11px] transition-all cursor-pointer border ${
-                        returnStatus === 'DAMAGED_WRITE_OFF'
-                          ? 'bg-red-600 text-white border-red-600'
-                          : 'bg-white text-slate-600 border-slate-200'
-                      }`}
-                    >
-                      สินค้าชำรุดคัดทิ้ง (Write-off)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setReturnStatus('PENDING_INSPECT')}
-                      className={`px-3 py-1.5 rounded-md font-semibold text-[11px] transition-all cursor-pointer border ${
-                        returnStatus === 'PENDING_INSPECT'
-                          ? 'bg-amber-600 text-white border-amber-600'
-                          : 'bg-white text-slate-600 border-slate-200'
-                      }`}
-                    >
-                      รอตรวจสอบสภาพ (Pending Inspect)
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* LIST OF DETECTED LABELS */}
+              <div className="space-y-3">
+                {scanResults.map((label, labelIdx) => {
+                  const isExpanded = !!expandedIndices[labelIdx];
+                  const matchedCount = label.extractedItems.filter(i => i.matched).length;
+                  const totalCount = label.extractedItems.length;
+                  const isLabelDuplicate = checkDuplicateNo(label.orderId, label.trackingNo);
 
-              {/* Items Table List */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700">รายการสินค้าที่แกะข้อมูลได้:</label>
-                  <button
-                    onClick={addNewItemRow}
-                    className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>เพิ่มสินค้าแถวใหม่</span>
-                  </button>
-                </div>
-
-                <div className="border border-slate-200 rounded-lg overflow-hidden divide-y divide-slate-100">
-                  {scanResult.extractedItems.map((item, idx) => (
-                    <div key={idx} className="p-3 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                      {/* Left Side: SKU Matching */}
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="text"
-                            value={item.sku}
-                            onChange={(e) => handleItemSkuChange(idx, e.target.value)}
-                            className="px-2 py-0.5 border border-slate-200 rounded font-mono font-bold text-xs uppercase w-32 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            placeholder="รหัส SKU สินค้า"
-                          />
-                          
-                          {item.matched ? (
-                            <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 shrink-0">
-                              <Check className="w-2.5 h-2.5" />
-                              <span>ตรงในคลัง</span>
+                  return (
+                    <div 
+                      key={labelIdx} 
+                      className={`border rounded-xl overflow-hidden transition-all duration-200 ${
+                        isLabelDuplicate 
+                          ? 'border-rose-200 bg-rose-50/10' 
+                          : 'border-slate-200 bg-white shadow-xs'
+                      }`}
+                    >
+                      {/* Accordion Card Header */}
+                      <div 
+                        onClick={() => toggleExpand(labelIdx)}
+                        className="p-3 bg-slate-100/50 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                      >
+                        <div className="flex-1 min-w-0 flex items-center gap-2">
+                          <span className="w-5 h-5 bg-indigo-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shrink-0">
+                            {labelIdx + 1}
+                          </span>
+                          <div className="truncate text-xs">
+                            <span className="font-bold text-slate-700">
+                              {label.trackingNo ? `แทรค: ${label.trackingNo}` : (label.orderId ? `ออเดอร์: ${label.orderId}` : 'พัสดุใหม่ไม่ระบุชื่อ')}
                             </span>
-                          ) : (
-                            <span className="bg-slate-100 text-slate-500 text-[9px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 shrink-0">
-                              <X className="w-2.5 h-2.5" />
-                              <span>ไม่พบ SKU นี้</span>
+                            <span className="text-[10px] text-slate-400 block mt-0.5">
+                              {label.labelType !== 'UNKNOWN' ? label.labelType : 'บิลพิมพ์จากระบบ'} | ตรงในระบบ: <strong className="text-indigo-600">{matchedCount}/{totalCount} รายการ</strong>
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {isLabelDuplicate && (
+                            <span className="bg-rose-100 text-rose-800 text-[8px] font-bold px-1.5 py-0.5 rounded-md animate-pulse">
+                              ซ้ำ
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeLabel(labelIdx);
+                            }}
+                            className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-slate-200/50 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                         </div>
+                      </div>
 
-                        {item.matched && item.matchedProduct ? (
-                          <div className="space-y-0.5">
-                            <p className="font-bold text-slate-800 text-[11px] line-clamp-1">{item.matchedProduct.name}</p>
-                            <p className="text-[10px] text-slate-400">
-                              คงเหลือปัจจุบัน: <strong className="text-slate-600">{item.matchedProduct.quantity} {item.matchedProduct.unit}</strong> | พิกัดเก็บ: <strong className="text-slate-600">{item.matchedProduct.location}</strong>
-                            </p>
+                      {/* Accordion Content */}
+                      {isExpanded && (
+                        <div className="p-3 border-t border-slate-200/50 space-y-3 bg-white">
+                          {/* Reference Metadata Fields */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50/70 p-2.5 rounded-lg border border-slate-100 text-xs">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase">เลขอ้างอิงขนส่ง (Tracking No.):</label>
+                              <input
+                                type="text"
+                                value={label.trackingNo}
+                                onChange={(e) => handleTrackingNoChange(labelIdx, e.target.value)}
+                                className="w-full mt-1 px-2 py-0.5 border border-slate-200 rounded bg-white font-bold font-sans text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                placeholder="ไม่มีเลขแทรคกิ้ง"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase">เลขออเดอร์สั่งซื้อ (Order ID):</label>
+                              <p className="mt-1 px-2 py-0.5 bg-slate-100/70 border border-slate-200/30 rounded text-slate-700 min-h-[22px] flex items-center font-bold">
+                                {label.orderId || 'ไม่พบในใบปะหน้า'}
+                              </p>
+                            </div>
                           </div>
-                        ) : (
-                          <p className="text-[10px] text-slate-400 italic line-clamp-1">ชื่อที่ตรวจจับ: {item.productName || 'ไม่ระบุรหัส SKU สินค้า'}</p>
-                        )}
-                      </div>
 
-                      {/* Right Side: Quantity Adjustments */}
-                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                        <div className="flex items-center border border-slate-200 rounded-md overflow-hidden bg-slate-50">
-                          <button
-                            type="button"
-                            onClick={() => updateItemQuantity(idx, -1)}
-                            className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="px-2.5 text-xs font-bold text-slate-800 min-w-8 text-center">{item.quantity}</span>
-                          <button
-                            type="button"
-                            onClick={() => updateItemQuantity(idx, 1)}
-                            className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
+                          {/* Item lines */}
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[11px] font-bold text-slate-600">รายการสินค้าในพัสดุชิ้นนี้:</span>
+                              <button
+                                type="button"
+                                onClick={() => addNewItemRow(labelIdx)}
+                                className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>เพิ่มสินค้าแถวใหม่</span>
+                              </button>
+                            </div>
+
+                            <div className="border border-slate-100 rounded-lg overflow-hidden divide-y divide-slate-100">
+                              {label.extractedItems.length === 0 ? (
+                                <p className="p-3 text-center text-slate-400 italic text-[11px]">ไม่มีสินค้าวิเคราะห์ได้ในใบปะหน้านี้</p>
+                              ) : (
+                                label.extractedItems.map((item, idx) => (
+                                  <div key={idx} className="p-2.5 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                                    {/* Left Side: SKU Matching */}
+                                    <div className="flex-1 space-y-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <input
+                                          type="text"
+                                          value={item.sku}
+                                          onChange={(e) => handleItemSkuChange(labelIdx, idx, e.target.value)}
+                                          className="px-2 py-0.5 border border-slate-200 rounded font-mono font-bold text-[11px] uppercase w-32 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          placeholder="รหัส SKU สินค้า"
+                                        />
+                                        
+                                        {item.matched ? (
+                                          <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 shrink-0">
+                                            <Check className="w-2.5 h-2.5" />
+                                            <span>ตรงในคลัง</span>
+                                          </span>
+                                        ) : (
+                                          <span className="bg-slate-100 text-slate-500 text-[9px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 shrink-0 animate-pulse">
+                                            <X className="w-2.5 h-2.5" />
+                                            <span>ไม่พบ SKU นี้</span>
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {item.matched && item.matchedProduct ? (
+                                        <div className="space-y-0.5">
+                                          <p className="font-bold text-slate-800 text-[10px] line-clamp-1">{item.matchedProduct.name}</p>
+                                          <p className="text-[9px] text-slate-400">
+                                            คงเหลือในคลัง: <strong className="text-slate-600">{item.matchedProduct.quantity} {item.matchedProduct.unit}</strong> | พิกัดเก็บ: <strong className="text-slate-600">{item.matchedProduct.location}</strong>
+                                          </p>
+                                        </div>
+                                      ) : (
+                                        <p className="text-[9px] text-slate-400 italic line-clamp-1">ชื่อตามใบปะ: {item.productName || 'ไม่ระบุรหัส SKU สินค้า'}</p>
+                                      )}
+                                    </div>
+
+                                    {/* Right Side: Quantity Adjustments */}
+                                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                                      <div className="flex items-center border border-slate-200 rounded bg-slate-50">
+                                        <button
+                                          type="button"
+                                          onClick={() => updateItemQuantity(labelIdx, idx, -1)}
+                                          className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer"
+                                        >
+                                          <Minus className="w-2.5 h-2.5" />
+                                        </button>
+                                        <span className="px-2 text-[11px] font-bold text-slate-800 min-w-6 text-center">{item.quantity}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateItemQuantity(labelIdx, idx, 1)}
+                                          className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer"
+                                        >
+                                          <Plus className="w-2.5 h-2.5" />
+                                        </button>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => removeItem(labelIdx, idx)}
+                                        className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-rose-50 cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() => removeItem(idx)}
-                          className="text-slate-400 hover:text-red-500 p-1.5 rounded hover:bg-rose-50 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      )}
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
 
               {/* Summary of Action and Confirmation */}
               <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl space-y-3">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-600">รายการพัสดุวิเคราะห์เสร็จ:</span>
+                  <span className="font-semibold text-slate-600">สรุปภาพรวมเตรียมบันทึกสต๊อก:</span>
                   <span className="font-bold text-indigo-950">
-                    {scanResult.extractedItems.filter(i => i.matched).length} / {scanResult.extractedItems.length} สินค้าตรงระบบ
+                    ทั้งหมด {scanResults.length} ใบปะหน้า
                   </span>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleConfirmTransactions}
-                  disabled={isLoading || scanResult.extractedItems.filter(i => i.matched).length === 0}
+                  disabled={isLoading || scanResults.length === 0}
                   className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-400 disabled:to-slate-400 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-1.5 transition-all text-xs cursor-pointer shadow-md"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>บันทึกรายการสต๊อกอัจฉริยะ (สั่งทำงานตามใบปะ) 📦</span>
+                  <span>บันทึกและตัดสต๊อกอัจฉริยะกลุ่มนี้ทั้งหมด ({scanResults.length} ใบปะหน้า) 📦</span>
                 </button>
               </div>
             </div>
