@@ -87,4 +87,22 @@ export interface Shelf {
   createdAt?: string;
 }
 
+export interface CloudBackup {
+  id: string;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string;
+  note?: string;
+  productsCount: number;
+  transactionsCount: number;
+  categoriesCount: number;
+  shelvesCount: number;
+  products: Product[];
+  transactions: Transaction[];
+  categories: Category[];
+  shelves: Shelf[];
+  settings?: AppSettings;
+  rolePermissions?: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>;
+}
+
 

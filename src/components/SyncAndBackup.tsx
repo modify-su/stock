@@ -8,10 +8,21 @@ import {
   Link2, 
   Check, 
   ShieldAlert, 
-  Trash2
+  Trash2,
+  Cloud,
+  History as HistoryIcon,
+  Calendar,
+  User,
+  FileJson,
+  RefreshCw,
+  Plus,
+  FileDown,
+  FileUp
 } from 'lucide-react';
-import { AppSettings, Product, Transaction, UserProfile, RolePermissions } from '../types';
+import { AppSettings, Product, Transaction, UserProfile, RolePermissions, Category, Shelf, CloudBackup } from '../types';
 import ConfirmModal from './ConfirmModal';
+import { db } from '../firebase';
+import { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
 
 interface SyncAndBackupProps {
   settings: AppSettings;
@@ -21,6 +32,16 @@ interface SyncAndBackupProps {
   onImportProducts: (parsedProducts: Omit<Product, 'id' | 'updatedAt'>[], overwrite: boolean) => Promise<void>;
   currentUser: UserProfile;
   rolePermissions: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>;
+  categories: Category[];
+  shelves: Shelf[];
+  onRestoreFullBackup: (
+    backupProducts: Product[],
+    backupTransactions: Transaction[],
+    backupCategories: Category[],
+    backupShelves: Shelf[],
+    backupSettings?: AppSettings,
+    backupRolePermissions?: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>
+  ) => Promise<void>;
 }
 
 export default function SyncAndBackup({
@@ -30,11 +51,238 @@ export default function SyncAndBackup({
   transactions,
   onImportProducts,
   currentUser,
-  rolePermissions
+  rolePermissions,
+  categories,
+  shelves,
+  onRestoreFullBackup
 }: SyncAndBackupProps) {
   const [pastedText, setPastedText] = useState('');
   const [importStatus, setImportStatus] = useState<{ success?: boolean; count?: number; message?: string } | null>(null);
   const [isUrlCopied, setIsUrlCopied] = useState(false);
+
+  // Cloud Backup and Recovery State hooks
+  const [backups, setBackups] = useState<CloudBackup[]>([]);
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [creatingBackup, setCreatingBackup] = useState(false);
+  const [backupNote, setBackupNote] = useState('');
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  // Fetch saved cloud backups on demand and on mount
+  const fetchBackups = async () => {
+    try {
+      setLoadingBackups(true);
+      const snapshot = await getDocs(collection(db, 'backups'));
+      const list: CloudBackup[] = [];
+      snapshot.forEach((snapDoc) => {
+        list.push({ id: snapDoc.id, ...snapDoc.data() } as CloudBackup);
+      });
+      // Sort in-memory by createdAt descending
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setBackups(list);
+    } catch (err) {
+      console.error("Failed to fetch cloud backups:", err);
+    } finally {
+      setLoadingBackups(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBackups();
+  }, []);
+
+  const handleCreateCloudBackup = async () => {
+    if (!hasSettingsPermission) {
+      alert('🔒 ขออภัย คุณไม่มีสิทธิ์จัดการข้อมูลหลักหรือสร้างจุดสำรองข้อมูล');
+      return;
+    }
+
+    try {
+      setCreatingBackup(true);
+      const backupData: Omit<CloudBackup, 'id'> = {
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser.id,
+        createdByName: currentUser.name,
+        note: backupNote.trim() || 'สำรองระบบรายงวด',
+        productsCount: products.length,
+        transactionsCount: transactions.length,
+        categoriesCount: categories.length,
+        shelvesCount: shelves.length,
+        products,
+        transactions,
+        categories,
+        shelves,
+        settings
+      };
+
+      await addDoc(collection(db, 'backups'), backupData);
+      setBackupNote('');
+      alert('☁️ ทำการบันทึกภาพถ่ายฐานข้อมูล (Snapshot Backup) ขึ้นคลาวด์เรียบร้อยแล้ว!');
+      fetchBackups();
+    } catch (err: any) {
+      console.error("Failed to create backup:", err);
+      alert('❌ เกิดข้อผิดพลาดในการสร้างจุดสำรองข้อมูล: ' + err.message);
+    } finally {
+      setCreatingBackup(false);
+    }
+  };
+
+  const handleDeleteCloudBackup = async (id: string) => {
+    if (!hasSettingsPermission) {
+      alert('🔒 ขออภัย คุณไม่มีสิทธิ์ลบข้อมูลสำรอง');
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'backups', id));
+      alert('🗑️ ลบจุดกู้คืนบนระบบคลาวด์เรียบร้อยแล้ว');
+      fetchBackups();
+    } catch (err: any) {
+      console.error("Failed to delete backup:", err);
+      alert('❌ เกิดข้อผิดพลาด: ' + err.message);
+    }
+  };
+
+  const handleRestoreBackupPoint = async (backup: CloudBackup) => {
+    if (!hasSettingsPermission) {
+      alert('🔒 ขออภัย คุณไม่มีสิทธิ์จัดการหรือควบคุมสิทธิ์ในการกู้คืนระบบ');
+      return;
+    }
+
+    try {
+      setIsRestoring(true);
+      await onRestoreFullBackup(
+        backup.products || [],
+        backup.transactions || [],
+        backup.categories || [],
+        backup.shelves || [],
+        backup.settings,
+        backup.rolePermissions
+      );
+      
+      setConfirmDialog({
+        isOpen: true,
+        title: '🎉 กู้คืนระบบสำเร็จสมบูรณ์',
+        message: `แอปพลิเคชันได้รับการกู้คืนข้อมูลกลับไป ณ วันที่ ${new Date(backup.createdAt).toLocaleString('th-TH')} เรียบร้อยแล้ว!\n\nข้อมูลที่กู้กลับมา:\n📦 สินค้าคลัง: ${backup.productsCount} รายการ\n📝 ประวัติธุรกรรมเดินบัญชี: ${backup.transactionsCount} รายการ\n📁 หมวดหมู่: ${backup.categoriesCount} รายการ\n📍 ผังชั้นจัดวาง: ${backup.shelvesCount} รายการ`,
+        confirmText: 'ตกลง (รีโหลดระบบ)',
+        isAlertOnly: true,
+        variant: 'info',
+        onConfirm: () => {
+          setConfirmDialog(p => ({ ...p, isOpen: false }));
+          window.location.reload();
+        }
+      });
+    } catch (err: any) {
+      console.error("Failed to restore backup point:", err);
+      alert('❌ เกิดข้อผิดพลาดในการคืนสภาพจุดสำรอง: ' + err.message);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handleExportToJson = () => {
+    try {
+      const fullBackup: Omit<CloudBackup, 'id'> = {
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser.id,
+        createdByName: currentUser.name,
+        note: `ดาวน์โหลดไฟล์สำรองภายนอกแอปพลิเคชัน (${settings.appName || 'Stock Management'})`,
+        productsCount: products.length,
+        transactionsCount: transactions.length,
+        categoriesCount: categories.length,
+        shelvesCount: shelves.length,
+        products,
+        transactions,
+        categories,
+        shelves,
+        settings
+      };
+
+      const jsonStr = JSON.stringify(fullBackup, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Inventory_Full_Backup_${settings.appName || 'Stock'}_${new Date().toISOString().slice(0, 10)}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("JSON backup generation failed", err);
+      alert('❌ ไม่สามารถสร้างไฟล์สำรองดาวน์โหลดข้อมูลระบบได้');
+    }
+  };
+
+  const jsonFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportFromJson = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!hasSettingsPermission) {
+      alert('🔒 ขออภัย คุณไม่มีสิทธิ์จัดการข้อมูลระบบเพื่อกู้คืน');
+      return;
+    }
+
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) return;
+
+        const backup = JSON.parse(text) as CloudBackup;
+        if (!backup.products || !Array.isArray(backup.products)) {
+          alert('❌ รูปแบบไฟล์สำรองออฟไลน์ .JSON ไม่ถูกต้องหรือไฟล์เกิดความเสียหาย');
+          return;
+        }
+
+        setConfirmDialog({
+          isOpen: true,
+          title: '⚠️ ยืนยันการกู้คืนระบบจากชุดสำรองนอก',
+          message: `คุณต้องการลบข้อมูลปัจจุบันทั้งหมดในคลังระบบจริง แล้วสวมทับคืนสภาพด้วยไฟล์สำรองภายนอก (.JSON) นี้ใช่หรือไม่?\n\n- วันที่สำรองไว้: ${backup.createdAt ? new Date(backup.createdAt).toLocaleString('th-TH') : 'ไม่ทราบข้อมูล'}\n- หมายเหตุแถม: ${backup.note || 'ไม่มี'}\n- จำนวนสินค้าคลัง: ${backup.products?.length || 0} รายการ\n- ประวัติเดินคลัง: ${backup.transactions?.length || 0} รายการ\n\n⚠️ คำเตือน: ระบบจะเขียนทับฐานข้อมูลเดิม และไม่สามารถกู้สถานะปัจจุบันคืนมาได้!`,
+          confirmText: 'ตกลง กู้คืนแบบลบทับทั้งหมด',
+          cancelText: 'ยกเลิก',
+          variant: 'danger',
+          onConfirm: async () => {
+            try {
+              setIsRestoring(true);
+              setConfirmDialog(p => ({ ...p, isOpen: false }));
+              
+              await onRestoreFullBackup(
+                backup.products || [],
+                backup.transactions || [],
+                backup.categories || [],
+                backup.shelves || [],
+                backup.settings,
+                backup.rolePermissions
+              );
+
+              setConfirmDialog({
+                isOpen: true,
+                title: '🎉 คืนสภาพระบบจากไฟล์สำเร็จ',
+                message: `ฐานข้อมูลระบบสต๊อกได้รับการฟื้นฟูกลับมาจากไฟล์ .JSON สำเร็จแล้ว!\n\n📦 สินค้า: ${backup.products?.length || 0} รายการ\n📝 ประวัติธุรกรรมคลัง: ${backup.transactions?.length || 0} รายการ`,
+                confirmText: 'ตกลง (รีบูตระบบ)',
+                isAlertOnly: true,
+                variant: 'info',
+                onConfirm: () => {
+                  setConfirmDialog(p => ({ ...p, isOpen: false }));
+                  window.location.reload();
+                }
+              });
+            } catch (err: any) {
+              console.error(err);
+              alert('❌ เกิดข้อผิดพลาดขั้นวิกฤตระหว่างเขียนฐานข้อมูลคืนค่า: ' + err.message);
+            } finally {
+              setIsRestoring(false);
+            }
+          }
+        });
+      } catch (err) {
+        console.error("JSON parse failure", err);
+        alert('❌ โครงสร้างไฟล์ .JSON บกพร่องหรือชำรุด ไม่สามารถประยุกต์ถอดรหัสคืนยอดได้');
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const handleCopyAppUrl = () => {
     const appUrl = window.location.origin;
@@ -247,6 +495,292 @@ const handleExportProductsToCsv = () => {
           </div>
         </div>
       )}
+
+      {/* Cloud Backup & Recovery System */}
+      <div className="bg-gradient-to-br from-indigo-50/40 to-slate-50 border border-indigo-100 rounded-xl p-6 shadow-sm space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-indigo-100 pb-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <Cloud className="w-5 h-5 text-indigo-600 animate-pulse" />
+              <span>☁️ ระบบจัดเก็บข้อมูลสำรองบนคลาวด์ (Cloud Backup & System Recovery)</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              ป้องกันข้อมูลสูญหายด้วยการบันทึก Snapshot คลังของคุณ (สินค้า, ประวัติเดินบัญชี, หมวดหมู่, ผังชั้นวาง) ไว้บนระบบ Cloud แบบเรียลไทม์ และสามารถกู้คืนสู่สถานะเดิมได้ทันที
+            </p>
+          </div>
+          <button 
+            type="button" 
+            onClick={fetchBackups}
+            disabled={loadingBackups}
+            className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all self-start"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loadingBackups ? 'animate-spin' : ''}`} />
+            <span>รีเฟรชประวัติ</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Create Backup Panel */}
+          <div className="lg:col-span-5 p-5 bg-white border border-indigo-100/80 rounded-xl space-y-4 shadow-xs">
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+              <Plus className="w-4 h-4 text-indigo-600" />
+              <span>สร้างจุดกู้คืนปัจจุบัน (Create Snapshot)</span>
+            </h4>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              บันทึกสถานะของระบบสต๊อกปัจจุบันทั้งหมดไว้เป็นฐานข้อมูลย่อย คุณสามารถเลือกย้อนเวลาระบบเพื่อกู้คืนข้อมูลกลับมาได้ทุกเมื่อ
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 block mb-1">
+                  หมายเหตุ / บันทึกย่อจุดกู้คืน (Note)
+                </label>
+                <input
+                  type="text"
+                  value={backupNote}
+                  onChange={(e) => setBackupNote(e.target.value)}
+                  disabled={creatingBackup || !hasSettingsPermission}
+                  placeholder="เช่น: สำรองไว้ก่อนเคลียร์สต๊อก, หลังปิดยอดประจำสัปดาห์"
+                  className="w-full text-xs px-3 py-2 border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 rounded-lg placeholder-slate-400 disabled:opacity-50"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCreateCloudBackup}
+                disabled={creatingBackup || !hasSettingsPermission}
+                className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+              >
+                {creatingBackup ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>กำลังบันทึกข้อมูลขึ้นระบบ Cloud...</span>
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="w-3.5 h-3.5" />
+                    <span>บันทึกจุดสำรองข้อมูลบนคลาวด์</span>
+                  </>
+                )}
+              </button>
+              
+              {!hasSettingsPermission && (
+                <p className="text-[10px] text-rose-500 text-center">
+                  ⚠️ เฉพาะผู้จัดการคลังสินค้า (ADMIN) เท่านั้นที่สามารถสร้างจุดสำรองข้อมูลได้
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Backup History List */}
+          <div className="lg:col-span-7 space-y-3">
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-1">
+              <HistoryIcon className="w-4 h-4 text-indigo-600" />
+              <span>จุดกู้คืนระบบบนคลาวด์ที่บันทึกไว้ ({backups.length})</span>
+            </h4>
+
+            {loadingBackups ? (
+              <div className="flex flex-col items-center justify-center p-12 bg-white border border-slate-200 rounded-xl space-y-3">
+                <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin" />
+                <p className="text-xs text-slate-400">กำลังดึงรายการจุดสำรองข้อมูลจากระบบคลาวด์...</p>
+              </div>
+            ) : backups.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-10 bg-white/60 border border-dashed border-slate-300 rounded-xl text-center space-y-2">
+                <Cloud className="w-10 h-10 text-slate-300" />
+                <p className="text-xs font-bold text-slate-500">ไม่พบจุดสำรองข้อมูลบนระบบคลาวด์</p>
+                <p className="text-[11px] text-slate-400">คุณยังไม่เคยสำรองข้อมูลบนคลาวด์ หรือประวัติได้รับการล้างไปแล้ว</p>
+              </div>
+            ) : (
+              <div className="max-h-72 overflow-y-auto space-y-2.5 pr-1">
+                {backups.map((b) => (
+                  <div key={b.id} className="p-3.5 bg-white border border-slate-200 hover:border-indigo-200 rounded-xl transition-all shadow-xs space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-800 bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full">
+                            {b.note}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-400 pt-0.5">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-400" />
+                            {new Date(b.createdAt).toLocaleString('th-TH')}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <User className="w-3 h-3 text-slate-400" />
+                            ผู้บันทึก: {b.createdByName || 'ระบบ'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmDialog({
+                              isOpen: true,
+                              title: '🔄 ยืนยันการคืนค่าระบบ (System Restore)',
+                              message: `คุณยืนยันที่จะกู้คืนสถานะคลังสินค้ากลับไปยังจุดกู้คืน "${b.note}" ใช่หรือไม่?\n\nข้อมูลระบบ ณ ปัจจุบันของคุณจะถูกเขียนทับทั้งหมด!\n\n(สร้างเมื่อ: ${new Date(b.createdAt).toLocaleString('th-TH')})`,
+                              confirmText: 'ตกลง กู้คืนฐานข้อมูล',
+                              cancelText: 'ยกเลิก',
+                              variant: 'warning',
+                              onConfirm: () => {
+                                setConfirmDialog(p => ({ ...p, isOpen: false }));
+                                handleRestoreBackupPoint(b);
+                              }
+                            });
+                          }}
+                          disabled={isRestoring || !hasSettingsPermission}
+                          className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>กู้คืน</span>
+                        </button>
+                        
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              const jsonStr = JSON.stringify(b, null, 2);
+                              const blob = new Blob([jsonStr], { type: 'application/json' });
+                              const url = URL.createObjectURL(blob);
+                              const link = document.createElement("a");
+                              link.setAttribute("href", url);
+                              link.setAttribute("download", `Backup_${b.note.replace(/\s+/g, '_')}_${new Date(b.createdAt).toISOString().slice(0, 10)}.json`);
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            } catch (err) {
+                              alert('เกิดข้อผิดพลาดในการแปลงไฟล์');
+                            }
+                          }}
+                          className="p-1.5 hover:bg-slate-100 text-slate-500 rounded-lg transition-colors cursor-pointer border border-slate-200"
+                          title="ดาวน์โหลดชุดสำรองนี้เป็นไฟล์ .JSON"
+                        >
+                          <FileJson className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmDialog({
+                              isOpen: true,
+                              title: '🗑️ ลบจุดกู้คืนข้อมูลบนคลาวด์',
+                              message: `คุณแน่ใจที่จะลบจุดคืนค่าระบบ "${b.note}" นี้จากฐานคลาวด์อย่างถาวรหรือไม่?\n(การลบนี้เป็นลบถาวร ไม่ส่งผลต่อข้อมูลปัจจุบัน แต่จุดคืนค่านี้จะหายไป)`,
+                              confirmText: 'ลบจุดสำรองถาวร',
+                              cancelText: 'ยกเลิก',
+                              variant: 'danger',
+                              onConfirm: () => {
+                                setConfirmDialog(p => ({ ...p, isOpen: false }));
+                                handleDeleteCloudBackup(b.id);
+                              }
+                            });
+                          }}
+                          disabled={!hasSettingsPermission}
+                          className="p-1.5 hover:bg-rose-50 text-rose-600 rounded-lg transition-colors cursor-pointer border border-rose-100"
+                          title="ลบข้อมูลสำรองจุดนี้"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-2 rounded-lg text-[11px] text-slate-500 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono border border-slate-100">
+                      <div>
+                        <span className="block text-slate-400 text-[9px] uppercase">📦 สินค้าคลัง</span>
+                        <span className="font-bold text-slate-700">{b.productsCount || 0} รายการ</span>
+                      </div>
+                      <div>
+                        <span className="block text-slate-400 text-[9px] uppercase">📝 ประวัติเดินคลัง</span>
+                        <span className="font-bold text-slate-700">{b.transactionsCount || 0} รายการ</span>
+                      </div>
+                      <div>
+                        <span className="block text-slate-400 text-[9px] uppercase">📁 หมวดหมู่</span>
+                        <span className="font-bold text-slate-700">{b.categoriesCount || 0} รายการ</span>
+                      </div>
+                      <div>
+                        <span className="block text-slate-400 text-[9px] uppercase">📍 ผังชั้นจัดวาง</span>
+                        <span className="font-bold text-slate-700">{b.shelvesCount || 0} รายการ</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Offline JSON File Backup & Recovery Card */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+        <div>
+          <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+            <FileJson className="w-5 h-5 text-indigo-600" />
+            <span>💾 สำรองข้อมูลในเครื่องแบบออฟไลน์ (.JSON Backup System)</span>
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            ดาวน์โหลดไฟล์สำรองฐานข้อมูลสต๊อกทั้งหมด (.JSON) เก็บไว้ในเครื่องคอมพิวเตอร์ของคุณแบบออฟไลน์ และสามารถกู้คืนระบบได้ตลอดเวลาแม้ไม่มีเน็ตหรือเปลี่ยนเครื่อง
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-4 border border-dashed border-slate-200 rounded-xl bg-slate-50/50 flex flex-col justify-between space-y-3">
+            <div>
+              <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <FileDown className="w-4 h-4 text-indigo-600" />
+                <span>ดาวน์โหลดไฟล์สำรองฐานระบบ (.JSON Export)</span>
+              </h4>
+              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                สร้างและดาวน์โหลดชุดสตรีม JSON ตัวเต็มที่มีข้อมูลของสินค้า ประวัติเดินคลัง ผังชั้นวางและค่าตั้งค่าแอปพลิเคชันทั้งหมดไว้แบบสมบูรณ์
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleExportToJson}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer self-start transition-all shadow-xs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>ดาวน์โหลดไฟล์สำรอง .JSON</span>
+            </button>
+          </div>
+
+          <div className="p-4 border border-dashed border-slate-200 rounded-xl bg-slate-50/50 flex flex-col justify-between space-y-3">
+            <div>
+              <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <FileUp className="w-4 h-4 text-emerald-600" />
+                <span>อัปโหลดเพื่อคืนสภาพสต๊อก (.JSON Restore)</span>
+              </h4>
+              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                กู้คืนโครงสร้างคลังทั้งหมดโดยป้อนอัพโหลดไฟล์ .JSON ที่บันทึกไว้ภายนอกกลับเข้ามาเขียนทับฐานข้อมูลระบบคลาวด์โดยตรง
+              </p>
+            </div>
+            <div>
+              <input
+                type="file"
+                ref={jsonFileInputRef}
+                accept=".json"
+                onChange={handleImportFromJson}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!hasSettingsPermission) {
+                    alert('🔒 ขออภัย คุณไม่มีสิทธิ์จัดการข้อมูลหลักสินค้าเพื่อนำเข้า');
+                    return;
+                  }
+                  jsonFileInputRef.current?.click();
+                }}
+                disabled={!hasSettingsPermission}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer self-start transition-all shadow-xs"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>เลือกไฟล์ออฟไลน์และกู้คืน</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* 3. CSV File Backup & Excel Import Area */}
       <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">

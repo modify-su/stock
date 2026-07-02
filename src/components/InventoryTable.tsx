@@ -460,16 +460,16 @@ export default function InventoryTable({
                 </div>
               </th>
               <th className="py-3 px-4">หมวดหมู่</th>
-              <th className="py-3 px-4 text-center cursor-pointer select-none hover:bg-slate-100" onClick={() => toggleSort('wholesaleStock' as any)}>
-                <div className="flex items-center justify-center gap-1.5">
-                  คลังหลัก (รอเบิก) 📦
-                  {sortBy === ('wholesaleStock' as any) && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-500" /> : <ArrowDown className="w-3 h-3 text-blue-500" />)}
-                </div>
-              </th>
               <th className="py-3 px-4 text-center cursor-pointer select-none hover:bg-slate-100" onClick={() => toggleSort('quantity')}>
                 <div className="flex items-center justify-center gap-1.5">
                   กำลังจำหน่าย (พร้อมขาย) 🛒
                   {sortBy === 'quantity' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-500" /> : <ArrowDown className="w-3 h-3 text-blue-500" />)}
+                </div>
+              </th>
+              <th className="py-3 px-4 text-center cursor-pointer select-none hover:bg-slate-100" onClick={() => toggleSort('wholesaleStock' as any)}>
+                <div className="flex items-center justify-center gap-1.5">
+                  คลังหลัก (รอเบิก) 📦
+                  {sortBy === ('wholesaleStock' as any) && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-500" /> : <ArrowDown className="w-3 h-3 text-blue-500" />)}
                 </div>
               </th>
               <th className="py-3 px-4 text-center cursor-pointer select-none hover:bg-slate-100" onClick={() => toggleSort('unit')}>
@@ -530,10 +530,6 @@ export default function InventoryTable({
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <div className="font-semibold text-slate-700 font-mono text-base">{p.wholesaleStock || 0}</div>
-                      <div className="text-[10px] text-slate-400 mt-1 font-medium">รอเบิกแบ่งจำหน่าย</div>
-                    </td>
-                    <td className="py-3 px-4 text-center">
                       <div className="font-semibold text-emerald-600 font-mono text-base">{p.quantity}</div>
                       <div className="mt-1">
                         {isOutOfStock ? (
@@ -544,6 +540,10 @@ export default function InventoryTable({
                           <span className="inline-block px-1.5 py-0.5 text-[9px] text-emerald-700 bg-emerald-50 rounded font-normal">ปกติ (เกณฑ์ {p.minStock})</span>
                         )}
                       </div>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <div className="font-semibold text-slate-700 font-mono text-base">{p.wholesaleStock || 0}</div>
+                      <div className="text-[10px] text-slate-400 mt-1 font-medium">รอเบิกแบ่งจำหน่าย</div>
                     </td>
                     <td className="py-3 px-4 text-center text-slate-700 font-medium">
                       {p.unit || 'ชิ้น'}

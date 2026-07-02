@@ -841,6 +841,101 @@ export default function App() {
     }
   };
 
+  // Restore everything from a full backup (Cloud or JSON file)
+  const handleRestoreFullBackup = async (
+    backupProducts: Product[],
+    backupTransactions: Transaction[],
+    backupCategories: Category[],
+    backupShelves: Shelf[],
+    backupSettings?: AppSettings,
+    backupRolePermissions?: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>
+  ) => {
+    try {
+      const actions: { type: 'set' | 'delete', ref: any, data?: any }[] = [];
+
+      // 1. Delete all current products
+      const pSnapshot = await getDocs(collection(db, 'products'));
+      pSnapshot.forEach((docSnap) => {
+        actions.push({ type: 'delete', ref: docSnap.ref });
+      });
+
+      // 2. Delete all current transactions
+      const tSnapshot = await getDocs(collection(db, 'transactions'));
+      tSnapshot.forEach((docSnap) => {
+        actions.push({ type: 'delete', ref: docSnap.ref });
+      });
+
+      // 3. Delete all current categories
+      const cSnapshot = await getDocs(collection(db, 'categories'));
+      cSnapshot.forEach((docSnap) => {
+        actions.push({ type: 'delete', ref: docSnap.ref });
+      });
+
+      // 4. Delete all current shelves
+      const sSnapshot = await getDocs(collection(db, 'shelves'));
+      sSnapshot.forEach((docSnap) => {
+        actions.push({ type: 'delete', ref: docSnap.ref });
+      });
+
+      // 5. Add backup products
+      backupProducts.forEach((p) => {
+        actions.push({ type: 'set', ref: doc(db, 'products', p.id), data: p });
+      });
+
+      // 6. Add backup transactions
+      backupTransactions.forEach((t) => {
+        actions.push({ type: 'set', ref: doc(db, 'transactions', t.id), data: t });
+      });
+
+      // 7. Add backup categories
+      backupCategories.forEach((c) => {
+        actions.push({ type: 'set', ref: doc(db, 'categories', c.id), data: c });
+      });
+
+      // 8. Add backup shelves
+      backupShelves.forEach((s) => {
+        actions.push({ type: 'set', ref: doc(db, 'shelves', s.id), data: s });
+      });
+
+      // 9. Add backup settings if present
+      if (backupSettings) {
+        actions.push({ type: 'set', ref: doc(db, 'settings', 'appSettings'), data: backupSettings });
+      }
+
+      // 10. Add backup role permissions if present
+      if (backupRolePermissions) {
+        actions.push({ type: 'set', ref: doc(db, 'settings', 'rolePermissions'), data: backupRolePermissions });
+      }
+
+      // Execute in chunks of 400 to comply with Firestore's 500 max writes per batch
+      let currentBatch = writeBatch(db);
+      let opCount = 0;
+
+      for (const action of actions) {
+        if (action.type === 'delete') {
+          currentBatch.delete(action.ref);
+        } else if (action.type === 'set') {
+          currentBatch.set(action.ref, action.data);
+        }
+        opCount++;
+
+        if (opCount === 400) {
+          await currentBatch.commit();
+          currentBatch = writeBatch(db);
+          opCount = 0;
+        }
+      }
+
+      if (opCount > 0) {
+        await currentBatch.commit();
+      }
+
+    } catch (err) {
+      console.error("Failed to restore backup:", err);
+      throw err;
+    }
+  };
+
   // Filter actions
   const handleFilterLowStock = () => {
     setIsLowStockOnly(true);
@@ -1330,6 +1425,9 @@ export default function App() {
             onImportProducts={handleImportProducts}
             currentUser={currentUser}
             rolePermissions={rolePermissions}
+            categories={categories}
+            shelves={shelves}
+            onRestoreFullBackup={handleRestoreFullBackup}
           />
         )}
 
