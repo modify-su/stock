@@ -12,6 +12,8 @@ export interface Product {
   price?: number;
   weight?: number;
   weightUnit?: string;
+  wholesaleUnit?: string;
+  conversionFactor?: number;
 }
 
 export type TransactionType = 'IN' | 'OUT' | 'RETURN';

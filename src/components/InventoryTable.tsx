@@ -99,6 +99,8 @@ export default function InventoryTable({
   const [showCustomEditLoc, setShowCustomEditLoc] = useState(false);
   const [newWeight, setNewWeight] = useState<string>('');
   const [newWeightUnit, setNewWeightUnit] = useState<string>('g');
+  const [newWholesaleUnit, setNewWholesaleUnit] = useState('กระสอบ');
+  const [newConversionFactor, setNewConversionFactor] = useState<number>(1);
 
   // Sku uniqueness checks
   const [validationError, setValidationError] = useState('');
@@ -152,6 +154,8 @@ export default function InventoryTable({
     
     setNewWeight('');
     setNewWeightUnit('g');
+    setNewWholesaleUnit('กระสอบ');
+    setNewConversionFactor(1);
     setValidationError('');
     setIsAddOpen(true);
   };
@@ -183,6 +187,8 @@ export default function InventoryTable({
       location: newLoc.trim() || 'คลังทั่วไป',
       weight: newWeight ? Number(newWeight) : undefined,
       weightUnit: newWeight ? newWeightUnit : undefined,
+      wholesaleUnit: newWholesaleUnit.trim() || 'กระสอบ',
+      conversionFactor: Number(newConversionFactor) || 1,
     });
 
     setIsAddOpen(false);
@@ -232,14 +238,15 @@ export default function InventoryTable({
 
     const available = withdrawProduct.wholesaleStock || 0;
     if (withdrawQty > available) {
-      setWithdrawError(`ไม่สามารถเบิกได้เนื่องจากจำนวนในคลังสินค้าหลัก (คลังใหญ่) มีเพียง ${available} ${withdrawProduct.unit}`);
+      setWithdrawError(`ไม่สามารถเบิกได้เนื่องจากจำนวนในคลังสินค้าหลัก (คลังใหญ่) มีเพียง ${available} ${withdrawProduct.wholesaleUnit || withdrawProduct.unit || 'หน่วย'}`);
       return;
     }
 
+    const conversion = withdrawProduct.conversionFactor || 1;
     onUpdateProduct({
       ...withdrawProduct,
       wholesaleStock: available - withdrawQty,
-      quantity: (withdrawProduct.quantity || 0) + withdrawQty,
+      quantity: (withdrawProduct.quantity || 0) + (withdrawQty * conversion),
     });
 
     setIsWithdrawOpen(false);
@@ -542,8 +549,12 @@ export default function InventoryTable({
                       </div>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <div className="font-semibold text-slate-700 font-mono text-base">{p.wholesaleStock || 0}</div>
-                      <div className="text-[10px] text-slate-400 mt-1 font-medium">รอเบิกแบ่งจำหน่าย</div>
+                      <div className="font-semibold text-slate-700 font-mono text-base">
+                        {p.wholesaleStock || 0} <span className="text-xs font-sans font-medium text-slate-500">{p.wholesaleUnit || p.unit || 'ชิ้น'}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1 font-medium">
+                        {p.conversionFactor && p.conversionFactor > 1 ? `1 ${p.wholesaleUnit || 'หน่วยใหญ่'} = ${p.conversionFactor} ${p.unit}` : 'รอเบิกแบ่งจำหน่าย'}
+                      </div>
                     </td>
                     <td className="py-3 px-4 text-center text-slate-700 font-medium">
                       {p.unit || 'ชิ้น'}
@@ -840,6 +851,40 @@ export default function InventoryTable({
                 </div>
               </div>
 
+              {/* Unit Conversion Settings */}
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2.5">
+                <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  📦 ตั้งค่าการเบิกแบ่งบรรจุภัณฑ์ (Unit Conversion)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">หน่วยนับคลังหลัก (คลังใหญ่)</label>
+                    <input
+                      type="text"
+                      value={newWholesaleUnit}
+                      onChange={(e) => setNewWholesaleUnit(e.target.value)}
+                      placeholder="เช่น กระสอบ, ลัง, กล่องใหญ่"
+                      className="w-full px-2.5 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">อัตราแบ่งย่อย (ต่อ 1 หน่วยคลังใหญ่)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={newConversionFactor}
+                      onChange={(e) => setNewConversionFactor(Math.max(1, Number(e.target.value)))}
+                      className="w-full px-2.5 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 font-medium"
+                    />
+                  </div>
+                </div>
+                {newWholesaleUnit && newUnit && (
+                  <p className="text-[10px] text-blue-600 font-medium">
+                    💡 ตัวอย่าง: เบิกคลังใหญ่ 1 {newWholesaleUnit} จะแบ่งขายได้ {newConversionFactor} {newUnit || 'หน่วยพร้อมขาย'}
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-505 mb-1">เกณฑ์แจ้งเตือนสต๊อกต่ำ *</label>
@@ -1053,6 +1098,40 @@ export default function InventoryTable({
                 </div>
               </div>
 
+              {/* Unit Conversion Settings */}
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2.5">
+                <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  📦 ตั้งค่าการเบิกแบ่งบรรจุภัณฑ์ (Unit Conversion)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">หน่วยนับคลังหลัก (คลังใหญ่)</label>
+                    <input
+                      type="text"
+                      value={editingProduct.wholesaleUnit || ''}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, wholesaleUnit: e.target.value })}
+                      placeholder="เช่น กระสอบ, ลัง, กล่องใหญ่"
+                      className="w-full px-2.5 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">อัตราแบ่งย่อย (ต่อ 1 หน่วยคลังใหญ่)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={editingProduct.conversionFactor || 1}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, conversionFactor: Math.max(1, Number(e.target.value)) })}
+                      className="w-full px-2.5 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 font-medium"
+                    />
+                  </div>
+                </div>
+                {(editingProduct.wholesaleUnit || 'กระสอบ') && (editingProduct.unit || 'ชิ้น') && (
+                  <p className="text-[10px] text-blue-600 font-medium">
+                    💡 ตัวอย่าง: เบิกคลังใหญ่ 1 {editingProduct.wholesaleUnit || 'กระสอบ'} จะแบ่งขายได้ {editingProduct.conversionFactor || 1} {editingProduct.unit || 'หน่วยพร้อมขาย'}
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-550 mb-1">เกณฑ์แจ้งเตือนสต๊อกต่ำ *</label>
@@ -1220,7 +1299,10 @@ export default function InventoryTable({
                 <div className="grid grid-cols-2 gap-2 pt-1 border-t border-amber-100 mt-1">
                   <div>
                     <span className="text-slate-500 block font-medium">จำนวนในคลังหลัก (คลังใหญ่):</span>
-                    <span className="font-bold text-slate-800 text-sm">{withdrawProduct.wholesaleStock || 0} {withdrawProduct.unit}</span>
+                    <span className="font-bold text-slate-800 text-sm">{withdrawProduct.wholesaleStock || 0} {withdrawProduct.wholesaleUnit || withdrawProduct.unit || 'หน่วย'}</span>
+                    {withdrawProduct.conversionFactor && withdrawProduct.conversionFactor > 1 && (
+                      <span className="block text-[10px] text-slate-400 font-normal mt-0.5">(1 {withdrawProduct.wholesaleUnit || 'หน่วยใหญ่'} = {withdrawProduct.conversionFactor} {withdrawProduct.unit})</span>
+                    )}
                   </div>
                   <div>
                     <span className="text-slate-500 block font-medium">กำลังจำหน่าย (พร้อมขาย):</span>
@@ -1230,7 +1312,9 @@ export default function InventoryTable({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">จำนวนที่ต้องการเบิกแบ่งจำหน่าย *</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1">
+                  จำนวนที่ต้องการเบิก ({withdrawProduct.wholesaleUnit || withdrawProduct.unit || 'หน่วยคลังใหญ่'}) *
+                </label>
                 <div className="relative">
                   <input
                     type="number"
@@ -1238,15 +1322,26 @@ export default function InventoryTable({
                     max={withdrawProduct.wholesaleStock || 0}
                     value={withdrawQty}
                     onChange={(e) => setWithdrawQty(Number(e.target.value))}
-                    className="w-full pl-3 pr-16 py-2 bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 font-semibold text-base"
+                    className="w-full pl-3 pr-24 py-2 bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 font-semibold text-base"
                     required
                   />
                   <div className="absolute right-3 top-2.5 text-sm text-slate-400 font-medium select-none">
-                    {withdrawProduct.unit}
+                    {withdrawProduct.wholesaleUnit || withdrawProduct.unit || 'หน่วย'}
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1.5">
-                  จำนวนนี้จะถูกหักออกจาก คลังสินค้าหลัก (คลังใหญ่) และนำไปเพิ่มในช่อง กำลังจำหน่าย (พร้อมขาย) โดยอัตโนมัติ พร้อมบันทึกในระบบประวัติ (Ledger/Transactions)
+
+                {withdrawProduct.conversionFactor && withdrawProduct.conversionFactor > 1 && (
+                  <div className="mt-2.5 p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 text-xs text-emerald-800 flex flex-wrap items-center gap-1 font-medium animate-fade-in">
+                    <span>💡 เบิกแบ่งจำหน่ายแล้วจะได้รับสต๊อกพร้อมขายเพิ่ม:</span>
+                    <strong className="text-sm text-emerald-700 font-bold font-mono">
+                      {withdrawQty * (withdrawProduct.conversionFactor || 1)}
+                    </strong>
+                    <strong className="text-slate-700 font-bold">{withdrawProduct.unit || 'หน่วย'}</strong>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-slate-400 mt-2">
+                  จำนวนนี้จะถูกหักออกจาก คลังสินค้าหลัก (คลังใหญ่) และแบ่งย่อยเพื่อนำไปเพิ่มในช่อง กำลังจำหน่าย (พร้อมขาย) โดยอัตโนมัติตามอัตราส่วน {withdrawProduct.conversionFactor || 1} เท่า พร้อมบันทึกในระบบประวัติ (Ledger/Transactions)
                 </p>
               </div>
 

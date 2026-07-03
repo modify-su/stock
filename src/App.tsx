@@ -621,8 +621,9 @@ export default function App() {
       const batch = writeBatch(db);
       let txIdSuffix = 0;
 
-      // Check if it's a direct withdrawal (wDiff < 0 and qDiff === -wDiff, meaning we transferred from wholesaleStock to quantity)
-      if (wDiff < 0 && qDiff === -wDiff) {
+      // Check if it's a direct withdrawal (wDiff < 0 and qDiff === -wDiff * conversionFactor)
+      const factor = originalProduct.conversionFactor || 1;
+      if (wDiff < 0 && qDiff === -wDiff * factor) {
         const txId = `tx-${Date.now()}-${txIdSuffix++}`;
         const newTx: Transaction = {
           id: txId,
@@ -632,7 +633,7 @@ export default function App() {
           type: 'OUT',
           quantity: Math.abs(wDiff),
           date: new Date().toISOString(),
-          reason: `เบิกสินค้าจากคลังสินค้าหลัก (คลังใหญ่) มาแบ่งจำหน่าย/พร้อมขาย [คลังใหญ่: ${originalProduct.wholesaleStock || 0} ➡️ ${updatedProduct.wholesaleStock || 0}, สต๊อกพร้อมขาย: ${originalProduct.quantity || 0} ➡️ ${updatedProduct.quantity || 0}]`,
+          reason: `เบิกสินค้าจากคลังสินค้าหลัก (คลังใหญ่) มาแบ่งจำหน่าย/พร้อมขาย [เบิกคลังใหญ่: ${Math.abs(wDiff)} ${originalProduct.wholesaleUnit || originalProduct.unit || 'หน่วย'} ➡️ แบ่งย่อยได้: ${qDiff} ${originalProduct.unit || 'หน่วย'} (อัตรา 1:${factor})] [คลังใหญ่: ${originalProduct.wholesaleStock || 0} ➡️ ${updatedProduct.wholesaleStock || 0}, สต๊อกพร้อมขาย: ${originalProduct.quantity || 0} ➡️ ${updatedProduct.quantity || 0}]`,
           operator: currentUser?.name || 'ผู้ดูแลระบบ',
         };
         batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
