@@ -19,7 +19,9 @@ import {
   QrCode,
   MapPin,
   Printer,
-  Camera
+  Camera,
+  Wrench,
+  LogOut
 } from 'lucide-react';
 import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf } from './types';
 import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS } from './mockData';
@@ -105,7 +107,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   googleSheetsId: '',
   googleSheetsUrl: '',
   googleSheetsAutoSync: false,
-  googleSheetsLastSyncedAt: ''
+  googleSheetsLastSyncedAt: '',
+  isMaintenanceMode: false,
+  maintenanceMessage: 'ขออภัย ระบบอยู่ระหว่างการปิดปรับปรุงเพื่ออัปเดตฟีเจอร์ใหม่ชั่วคราว กรุณากลับมาใหม่อีกครั้งในภายหลัง'
 };
 
 const DEFAULT_ROLE_PERMISSIONS: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions> = {
@@ -980,6 +984,64 @@ export default function App() {
         onRegister={handleRegisterUser}
         onResetPassword={handleResetPassword}
       />
+    );
+  }
+
+  // Maintenance Mode Gate
+  const isUserAdmin = currentUser?.role === 'ADMIN';
+  if (settings.isMaintenanceMode && !isUserAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 text-slate-800 font-sans">
+        <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-lg w-full mx-auto border border-slate-100 flex flex-col items-center text-center space-y-6 relative overflow-hidden animate-fade-in">
+          {/* Top warning ribbon accent */}
+          <div className="absolute top-0 left-0 right-0 h-2 bg-amber-500" />
+          
+          <div className="p-4 bg-amber-50 rounded-full text-amber-600 animate-pulse border border-amber-100">
+            <Wrench className="w-12 h-12" />
+          </div>
+          
+          <div className="space-y-2">
+            <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-[10px] uppercase font-bold tracking-wider font-mono border border-amber-200">
+              System Maintenance Mode
+            </span>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">
+              {settings.appName || 'ระบบจัดการสต๊อกสินค้า'}
+            </h2>
+            {settings.appSubtitle && (
+              <p className="text-xs text-slate-400 font-medium tracking-wide uppercase font-mono">
+                {settings.appSubtitle}
+              </p>
+            )}
+          </div>
+          
+          <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 text-slate-700 text-xs sm:text-sm leading-relaxed max-w-sm font-medium">
+            {settings.maintenanceMessage || 'ขออภัย ระบบอยู่ระหว่างการปิดปรับปรุงเพื่ออัปเดตฟีเจอร์ใหม่ชั่วคราว กรุณากลับมาใหม่อีกครั้งในภายหลัง'}
+          </div>
+          
+          <div className="w-full pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3 justify-center items-center">
+            <button
+              onClick={() => {
+                window.location.reload();
+              }}
+              className="w-full sm:w-auto px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <RefreshCcw className="w-4 h-4" />
+              <span>โหลดหน้าเว็บใหม่</span>
+            </button>
+            <button
+              onClick={() => setIsAuthenticated(false)}
+              className="w-full sm:w-auto px-5 py-2.5 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/80 border border-slate-200 hover:border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>ออกจากระบบ (Log Out)</span>
+            </button>
+          </div>
+          
+          <div className="text-[10px] text-slate-400 font-mono">
+            สิทธิ์ปัจจุบันของคุณ: {currentUser?.role === 'KEEPER' ? '📦 พนักงานคลังสินค้า' : '🔍 ผู้ตรวจสอบบัญชี'}
+          </div>
+        </div>
+      </div>
     );
   }
 

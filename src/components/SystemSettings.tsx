@@ -28,7 +28,9 @@ import {
   Bot,
   Cpu,
   ExternalLink,
-  Check
+  Check,
+  Wrench,
+  Power
 } from 'lucide-react';
 import { UserProfile, AppSettings, RolePermissions, Product, Transaction } from '../types';
 import ConfirmModal from './ConfirmModal';
@@ -77,6 +79,13 @@ export default function SystemSettings({
   const [editingTitle, setEditingTitle] = useState(settings.appName);
   const [editingSubtitle, setEditingSubtitle] = useState(settings.appSubtitle);
   const [selectedLogo, setSelectedLogo] = useState(settings.appLogo);
+
+  // Maintenance mode local states
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(settings.isMaintenanceMode || false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState(
+    settings.maintenanceMessage || 'ขออภัย ระบบอยู่ระหว่างการปิดปรับปรุงเพื่ออัปเดตฟีเจอร์ใหม่ชั่วคราว กรุณากลับมาใหม่อีกครั้งในภายหลัง'
+  );
+  const [maintenanceSuccessMessage, setMaintenanceSuccessMessage] = useState('');
 
   // New user state
   const [newUserName, setNewUserName] = useState('');
@@ -163,10 +172,23 @@ export default function SystemSettings({
   const handleSaveBranding = (e: React.FormEvent) => {
     e.preventDefault();
     onUpdateSettings({
+      ...settings,
       appName: editingTitle.trim() || 'ระบบจัดการสต๊อกสินค้า',
       appSubtitle: editingSubtitle.trim() || 'Professional Edition',
       appLogo: selectedLogo
     });
+  };
+
+  // Save maintenance handler
+  const handleSaveMaintenance = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateSettings({
+      ...settings,
+      isMaintenanceMode,
+      maintenanceMessage: maintenanceMessage.trim()
+    });
+    setMaintenanceSuccessMessage('บันทึกการตั้งค่าระบบและเปิด/ปิดโหมดปรับปรุงสำเร็จแล้วครับ! 🛠️');
+    setTimeout(() => setMaintenanceSuccessMessage(''), 4500);
   };
 
   // Add user handler
@@ -262,103 +284,184 @@ export default function SystemSettings({
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Logo / Branding Card */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 lg:col-span-1 flex flex-col justify-between">
-          <div>
-            <div className="border-b border-slate-150 pb-4 mb-5">
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-blue-600" />
-                ตั้งค่าโลโก้ & ชื่อเว็บแอป
+        {/* Left Column Stack: Logo/Branding + Maintenance Mode */}
+        <div className="lg:col-span-1 space-y-6 flex flex-col">
+          {/* Logo / Branding Card */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col justify-between flex-1">
+            <div>
+              <div className="border-b border-slate-150 pb-4 mb-5">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-blue-600" />
+                  ตั้งค่าโลโก้ & ชื่อเว็บแอป
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  ปรับเปลี่ยนความเป็นเอกลักษณ์ของสิทธิ์หน้ากากระบบ
+                </p>
+              </div>
+
+              <form onSubmit={handleSaveBranding} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    ชื่อระบบแสดงผลหลัก *
+                  </label>
+                  <input
+                    type="text"
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    disabled={!hasSettingsPermission}
+                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:opacity-50 disabled:bg-slate-50"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    หัวข้อย่อย / คำโปรยใต้ระบบ
+                  </label>
+                  <input
+                    type="text"
+                    value={editingSubtitle}
+                    onChange={(e) => setEditingSubtitle(e.target.value)}
+                    disabled={!hasSettingsPermission}
+                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:opacity-50 disabled:bg-slate-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-2">
+                    สัญลักษณ์โลโก้ระบบหลัก (System Icon Logo)
+                  </label>
+                  <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                    {SELECTABLE_LOGOS.map((item) => {
+                      const IconComp = item.icon;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => hasSettingsPermission && setSelectedLogo(item.id)}
+                          disabled={!hasSettingsPermission}
+                          className={`flex items-center gap-2.5 p-2 px-3 text-xs rounded-lg border transition-all cursor-pointer ${
+                            selectedLogo === item.id
+                              ? 'bg-blue-55 border-blue-500 font-semibold text-blue-700'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50'
+                          }`}
+                        >
+                          <IconComp className={`w-4 h-4 ${selectedLogo === item.id ? 'text-blue-600' : 'text-slate-400'}`} />
+                          <span>{item.label}</span>
+                          {selectedLogo === item.id && (
+                            <span className="ml-auto text-[10px] text-blue-600 font-bold">✓</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {hasSettingsPermission && (
+                  <button
+                    type="submit"
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors mt-2 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    💾 บันทึกการเปลี่ยนแปลงโลโก้-ชื่อแอป
+                  </button>
+                )}
+              </form>
+            </div>
+
+            <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-3">
+              <div className="p-2 bg-blue-600 rounded-lg text-white shrink-0">
+                {(() => {
+                  const iconObj = SELECTABLE_LOGOS.find(l => l.id === selectedLogo) || SELECTABLE_LOGOS[0];
+                  const Icon = iconObj.icon;
+                  return <Icon className="w-5 h-5" />;
+                })()}
+              </div>
+              <div className="overflow-hidden">
+                <span className="block text-[10px] uppercase font-bold tracking-wider text-slate-400">พรีวิวการแสดงรูปภาพ</span>
+                <p className="font-bold text-sm text-slate-800 truncate">{editingTitle || 'ระบุชื่อระบบ'}</p>
+                <p className="text-[10px] text-slate-500 truncate">{editingSubtitle || 'บันทึกระบุคำแสดงผล'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Maintenance Mode Card */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <div className="border-b border-slate-150 pb-4">
+              <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <Wrench className="w-4 h-4 text-amber-500 animate-pulse" />
+                ตั้งค่าเปิด/ปิดปรับปรุงระบบ
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                ปรับเปลี่ยนความเป็นเอกลักษณ์ของสิทธิ์หน้ากากระบบ
+                เปิดระบบเพื่อปิดบอร์ดสำหรับพนักงานทั่วไป และผู้ตรวจสอบเมื่อปรับปรุงโปรแกรม
               </p>
             </div>
 
-            <form onSubmit={handleSaveBranding} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
-                  ชื่อระบบแสดงผลหลัก *
+            {maintenanceSuccessMessage && (
+              <p className="text-[11px] text-emerald-600 font-semibold bg-emerald-50 border border-emerald-100 rounded p-2 flex items-center gap-1.5 animate-fade-in">
+                <Check className="w-4 h-4 text-emerald-500" />
+                <span>{maintenanceSuccessMessage}</span>
+              </p>
+            )}
+
+            <form onSubmit={handleSaveMaintenance} className="space-y-4">
+              {/* Status Switch */}
+              <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                <div>
+                  <span className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Power className={`w-3.5 h-3.5 ${isMaintenanceMode ? 'text-amber-500' : 'text-slate-400'}`} />
+                    <span>ปิดปรับปรุง (Maintenance Mode)</span>
+                  </span>
+                  <span className="block text-[10px] font-semibold text-slate-500 mt-0.5">
+                    {isMaintenanceMode ? '🛑 ปิดปรับปรุงอยู่ (ห้ามพนักงาน)' : '🟢 ทำงานปกติ (พนักงานใช้ได้)'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={isMaintenanceMode}
+                    onChange={(e) => hasSettingsPermission && setIsMaintenanceMode(e.target.checked)}
+                    disabled={!hasSettingsPermission}
+                    className="sr-only peer"
+                  />
+                  <div className="w-10 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
                 </label>
-                <input
-                  type="text"
-                  value={editingTitle}
-                  onChange={(e) => setEditingTitle(e.target.value)}
+              </div>
+
+              {/* Maintenance Message */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-600">
+                  ข้อความแสดงปรับปรุงระบบสำหรับพนักงาน *
+                </label>
+                <textarea
+                  placeholder="เช่น ขออภัย ระบบอยู่ระหว่างการปิดปรับปรุง..."
+                  value={maintenanceMessage}
+                  onChange={(e) => setMaintenanceMessage(e.target.value)}
                   disabled={!hasSettingsPermission}
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:opacity-50 disabled:bg-slate-50"
+                  rows={3}
+                  className="w-full px-3 py-2 text-xs font-sans bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-amber-100 focus:border-amber-450 disabled:opacity-55 leading-relaxed"
                   required
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
-                  หัวข้อย่อย / คำโปรยใต้ระบบ
-                </label>
-                <input
-                  type="text"
-                  value={editingSubtitle}
-                  onChange={(e) => setEditingSubtitle(e.target.value)}
-                  disabled={!hasSettingsPermission}
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:opacity-50 disabled:bg-slate-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2">
-                  สัญลักษณ์โลโก้ระบบหลัก (System Icon Logo)
-                </label>
-                <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1">
-                  {SELECTABLE_LOGOS.map((item) => {
-                    const IconComp = item.icon;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => hasSettingsPermission && setSelectedLogo(item.id)}
-                        disabled={!hasSettingsPermission}
-                        className={`flex items-center gap-2.5 p-2 px-3 text-xs rounded-lg border transition-all cursor-pointer ${
-                          selectedLogo === item.id
-                            ? 'bg-blue-55 border-blue-500 font-semibold text-blue-700'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50'
-                        }`}
-                      >
-                        <IconComp className={`w-4 h-4 ${selectedLogo === item.id ? 'text-blue-600' : 'text-slate-400'}`} />
-                        <span>{item.label}</span>
-                        {selectedLogo === item.id && (
-                          <span className="ml-auto text-[10px] text-blue-600 font-bold">✓</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+              {/* Alert Info box */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[10px] text-amber-800 space-y-1 leading-normal font-medium">
+                <p className="font-bold flex items-center gap-1">💡 ข้อมูลสิทธิ์ความปลอดภัย:</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-amber-700">
+                  <li>เมื่อสับสวิตช์เป็น <b>เปิดปรับปรุง</b> พนักงานทั่วไป (Keeper, Auditor) จะติดหน้าจอแจ้งเตือนและเข้าใช้งานไม่ได้ทันที</li>
+                  <li>ผู้ดูแลระบบ (Admin) สามารถเข้าล็อกอินและเข้าใช้งานตั้งค่าเปิดระบบคืนได้ปกติ</li>
+                </ul>
               </div>
 
               {hasSettingsPermission && (
                 <button
                   type="submit"
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors mt-2 cursor-pointer flex items-center justify-center gap-1.5"
+                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
                 >
-                  💾 บันทึกการเปลี่ยนแปลงโลโก้-ชื่อแอป
+                  ⚙️ ทำการบันทึกสถานะปิดปรับปรุง
                 </button>
               )}
             </form>
           </div>
-
-          <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-3">
-            <div className="p-2 bg-blue-600 rounded-lg text-white shrink-0">
-              {(() => {
-                const iconObj = SELECTABLE_LOGOS.find(l => l.id === selectedLogo) || SELECTABLE_LOGOS[0];
-                const Icon = iconObj.icon;
-                return <Icon className="w-5 h-5" />;
-              })()}
-            </div>
-            <div className="overflow-hidden">
-              <span className="block text-[10px] uppercase font-bold tracking-wider text-slate-400">พรีวิวการแสดงรูปภาพ</span>
-              <p className="font-bold text-sm text-slate-800 truncate">{editingTitle || 'ระบุชื่อระบบ'}</p>
-              <p className="text-[10px] text-slate-500 truncate">{editingSubtitle || 'บันทึกระบุคำแสดงผล'}</p>
-            </div>
-          </div>
-
         </div>
 
         {/* User Account Manager */}

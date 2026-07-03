@@ -67,6 +67,8 @@ export interface AppSettings {
   lineChannelSecret?: string;
   lineBotEnabled?: boolean;
   lineBotSystemPrompt?: string;
+  isMaintenanceMode?: boolean;
+  maintenanceMessage?: string;
 }
 
 export interface RolePermissions {
