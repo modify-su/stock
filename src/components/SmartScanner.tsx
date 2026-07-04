@@ -1057,10 +1057,95 @@ export default function SmartScanner({
     }
   };
 
+  const handleClearCache = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage("กำลังดำเนินการเคลียร์ไฟล์แคช ล้างหน่วยความจำ และกู้คืนระบบคลังสินค้า...");
+    playBeep('scan');
+
+    try {
+      // 1. Clear state variables
+      setScanResults([]);
+      setUploadedImages([]);
+      setPdfText('');
+      setUploadProgress(null);
+      setAllowDuplicateForce(false);
+      
+      // 2. Clear HTML File Input Reference
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+      // 3. Clear browser's LocalStorage and SessionStorage
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        console.log("LocalStorage & SessionStorage cleared successfully.");
+      } catch (e) {
+        console.warn("Could not clear storage:", e);
+      }
+
+      // 4. Clear Browser Cache API
+      if ('caches' in window) {
+        try {
+          const cacheNames = await caches.keys();
+          await Promise.all(
+            cacheNames.map(cacheName => caches.delete(cacheName))
+          );
+          console.log("Browser cache storage cleared successfully.");
+        } catch (e) {
+          console.warn("Could not clear Cache API storage:", e);
+        }
+      }
+
+      // 5. Restream/restart camera if active
+      if (isCameraActive) {
+        stopCamera();
+        await checkCameras();
+        await startCamera(facingMode, selectedCameraId);
+      } else {
+        await checkCameras();
+      }
+
+      // 6. Show success message after a brief simulated recovery delay
+      setTimeout(() => {
+        setIsLoading(false);
+        setSuccessMessage("⚡ เคลียร์ไฟล์แคชและกู้คืนระบบสำเร็จ! ตัวจำลองเบราว์เซอร์และแคช API ถูกเคลียร์เป็นค่าเริ่มต้นเรียบร้อยแล้ว ปัญหาการค้างหรือไม่ตอบสนองจะได้รับการซ่อมแซมทันที");
+        playBeep('success');
+      }, 800);
+
+    } catch (err: any) {
+      console.error(err);
+      setIsLoading(false);
+      setErrorMessage(`❌ เกิดข้อผิดพลาดขณะเคลียร์แคช: ${err.message || err}`);
+      playBeep('error');
+    }
+  };
+
   return (
     <div id="smart-scanner-root" className="space-y-6">
       {/* Hidden canvas used for capturing video frames */}
       <canvas ref={canvasRef} className="hidden" style={{ display: 'none' }} />
+
+      {/* Top Banner / System Recovery Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-100 p-3 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-5 h-5 text-indigo-600 animate-pulse shrink-0" />
+          <div>
+            <p className="text-xs font-black text-slate-800">ระบบถอดรหัสใบปะหน้าและตัดสต๊อกอัตโนมัติ (AI Smart Scanner)</p>
+            <p className="text-[10px] text-slate-500">สแกนหลายไฟล์รูปภาพ/PDF หรือใช้กล้องเว็บแคมเพื่อตัดสต๊อกเรียลไทม์</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleClearCache}
+          className="bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 border border-amber-200 hover:border-amber-300 font-extrabold text-[11px] px-3.5 py-1.5 rounded-lg flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer transition-all hover:scale-[1.01]"
+          title="เคลียร์ไฟล์ภาพ แคชการวิเคราะห์ สตอเรจเบราว์เซอร์ และตั้งค่ากล้องใหม่เพื่อแก้ปัญหาระบบค้างหรือไม่ตอบสนอง"
+        >
+          <RotateCcw className="w-3.5 h-3.5 animate-spin [animation-duration:8s]" />
+          <span>⚡ เคลียร์แคช & กู้คืนระบบ (Clear Cache)</span>
+        </button>
+      </div>
 
       {/* Tab Navigation for modes */}
       <div className="flex border-b border-slate-200">
