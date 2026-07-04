@@ -262,6 +262,43 @@ export default function SmartScanner({
     return duplicate || null;
   };
 
+  // Maps raw API label responses to properly structured ScanResults with database matching (names, SKU, current stock)
+  const mapRawLabelsToScanResults = (rawLabels: any[]): ScanResult[] => {
+    return rawLabels.map(label => {
+      const extractedItems = (label.extractedItems || []).map((item: any) => {
+        const cleanSku = (item.sku || '').trim();
+        const matched = products.find(p => p.sku.toLowerCase() === cleanSku.toLowerCase());
+        const matchedProduct = matched ? {
+          id: matched.id,
+          sku: matched.sku,
+          name: matched.name,
+          quantity: matched.quantity,
+          unit: matched.unit || 'ชิ้น',
+          location: matched.location || 'ไม่ได้ระบุ',
+          weight: matched.weight,
+          weightUnit: matched.weightUnit,
+        } : null;
+
+        return {
+          sku: cleanSku,
+          productName: item.productName || item.name || 'สินค้าวิเคราะห์ทั่วไป',
+          quantity: parseInt(item.quantity) || 1,
+          matched: !!matched,
+          matchedProduct
+        };
+      });
+
+      return {
+        orderId: label.orderId || '',
+        trackingNo: label.trackingNo || '',
+        labelType: label.labelType || 'UNKNOWN',
+        detectedAction: label.detectedAction || 'OUT',
+        extractedItems,
+        processed: !!label.processed
+      };
+    });
+  };
+
   // Dynamic Batch Analysis of Multiple Files (Images or PDFs)
   const handleMultipleFiles = async (files: File[]) => {
     if (files.length === 0) return;
@@ -271,7 +308,7 @@ export default function SmartScanner({
     setSuccessMessage(null);
     setUploadProgress({ current: 0, total: files.length });
 
-    const resultsToAppend: ScanResult[] = [];
+    const rawResultsToMap: any[] = [];
     const previewsToAppend: Array<{ name: string; type: string; data: string }> = [];
     let hasError = false;
     let errText = "";
@@ -316,9 +353,9 @@ export default function SmartScanner({
 
           const data = await res.json();
           if (data.labels && Array.isArray(data.labels) && data.labels.length > 0) {
-            resultsToAppend.push(...data.labels);
+            rawResultsToMap.push(...data.labels);
           } else {
-            resultsToAppend.push({
+            rawResultsToMap.push({
               orderId: data.orderId || '',
               trackingNo: data.trackingNo || '',
               labelType: data.labelType || 'UNKNOWN',
@@ -334,6 +371,8 @@ export default function SmartScanner({
       }
 
       setUploadedImages(prev => [...prev, ...previewsToAppend]);
+
+      const resultsToAppend = mapRawLabelsToScanResults(rawResultsToMap);
 
       if (resultsToAppend.length > 0) {
         setScanResults(prev => {
@@ -408,12 +447,12 @@ export default function SmartScanner({
       }
 
       const data = await res.json();
-      const newLabels: ScanResult[] = [];
+      const rawLabels: any[] = [];
 
       if (data.labels && Array.isArray(data.labels) && data.labels.length > 0) {
-        newLabels.push(...data.labels);
+        rawLabels.push(...data.labels);
       } else {
-        newLabels.push({
+        rawLabels.push({
           orderId: data.orderId || '',
           trackingNo: data.trackingNo || '',
           labelType: data.labelType || 'UNKNOWN',
@@ -421,6 +460,8 @@ export default function SmartScanner({
           extractedItems: data.extractedItems || []
         });
       }
+
+      const newLabels = mapRawLabelsToScanResults(rawLabels);
 
       if (keepCameraActive) {
         // AUTO SCAN FLOW - Process 1st label directly to make it instantaneous
@@ -713,13 +754,16 @@ export default function SmartScanner({
       if (results.length > 0) {
         const firstPageResult = results[0];
         
-        const newResult: ScanResult = {
+        const rawResult = {
           orderId: firstPageResult.orderId || '',
           trackingNo: firstPageResult.trackingNo || '',
           labelType: firstPageResult.labelType || 'UNKNOWN',
           detectedAction: firstPageResult.detectedAction || 'OUT',
           extractedItems: firstPageResult.extractedItems || []
         };
+
+        const mappedResults = mapRawLabelsToScanResults([rawResult]);
+        const newResult = mappedResults[0];
 
         setScanResults(prev => {
           const next = [...prev, newResult];
@@ -1667,7 +1711,7 @@ export default function SmartScanner({
                           </div>
 
                           {/* Item lines */}
-                          <div className="space-y-1.5">
+                          <div className="space-y-2">
                             <div className="flex justify-between items-center">
                               <span className="text-[11px] font-bold text-slate-600">รายการสินค้าในพัสดุชิ้นนี้:</span>
                               {!isProcessed && (
@@ -1682,126 +1726,171 @@ export default function SmartScanner({
                               )}
                             </div>
 
-                            <div className="border border-slate-100 rounded-lg overflow-hidden divide-y divide-slate-100">
-                              {label.extractedItems.length === 0 ? (
-                                <p className="p-3 text-center text-slate-400 italic text-[11px]">ไม่มีสินค้าวิเคราะห์ได้ในใบปะหน้านี้</p>
-                              ) : (
-                                label.extractedItems.map((item, idx) => (
-                                  <div 
-                                    key={idx} 
-                                    className={`p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-colors ${
-                                      isProcessed 
-                                        ? 'bg-slate-50/50'
-                                        : item.matched 
-                                          ? 'bg-white' 
-                                          : 'bg-rose-50/40 border-l-2 border-rose-500'
-                                    }`}
-                                  >
-                                    {/* Left Side: SKU Matching */}
-                                    <div className="flex-1 space-y-1">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <input
-                                          type="text"
-                                          disabled={isProcessed}
-                                          value={item.sku}
-                                          onChange={(e) => handleItemSkuChange(labelIdx, idx, e.target.value)}
-                                          className="px-2 py-0.5 border border-slate-200 rounded font-mono font-bold text-[11px] uppercase w-32 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-60 bg-white text-slate-800"
-                                          placeholder="รหัส SKU สินค้า"
-                                        />
-                                        
-                                        {item.matched ? (
-                                          <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5 shrink-0 border border-emerald-200">
-                                            <Check className="w-2.5 h-2.5" />
-                                            <span>ตรงในคลัง - แจ้งตัดสต๊อกได้ ✅</span>
-                                          </span>
-                                        ) : (
-                                          <span className="bg-rose-100 text-rose-800 text-[9px] px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5 shrink-0 animate-pulse border border-rose-200">
-                                            <X className="w-2.5 h-2.5" />
-                                            <span>ไม่พบ SKU - แจ้งปรับแก้ไข ⚠️</span>
-                                          </span>
+                            {/* Beautiful Table Layout for Matches */}
+                            <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                              {/* Header for Desktop/Tablets */}
+                              <div className="hidden sm:grid grid-cols-12 gap-2 bg-slate-100 p-2.5 text-[10px] font-bold text-slate-600 uppercase border-b border-slate-200">
+                                <div className="col-span-3">รหัส SKU</div>
+                                <div className="col-span-4">ชื่อสินค้าในระบบ / บนใบปะหน้า</div>
+                                <div className="col-span-3 text-center">จำนวนที่จะตัด (Qty)</div>
+                                <div className="col-span-2 text-right">คงเหลือจริง (Qty Total)</div>
+                              </div>
+
+                              <div className="divide-y divide-slate-100">
+                                {label.extractedItems.length === 0 ? (
+                                  <p className="p-4 text-center text-slate-400 italic text-[11px]">ไม่มีสินค้าวิเคราะห์ได้ในใบปะหน้านี้</p>
+                                ) : (
+                                  label.extractedItems.map((item, idx) => (
+                                    <div 
+                                      key={idx} 
+                                      className={`p-3 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center text-xs transition-all ${
+                                        isProcessed 
+                                          ? 'bg-slate-50/50 opacity-80'
+                                          : item.matched 
+                                            ? 'bg-white hover:bg-slate-50/30' 
+                                            : 'bg-rose-50/30 border-l-4 border-rose-500'
+                                      }`}
+                                    >
+                                      {/* Column 1: SKU with Match indicator */}
+                                      <div className="col-span-1 sm:col-span-3 space-y-1">
+                                        <div className="flex items-center gap-1.5">
+                                          <input
+                                            type="text"
+                                            disabled={isProcessed}
+                                            value={item.sku}
+                                            onChange={(e) => handleItemSkuChange(labelIdx, idx, e.target.value)}
+                                            className="px-2 py-1 border border-slate-200 rounded font-mono font-bold text-[11px] uppercase w-full focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-60 bg-white text-slate-800 shadow-2xs"
+                                            placeholder="รหัส SKU สินค้า"
+                                          />
+                                        </div>
+
+                                        {/* Matches Badges */}
+                                        <div className="flex flex-wrap gap-1">
+                                          {item.matched ? (
+                                            <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1.5 py-0.5 rounded-sm font-semibold flex items-center gap-0.5 border border-emerald-200 shrink-0">
+                                              <Check className="w-2 h-2" />
+                                              <span>ตรงคลังแล้ว ✅</span>
+                                            </span>
+                                          ) : (
+                                            <span className="bg-rose-150 text-rose-850 text-[8px] px-1.5 py-0.5 rounded-sm font-semibold flex items-center gap-0.5 border border-rose-250 shrink-0 animate-pulse">
+                                              <X className="w-2 h-2" />
+                                              <span>ไม่พบ SKU ⚠️</span>
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* Suggestions for unmatched SKUs */}
+                                        {!item.matched && !isProcessed && (
+                                          (() => {
+                                            const searchStr = item.sku.trim().toLowerCase();
+                                            const suggestions = products
+                                              .filter(p => 
+                                                p.sku.toLowerCase().includes(searchStr) || 
+                                                p.name.toLowerCase().includes(searchStr)
+                                              )
+                                              .slice(0, 3);
+
+                                            if (suggestions.length > 0) {
+                                              return (
+                                                <div className="mt-1 flex flex-col gap-1 bg-indigo-50/40 p-1.5 rounded border border-indigo-100 text-[10px]">
+                                                  <span className="text-[9px] text-slate-500 font-bold">🔍 แนะนำรหัส SKU ในคลัง:</span>
+                                                  {suggestions.map((p) => (
+                                                    <button
+                                                      key={p.id}
+                                                      type="button"
+                                                      onClick={() => handleItemSkuChange(labelIdx, idx, p.sku)}
+                                                      className="text-[9px] bg-white hover:bg-indigo-100 text-indigo-700 font-bold px-2 py-1 rounded border border-indigo-200 transition-all cursor-pointer text-left truncate block w-full"
+                                                      title={p.name}
+                                                    >
+                                                      {p.sku} ({p.name.slice(0, 15)}...)
+                                                    </button>
+                                                  ))}
+                                                </div>
+                                              );
+                                            }
+                                            return null;
+                                          })()
                                         )}
                                       </div>
 
-                                      {/* Suggestions for unmatched SKUs */}
-                                      {!item.matched && !isProcessed && (
-                                        (() => {
-                                          const searchStr = item.sku.trim().toLowerCase();
-                                          const suggestions = products
-                                            .filter(p => 
-                                              p.sku.toLowerCase().includes(searchStr) || 
-                                              p.name.toLowerCase().includes(searchStr)
-                                            )
-                                            .slice(0, 3);
-
-                                          if (suggestions.length > 0) {
-                                            return (
-                                              <div className="mt-1 flex flex-wrap gap-1 items-center bg-slate-50/70 p-1.5 rounded border border-slate-150">
-                                                <span className="text-[9px] text-slate-500 font-bold">🔍 แนะนำรหัส SKU ในคลัง:</span>
-                                                {suggestions.map((p) => (
-                                                  <button
-                                                    key={p.id}
-                                                    type="button"
-                                                    onClick={() => handleItemSkuChange(labelIdx, idx, p.sku)}
-                                                    className="text-[9px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded border border-indigo-100 transition-all cursor-pointer"
-                                                    title={p.name}
-                                                  >
-                                                    {p.sku} ({p.name.slice(0, 12)}...)
-                                                  </button>
-                                                ))}
-                                              </div>
-                                            );
-                                          }
-                                          return null;
-                                        })()
-                                      )}
-
-                                      {item.matched && item.matchedProduct ? (
-                                        <div className="space-y-0.5">
-                                          <p className="font-bold text-slate-800 text-[10px] line-clamp-1">{item.matchedProduct.name}</p>
-                                          <p className="text-[9px] text-slate-400">
-                                            คงเหลือในคลัง: <strong className="text-slate-600">{item.matchedProduct.quantity} {item.matchedProduct.unit}</strong> | พิกัดเก็บ: <strong className="text-slate-600">{item.matchedProduct.location}</strong>
-                                          </p>
-                                        </div>
-                                      ) : (
-                                        <p className="text-[9px] text-rose-600 font-semibold line-clamp-1">ชื่อตามใบปะ: {item.productName || 'ไม่ระบุรหัส SKU สินค้า'}</p>
-                                      )}
-                                    </div>
-
-                                    {/* Right Side: Quantity Adjustments */}
-                                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                                      <div className="flex items-center border border-slate-200 rounded bg-slate-50">
-                                        <button
-                                          type="button"
-                                          disabled={isProcessed}
-                                          onClick={() => updateItemQuantity(labelIdx, idx, -1)}
-                                          className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer disabled:opacity-30"
-                                        >
-                                          <Minus className="w-2.5 h-2.5" />
-                                        </button>
-                                        <span className="px-2 text-[11px] font-bold text-slate-800 min-w-6 text-center">{item.quantity}</span>
-                                        <button
-                                          type="button"
-                                          disabled={isProcessed}
-                                          onClick={() => updateItemQuantity(labelIdx, idx, 1)}
-                                          className="p-1 px-2 text-slate-500 hover:bg-slate-200 cursor-pointer disabled:opacity-30"
-                                        >
-                                          <Plus className="w-2.5 h-2.5" />
-                                        </button>
+                                      {/* Column 2: Product Name & Metadata */}
+                                      <div className="col-span-1 sm:col-span-4 space-y-1">
+                                        {item.matched && item.matchedProduct ? (
+                                          <div>
+                                            <p className="font-bold text-slate-800 text-[11px] leading-tight line-clamp-2">{item.matchedProduct.name}</p>
+                                            <p className="text-[9px] text-slate-400 mt-0.5 flex flex-wrap gap-1">
+                                              <span className="bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-mono font-bold">พิกัด: {item.matchedProduct.location}</span>
+                                              {item.matchedProduct.weight && (
+                                                <span className="bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-mono font-bold">น.น. {item.matchedProduct.weight} {item.matchedProduct.weightUnit || 'kg'}</span>
+                                              )}
+                                            </p>
+                                          </div>
+                                        ) : (
+                                          <div>
+                                            <p className="text-[10px] text-rose-600 font-bold leading-tight">ชื่อตามใบปะ: {item.productName || 'ไม่ระบุรหัส SKU สินค้า'}</p>
+                                            <p className="text-[9px] text-slate-400 italic">ไม่สามารถจับคู่สินค้าในระบบคลังปัจจุบันได้</p>
+                                          </div>
+                                        )}
                                       </div>
 
-                                      {!isProcessed && (
-                                        <button
-                                          type="button"
-                                          onClick={() => removeItem(labelIdx, idx)}
-                                          className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-rose-50 cursor-pointer"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      )}
+                                      {/* Column 3: Quantity with controls */}
+                                      <div className="col-span-1 sm:col-span-3 flex justify-center sm:justify-center">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="sm:hidden text-[10px] font-semibold text-slate-400 mr-1.5">จำนวนที่จะตัด:</span>
+                                          <div className="flex items-center border border-slate-200 rounded bg-slate-50 shadow-2xs overflow-hidden">
+                                            <button
+                                              type="button"
+                                              disabled={isProcessed}
+                                              onClick={() => updateItemQuantity(labelIdx, idx, -1)}
+                                              className="p-1 px-2.5 text-slate-500 hover:bg-slate-200 cursor-pointer disabled:opacity-30 font-extrabold text-xs transition-colors"
+                                            >
+                                              -
+                                            </button>
+                                            <span className="px-3 text-xs font-black text-slate-800 min-w-8 text-center bg-white border-x border-slate-100">{item.quantity}</span>
+                                            <button
+                                              type="button"
+                                              disabled={isProcessed}
+                                              onClick={() => updateItemQuantity(labelIdx, idx, 1)}
+                                              className="p-1 px-2.5 text-slate-500 hover:bg-slate-200 cursor-pointer disabled:opacity-30 font-extrabold text-xs transition-colors"
+                                            >
+                                              +
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Column 4: Stock Total / Actions */}
+                                      <div className="col-span-1 sm:col-span-2 flex items-center justify-between sm:justify-end gap-2.5">
+                                        <span className="sm:hidden text-[10px] font-semibold text-slate-400">สต๊อกระบบ (Qty Total):</span>
+                                        {item.matched && item.matchedProduct ? (
+                                          <div className="text-right shrink-0">
+                                            <span className={`text-xs font-black px-2 py-1 rounded-md border ${
+                                              item.matchedProduct.quantity >= item.quantity 
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                                : 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse'
+                                            }`}>
+                                              {item.matchedProduct.quantity} {item.matchedProduct.unit}
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <span className="text-[11px] text-slate-400 font-bold">-</span>
+                                        )}
+
+                                        {!isProcessed && (
+                                          <button
+                                            type="button"
+                                            onClick={() => removeItem(labelIdx, idx)}
+                                            className="text-slate-400 hover:text-rose-600 p-1.5 rounded hover:bg-rose-50 transition-colors cursor-pointer ml-1.5 shrink-0"
+                                            title="ลบแถวสินค้านี้"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                ))
-                              )}
+                                  ))
+                                )}
+                              </div>
                             </div>
                           </div>
 

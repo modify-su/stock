@@ -328,9 +328,11 @@ ${productsContext}
 
       const systemInstruction = `You are an expert logistics parser. Analyze the provided document (shipping label, parcel invoice, or PDF file).
 Identify and extract fields for ALL shipping labels or parcel invoices present in the document.
-If the document is a multi-page PDF file, you MUST analyze and parse EVERY page (e.g., Page 1, Page 2, Page 3, Page 4, etc.). You must return a separate parsed label object for EACH page in the 'labels' array. DO NOT skip any pages and do NOT aggregate them into a single label; keep them as separate individual labels in the order they appear.
-For each label, you MUST split the items listed on the document into separate entries under 'extractedItems'.
-If there are active SKUs in the system (provided below), map the text to the closest matching SKU in the reference list.
+
+CRITICAL INSTRUCTIONS:
+1. If the document is a multi-page PDF file, you MUST analyze and parse EVERY SINGLE page (e.g., Page 1, Page 2, Page 3, Page 4, etc.). You must return a separate parsed label object for EACH page in the 'labels' array. DO NOT skip any pages, and do NOT aggregate them into a single label; keep them as separate individual labels in the order they appear. If there are 4 pages, there MUST be exactly 4 elements in the 'labels' array.
+2. For each label/page, you MUST extract ALL individual product items listed on the document. If a label has 2, 3, 4, or more separate items/products, you MUST split them and return each of them as a separate object in the 'extractedItems' array. NEVER aggregate different products or omit any items. Show all of them.
+3. If there are active SKUs in the system (provided below), map the text to the closest matching SKU in the reference list.
 
 Reference SKUs currently in the System:
 ${skuReferenceListText || "(No SKUs found in system database)"}
@@ -340,36 +342,19 @@ Ensure that each item has its SKU code, product description, and a numeric quant
       const responseSchema = {
         type: Type.OBJECT,
         properties: {
-          orderId: { type: Type.STRING, description: "The order ID or order number of the FIRST label/page, empty if not found" },
-          trackingNo: { type: Type.STRING, description: "The tracking number, barcode, or reference code of the FIRST label/page, empty if not found" },
-          labelType: { type: Type.STRING, description: "Courier or platform of the FIRST label/page e.g. SHOPEE, LAZADA, TIKTOK, FLASH, KERRY, JT, POST, or UNKNOWN" },
-          detectedAction: { type: Type.STRING, description: "Must be OUT for typical courier/shipping labels, IN for intakes, RETURN for customer returns. Default is OUT." },
-          extractedItems: {
-            type: Type.ARRAY,
-            description: "List of individual product items detected on the FIRST label/page",
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                sku: { type: Type.STRING, description: "The SKU code matched to the system if possible, otherwise exactly as shown" },
-                productName: { type: Type.STRING, description: "The product description/name as shown on the label" },
-                quantity: { type: Type.INTEGER, description: "The numeric quantity of the item" }
-              },
-              required: ["sku", "productName", "quantity"]
-            }
-          },
           labels: {
             type: Type.ARRAY,
-            description: "List of all parsed shipping labels. If the document is a multi-page PDF, create one entry in this array for each page/label in order (e.g. Page 1 is label 1, Page 2 is label 2, etc.). If it's a single image/page, return exactly one entry.",
+            description: "List of all parsed shipping labels. Each page or document should correspond to exactly one entry in this array. If there are 4 pages, you MUST return exactly 4 entries in this array.",
             items: {
               type: Type.OBJECT,
               properties: {
-                orderId: { type: Type.STRING, description: "The order ID or order number, empty if not found" },
-                trackingNo: { type: Type.STRING, description: "The tracking number, barcode, or reference code, empty if not found" },
-                labelType: { type: Type.STRING, description: "Courier or platform e.g. SHOPEE, LAZADA, TIKTOK, FLASH, KERRY, JT, POST, or UNKNOWN" },
+                orderId: { type: Type.STRING, description: "The order ID or order number of this specific page, empty if not found" },
+                trackingNo: { type: Type.STRING, description: "The tracking number, barcode, or reference code of this specific page, empty if not found" },
+                labelType: { type: Type.STRING, description: "Courier or platform of this page e.g. SHOPEE, LAZADA, TIKTOK, FLASH, KERRY, JT, POST, or UNKNOWN" },
                 detectedAction: { type: Type.STRING, description: "Must be OUT for typical courier/shipping labels, IN for intakes, RETURN for customer returns. Default is OUT." },
                 extractedItems: {
                   type: Type.ARRAY,
-                  description: "List of individual product items detected on this label",
+                  description: "List of ALL individual product items detected on this label/page. If a label lists 2, 3, 4, or more separate items, you MUST list each of them as a separate object in this array.",
                   items: {
                     type: Type.OBJECT,
                     properties: {
