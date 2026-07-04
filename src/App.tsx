@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf } from './types';
 import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS } from './mockData';
-import SmartScanner from './components/SmartScanner';
 import DashboardStats from './components/DashboardStats';
 import InventoryTable from './components/InventoryTable';
 import ActionForms from './components/ActionForms';
@@ -135,7 +134,6 @@ const DEFAULT_ROLE_PERMISSIONS: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermi
 
 const DEFAULT_MENU_LABELS = {
   OVERVIEW: 'ภาพรวม & แดชบอร์ด',
-  SCANNER: 'ระบบสแกนพัสดุ',
   OPERATIONS: 'บันทึกความเคลื่อนไหว',
   INVENTORY: 'จัดการสต๊อกสินค้า',
   LOGS: 'ประวัติทำรายการ (Ledger)',
@@ -404,7 +402,7 @@ export default function App() {
   // --- Filter states ---
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
-  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER'>('OVERVIEW');
+  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES'>('OVERVIEW');
 
   // --- Customizable Menu configuration states ---
   const [menuFontSize, setMenuFontSize] = useState<string>(() => {
@@ -1170,19 +1168,7 @@ export default function App() {
               <LayoutDashboard className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
               <span>{menuLabels.OVERVIEW || 'ภาพรวม & แดชบอร์ด'}</span>
             </button>
-            <button
-              onClick={() => setActiveMenuTab('SCANNER')}
-              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
-                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
-              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
-                activeMenuTab === 'SCANNER'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-              }`}
-            >
-              <Camera className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-              <span>{menuLabels.SCANNER || 'ระบบสแกนพัสดุ'}</span>
-            </button>
+
             <button
               onClick={() => setActiveMenuTab('OPERATIONS')}
               className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
@@ -1453,33 +1439,7 @@ export default function App() {
           />
         )}
 
-        {activeMenuTab === 'SCANNER' && (
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
-            <div className="border-b border-slate-100 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-2">
-              <div>
-                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  <Camera className="w-5 h-5 text-indigo-600" />
-                  <span>ระบบสแกนใบปะหน้าด้วย AI & บาร์โค้ดสากล (Smart Scanner Mode)</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  ถ่ายภาพใบปะหน้าพัสดุ (จากกล้องมือถือ/เว็บแคม) หรือ อัปโหลดรูปภาพ/ไฟล์สั่งซื้อ สั่งงานวิเคราะห์ตัดสต๊อกอัจฉริยะด้วย AI ได้โดยตรง
-                </p>
-              </div>
-              <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 w-fit shrink-0">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
-                <span>ขับเคลื่อนด้วย Gemini AI</span>
-              </div>
-            </div>
-            
-            <SmartScanner
-              products={products}
-              transactions={transactions}
-              onRecordMultipleTransactions={handleRecordMultipleTransactions}
-              canRecordTransactions={rolePermissions[currentUser.role].recordTransactions}
-              currentUser={currentUser}
-            />
-          </div>
-        )}
+
 
         {activeMenuTab === 'LOGS' && (
           <TransactionLogs

@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, collection, getDocs, setDoc, updateDoc } from "firebase/firestore";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 const PORT = 3000;
 
@@ -36,9 +36,7 @@ async function generateContentWithFallback(params: {
   contents: any;
   config?: any;
 }) {
-  // We use gemini-2.5-flash, gemini-2.5-pro, and gemini-2.0-flash as the primary fast and stable models for multimodal/text,
-  // followed by gemini-3.5-flash and others as the fallback.
-  const models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"];
+  const models = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.1-flash-lite"];
   let lastError: any = null;
 
   for (const model of models) {
@@ -87,7 +85,7 @@ async function startServer() {
 
           const events = payload.events || [];
           if (events.length === 0) {
-            return; // Empty ping / LINE verify test - already returned 200 OK above!
+            return; // Empty ping / LINE verify test
           }
 
           // Fetch settings from Firestore for processing real messages
@@ -179,39 +177,31 @@ async function startServer() {
                 const outOfStockCount = productsList.filter(p => Number(p.quantity || 0) === 0).length;
                 const lowStockCount = productsList.filter(p => Number(p.quantity || 0) <= Number(p.minStock || 0) && Number(p.quantity || 0) > 0).length;
 
-                replyText = `📊 สรุปรายงานภาพรวมคลังสินค้าเรียลไทม์:\n
+                replyText = `📊 สรุปรายงานภาพรวมคลังสินค้าเรียลไทม์:
 • 📦 สินค้าทั้งหมดในระบบ: *${totalProductsCount}* รายการ
 • 🔢 จำนวนชิ้นรวมทั้งหมด: *${totalItemsCount}* ชิ้น
 • ❌ สินค้าหมดสต๊อก: *${outOfStockCount}* รายการ
-• ⚠️ สินค้าที่เหลือน้อยกว่าเกณฑ์: *${lowStockCount}* รายการ\n
-💡 พิมพ์ชื่อสินค้าหรือรหัส SKU เพื่อตรวจเช็กสต๊อกรายตัวได้เลยครับ!`;
+• ⚠️ สินค้าที่เหลือน้อยกว่าเกณฑ์: *${lowStockCount}* รายการ
+
+💡 พิมพ์ชื่อสินค้าหรือ SKU เพื่อค้นหารายละเอียดเฉพาะเจาะจงได้เลยครับ!`;
                 processed = true;
               } else {
-                // Try smart keyword search in local database
-                const searchTerms = text.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+                // Find products matching SKU or Name directly
                 const matchedProducts = productsList.filter(p => {
-                  const pName = (p.name || "").toLowerCase();
-                  const pSku = (p.sku || "").toLowerCase();
-                  const pCategory = (p.category || "").toLowerCase();
-                  const pLocation = (p.location || "").toLowerCase();
-
-                  return searchTerms.some(term => {
-                    if (term.length < 2 && !term.match(/[0-9]/)) return false; // skip single non-numeric letters
-                    return pName.includes(term) || pSku.includes(term) || pCategory.includes(term) || pLocation.includes(term);
-                  });
+                  const skuMatch = p.sku && p.sku.toLowerCase().includes(lowerText);
+                  const nameMatch = p.name && p.name.toLowerCase().includes(lowerText);
+                  return skuMatch || nameMatch;
                 });
 
-                // If we found exact specific matches (e.g. 1 to 5 items), answer instantly with exact real-time data
                 if (matchedProducts.length > 0 && matchedProducts.length <= 5) {
-                  const listText = matchedProducts.map((p, idx) => {
-                    const statusIcon = Number(p.quantity || 0) === 0 ? "❌ สินค้าหมดสต๊อก" : (Number(p.quantity || 0) <= Number(p.minStock || 0) ? "⚠️ ต่ำกว่าเกณฑ์เตือน" : "✅ สต๊อกปกติ");
-                    return `📦 [${idx + 1}/${matchedProducts.length}] ${p.name}\n• SKU: \`${p.sku || 'ไม่มี'}\`\n• หมวดหมู่: ${p.category || 'ทั่วไป'}\n• คงเหลือสต๊อก: *${p.quantity}* ${p.unit || 'ชิ้น'} (เกณฑ์เตือน: ${p.minStock})\n• พิกัดจัดเก็บ: 📍 *${p.location || 'ไม่ระบุ'}*\n• สถานะปัจจุบัน: ${statusIcon}`;
+                  const listText = matchedProducts.map((p) => {
+                    const statusIcon = Number(p.quantity || 0) === 0 ? "❌ หมดสต๊อก" : (Number(p.quantity || 0) <= Number(p.minStock || 0) ? "⚠️ ต่ำกว่าเกณฑ์" : "✅ ปกติ");
+                    return `• [${p.sku || 'ไม่มี SKU'}] *${p.name}*\n• หมวดหมู่: ${p.category || 'ทั่วไป'}\n• คงเหลือสต๊อก: *${p.quantity}* ${p.unit || 'ชิ้น'} (เกณฑ์เตือน: ${p.minStock})\n• พิกัดจัดเก็บ: 📍 *${p.location || 'ไม่ระบุ'}*\n• สถานะปัจจุบัน: ${statusIcon}`;
                   }).join("\n\n");
                   replyText = `🔍 ดึงข้อมูลสินค้าตรงคีย์เวิร์ด "${text}" สำเร็จ:\n\n${listText}`;
                   processed = true;
                 } else {
-                  // Use Gemini but with highly optimized, slimmed down context!
-                  // Only pass matching items if found, or first 15 products to ensure we never bloat the context or timeout.
+                  // Fall back to Gemini API
                   const filteredProducts = matchedProducts.length > 0 ? matchedProducts.slice(0, 20) : productsList.slice(0, 15);
                   const productsContext = filteredProducts.map(p => 
                     `- SKU: ${p.sku}, ชื่อ: ${p.name}, หมวดหมู่: ${p.category || 'ทั่วไป'}, คงเหลือ: ${p.quantity} ${p.unit || 'ชิ้น'}, จุดแจ้งเตือน: ${p.minStock} ${p.unit || 'ชิ้น'}, พิกัดหน่วยเก็บ: ${p.location || 'ไม่ได้ระบุ'}`
@@ -226,41 +216,40 @@ async function startServer() {
                       .replace(/\{\{text\}\}/g, text);
                   } else {
                     systemPrompt = `คุณคือผู้ดูแลบอร์ดจัดการคลังสินค้าอัจฉริยะประมวลผลด้วย AI (Warehouse Stock Assistant Bot) สื่อสารผ่านแอพ LINE ด้วยภาษาไทยที่กระชับ ชัดเจน เปี่ยมความช่วยเหลือ และเป็นมิตร
-  
-นี่คือข้อมูลสต๊อกสินค้าที่ดึงตามความเกี่ยวข้องล่าสุดจริงภายในระบบ (เรียลไทม์):
+
+นี่คือข้อมูลคงคลังสินค้าล่าสุดจริงภายในระบบ (เรียลไทม์):
 ${productsContext}
 
-พนักงานพิมพ์ถามคุณว่า: "${text}"
+พนักงานหรือผู้ใช้พิมพ์คำถามว่า: "${text}"
 
-โปรดประมวลผลวิเคราะห์และปฏิบัติดังนี้:
-1. ตอบกลับด้วยความกระชับ ตรงประเด็น และถูกต้องตามสถิติตัวเลขข้างบน 100% ห้ามเดาตัวเลข
-2. จัดรูปแบบข้อความให้น่าอ่านด้วย Bullet points, ตัวหนา, หรืออิโมจิ เพื่อให้พนักงานดูแชตบนหน้าจอมือถือได้ชัดเจนที่สุด
-3. หากพนักงานพิมพ์ค้นหาแล้วไม่พบตรงกับรายการสต๊อก ให้บอกอย่างสุภาพว่าไม่พบข้อมูลและชวนให้พิมพ์ระบุด้วยชื่ออื่นหรือ SKU อื่นครับ`;
+โปรดทำตามข้อตกลงในการวิเคราะห์ข้อมูลเพื่อตอบพนักงาน:
+1. หากพนักงานกล่าวทักทาย เช่น "สวัสดี", "ดีครับ/ค่ะ" ให้ทักทายกลับและอธิบายงานที่ช่วยตรวจสอบได้ เช่น "สวัสดีครับ! ผมบอทคลังสินค้าอัจฉริยะ ยินดีให้ความช่วยเหลือครับ คุณสามารถพิมพ์ชื่อสินค้าเพื่อตรวจสต๊อก สอบถามพิกัดที่เก็บสินค้า หรือถามหาสินค้าใกล้เหลือน้อยได้เลยครับ! 📦"
+2. หากพิมพ์เกี่ยวกับสต๊อกเหลือน้อย หรือสินค้าใกล้หมด หรือแจ้งเตือน ให้ตรวจสอบสินค้าที่จำนวนเหลือน้อยกว่าค่าจุดแจ้งเตือน (minStock) หรือสต๊อกเป็น 0 แล้วสรุปออกมาเป็นรายการแยกย่อยที่เข้าใจเข้าใจง่าย เช่น "⚠️ สินค้าใกล้หมดในระบบมีดังนี้ครับ..."
+3. หากพิมพ์พิมพ์ชื่อสินค้าหรือส่วนหนึ่งของชื่อ หรือ SKU ทางร้าน ให้ตอบข้อมูลเฉพาะเจาะจง เช่น ชื่อสินค้า, จำนวนคงเหลือ, หน่วยนับ, พิกัดจานจัดเก็บ เพื่อแจ้งพนักงานอย่างมั่นใจ
+4. หากถามสินค้าบางชิ้นที่ไม่มีในรายการข้างต้นเลย ให้ระบุว่า "ขออภัยครับ ไม่พบรายการที่ตรงกับคีย์เวิร์ดนี้ในระบบคลังปัจจุบันครับ" อย่างสุภาพพร้อมบอกให้ลองพิมพ์ค้นหาด้วยรหัสหรือชื่ออื่น
+5. พยายามตอบเรียงเป็นข้อๆ (Bullet points) วงเล็บ และตัวหนาเพื่อให้แสดงผลผ่านหน้าจอแชต LINE บนมือถือได้งดงามและประหยัดพื้นที่มากที่สุด`;
                   }
 
                   try {
-                    const geminiResponse = await generateContentWithFallback({
-                      contents: systemPrompt
-                    });
-                    replyText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
-                  } catch (geminiError) {
-                    console.error("Gemini Content Generation Error:", geminiError);
-                    
-                    // Ultra-resilient local fallback so the user always gets their data!
-                    if (matchedProducts.length > 0) {
-                      const listText = matchedProducts.slice(0, 5).map((p) => {
-                        return `📦 ${p.name}\n• SKU: \`${p.sku}\`\n• คงเหลือ: *${p.quantity}* ${p.unit}\n• พิกัดจัดเก็บ: 📍 *${p.location || 'ไม่ระบุ'}*`;
-                      }).join("\n\n");
-                      replyText = `🔍 ดึงข้อมูลแบบออฟไลน์เรียลไทม์ให้สำเร็จ (เนื่องจาก Google AI ขัดข้องชั่วคราว):\n\n${listText}`;
+                    const geminiApiKey = process.env.GEMINI_API_KEY || settings.geminiApiKey || "";
+                    let responseText = "";
+                    if (geminiApiKey) {
+                      const geminiResponse = await generateContentWithFallback({
+                        contents: systemPrompt
+                      });
+                      responseText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
                     } else {
-                      replyText = `ขออภัยครับ ระบบประมวลผล AI ขัดข้องชั่วคราว โปรดระบุชื่อสินค้าหรือรหัส SKU เพื่อค้นหาจากฐานข้อมูลตรงได้เลยครับ!`;
+                      responseText = "⚠️ ยังไม่ได้ตั้งค่าคีย์เปิดใช้บริการ GEMINI_API_KEY ในระบบหลังบ้าน กรุณาใส่คีย์เพื่อให้ AI ทำงานได้เต็มประสิทธิภาพนะครับ";
                     }
+                    replyText = responseText;
+                  } catch (geminiError: any) {
+                    console.error("Gemini Content Generation Error:", geminiError);
+                    replyText = `ขออภัยครับ ระบบวิเคราะห์ AI ขัดข้องชั่วคราว: ${geminiError?.message || String(geminiError)}`;
                   }
-                  processed = true;
                 }
               }
 
-              // Reply back to LINE using native fetch API
+              // Send reply back to LINE
               const lineReplyUrl = "https://api.line.me/v2/bot/message/reply";
               const resLine = await fetch(lineReplyUrl, {
                 method: "POST",
@@ -281,63 +270,33 @@ ${productsContext}
 
               if (!resLine.ok) {
                 const errBody = await resLine.text();
-                console.error("LINE Reply API error response (Background):", errBody);
+                console.error("LINE Reply API error response on Server webhook:", errBody);
               } else {
-                console.log("LINE message replied successfully in background.");
+                console.log("LINE message replied successfully from Server webhook!");
               }
             }
           }
         } catch (backgroundErr) {
-          console.error("Error in background webhook execution process:", backgroundErr);
+          console.error("Error in background webhook execution:", backgroundErr);
         }
       });
-    } catch (err) {
-      console.error("Error inside LINE webhook handler outer shell:", err);
-      if (!res.headersSent) {
-        res.status(200).send("OK");
-      }
+    } catch (err: any) {
+      console.error("Error in LINE webhook handler:", err);
     }
   };
 
-  // Support both versions of trailing slashes and raw body parser
+  // Mount the LINE Webhook handler on the Express App
   app.post("/api/line-webhook", express.raw({ type: "application/json" }), handleLineWebhook);
-  app.post("/api/line-webhook/", express.raw({ type: "application/json" }), handleLineWebhook);
 
-  // Friendly GET endpoint to prevent 404/302 redirects when probing with a browser or verification client
-  app.get(["/api/line-webhook", "/api/line-webhook/"], (req, res) => {
-    res.status(200).send("LINE Webhook Endpoint is ONLINE & running successfully! Please configure this URL (with HTTPS) in your LINE Developer Console.");
-  });
-
-  // Support JSON parsers for normal REST API pathways with generous limit for image uploads
-  app.use(express.json({ limit: "20mb" }));
-
-  // LINE Bot Health Check and Context Provider Endpoint
-  app.get("/api/line-status", async (req, res) => {
-    try {
-      const settingsDoc = await getDoc(doc(db, "settings", "appSettings"));
-      if (!settingsDoc.exists()) {
-        return res.json({ isConfigured: false, isEnabled: false });
-      }
-      const settings = settingsDoc.data();
-      return res.json({
-        isConfigured: !!settings.lineChannelAccessToken,
-        isEnabled: !!settings.lineBotEnabled,
-        hasSecret: !!settings.lineChannelSecret
-      });
-    } catch (err) {
-      return res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // Google Sheets integration back-sync webhook
-  app.post("/api/sheets-update", async (req, res) => {
+  // Google Sheets Update Endpoint
+  app.post("/api/sheets-update", express.json(), async (req, res) => {
     try {
       const { spreadsheetId, products } = req.body;
       if (!spreadsheetId) {
         return res.status(400).json({ error: "Missing spreadsheetId" });
       }
 
-      // Load actual settings to verify spreadsheet ID
+      // Load actual settings to verify sheets ID
       const settingsDoc = await getDoc(doc(db, "settings", "appSettings"));
       if (!settingsDoc.exists()) {
         return res.status(404).json({ error: "AppSettings not found" });
@@ -347,14 +306,28 @@ ${productsContext}
         return res.status(403).json({ error: "Unauthorized Spreadsheet ID: " + spreadsheetId });
       }
 
+      // Load existing products to map SKU to existing document ID
+      const productsSnapshot = await getDocs(collection(db, "products"));
+      const skuMap = new Map(); // sku -> docId
+      productsSnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.sku) {
+          skuMap.set(data.sku.trim().toLowerCase(), docSnap.id);
+        }
+      });
+
       // Update products in Firestore
       if (Array.isArray(products)) {
         for (const prod of products) {
           if (!prod.sku) continue;
-          const prodRef = doc(db, "products", prod.sku);
+          const cleanSku = prod.sku.trim().toLowerCase();
+          const existingId = skuMap.get(cleanSku);
+          const id = existingId || `prod-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+          const prodRef = doc(db, "products", id);
           await setDoc(prodRef, {
-            id: prod.sku,
-            sku: prod.sku,
+            id: id,
+            sku: prod.sku.toUpperCase().trim(),
             name: prod.name || "",
             category: prod.category || "ทั่วไป",
             quantity: Number(prod.quantity) || 0,
@@ -362,7 +335,7 @@ ${productsContext}
             unit: prod.unit || "ชิ้น",
             location: prod.location || "ไม่ได้ระบุ",
             updatedAt: new Date().toISOString()
-          });
+          }, { merge: true });
         }
       }
 
@@ -377,321 +350,7 @@ ${productsContext}
       });
     } catch (err: any) {
       console.error("Sheets update error:", err);
-      return res.status(500).json({ error: err.message || "Internal server error" });
-    }
-  });
-
-  // Gemini AI Label Scanner Endpoint
-  app.post("/api/scan-label", async (req, res) => {
-    try {
-      const { image } = req.body;
-      if (!image) {
-        return res.status(400).json({ error: "กรุณาส่งรูปภาพใบลาเบลสินค้าเพื่อทำการสแกน" });
-      }
-
-      let mimeType = "image/jpeg";
-      let base64Data = image;
-      if (image.startsWith("data:")) {
-        const match = image.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
-          mimeType = match[1];
-          base64Data = match[2];
-        }
-      }
-
-      console.log(`[Scan Label] Received file with mimeType: ${mimeType}, base64 length: ${base64Data.length}`);
-
-      const imagePart = {
-        inlineData: {
-          mimeType: mimeType,
-          data: base64Data,
-        },
-      };
-
-      const promptPart = {
-        text: "วิเคราะห์เอกสารหรือไฟล์ PDF นี้อย่างละเอียด ซึ่งอาจเป็นใบปะหน้าพัสดุ (Shipping Label), ใบจัดของ/ใบแพ็คของ (Packing Slip / Picking List), ใบสั่งซื้อ (Order Receipt), หรือใบเสร็จจากแพลตฟอร์มต่างๆ เช่น TikTok Shop, Shopee, Lazada หรือบิลขนส่งต่างๆ เช่น J&T Express, Flash Express, Kerry, ไปรษณีย์ไทย เป็นต้น\n\n" +
-              "**คำแนะนำสำคัญสำหรับการสแกนไฟล์ PDF หลายหน้า / หลายใบจัดของ (CRITICAL MULTI-PAGE & BATCH SCANNING INSTRUCTIONS)**:\n" +
-              "1. **ต้องสแกนครบทุกหน้าตั้งแต่หน้าแรกถึงหน้าสุดท้าย**: เอกสาร PDF นี้อาจมีหลายหน้า ห้ามประมวลผลแค่หน้าแรกแล้วหยุดเป็นอันขาด! ต้องอ่านทุกหน้าจนจบ\n" +
-              "2. **การแยกหรือรวมกลุ่มข้อมูลตามใบปะหน้าพัสดุ**:\n" +
-              "   - **กรณีที่หน้าอื่นๆ เป็นใบจัดของ (Packing Slip) ของออเดอร์เดียวกัน**: หากหน้าแรกเป็นใบปะหน้าพัสดุที่มีเลขแทรคกิ้ง (Tracking Number) หรือเลขที่สั่งซื้อ (Order ID) และหน้าต่อๆ ไปเป็นใบจัดส่งสินค้า/ใบแพ็คสินค้า (Packing Slip/Picking List) ที่ระบุรายการสินค้าสำหรับออเดอร์เดียวกันนี้ ให้คุณ 'รวบรวมรายการสินค้าทั้งหมดจากทุกหน้า' (รวมถึงหน้า Packing Slip ที่ระบุรายการสินค้าแบบละเอียดทั้งหมด) เข้ามาอยู่ในอาร์เรย์ `extractedItems` ของใบปะหน้าพัสดุใบเดียวกันนี้เสมอ! ห้ามตัดรายการสินค้าออก ห้ามคัดลอกมาแค่บางรายการ และห้ามละทิ้งหน้าใบจัดสินค้าเป็นอันขาด เพื่อป้องกันสินค้าตกหล่น\n" +
-              "   - **กรณีที่เป็นใบปะหน้าพัสดุของคนละออเดอร์กันในแต่ละหน้า (Batch Processing)**: หากแต่ละหน้ามีเลขแทรคกิ้ง (Tracking Number) หรือผู้รับสินค้าต่างกัน ให้แยกข้อมูลเป็นรายการคนละใบในอาร์เรย์ `labels` แยกกันตามปกติ\n" +
-              "3. **แกะข้อมูลสินค้า (SKU) อย่างละเอียดและห้ามตกหล่น**:\n" +
-              "   - สแกนและแกะข้อมูลสินค้าทุกชิ้นในใบปะหน้าหรือใบแพ็คสินค้า ค้นหาข้อมูล SKU ในส่วนที่เป็นตาราง คอลัมน์ หรือข้อความระบุ เช่น 'Seller SKU', 'รหัสสินค้า', 'ชื่อสินค้า', 'จำนวน', 'Qty', หรือรหัสสินค้าต่างๆ\n" +
-              "   - **สแกนทุกรายการ**: หากในใบจัดของมีสินค้าหลายรายการ (เช่น 4 รายการ) คุณต้องสกัดออกมาให้ครบถ้วนทุกรายการใน `extractedItems` ห้ามละทิ้งหรือรวบเหลือเพียงรายการเดียว\n" +
-              "   - **ตรวจสอบรหัส SKU และความถูกต้อง**: ตัดเว้นวรรคที่ไม่จำเป็นออก, ทำเป็นตัวพิมพ์ใหญ่ และหากชื่อสินค้าหรือรหัสสินค้ามีจำนวนชิ้นระบุ เช่น x2, *2 หรือมีคอลัมน์จำนวนเป็น 2 ให้ระบุ `quantity` ให้ถูกต้องตามจริง (เช่น หากรายการเดียวระบุ SKU เดียวแต่มีจำนวน 2 ชิ้น ให้ตั้ง `quantity: 2` หรือหากมีรายการสินค้าบรรทัดเดียวกันซ้ำ หรือแยกบรรทัดแต่เป็นสินค้าเดียวกัน ให้ดึงมาให้ครบตามจริง)",
-      };
-
-      const response = await generateContentWithFallback({
-        contents: { parts: [imagePart, promptPart] },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              labels: {
-                type: Type.ARRAY,
-                description: "รายการใบปะหน้าพัสดุทั้งหมดที่แกะข้อมูลได้จากไฟล์ (รองรับเอกสารหลายหน้าแยกตามชิ้น)",
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    orderId: { type: Type.STRING, description: "เลขที่สั่งซื้อ หรือเลขอ้างอิงออเดอร์ หากพบในใบลาเบลนี้" },
-                    trackingNo: { type: Type.STRING, description: "เลขแทรคกิ้งขนส่งพัสดุ (Tracking Number) เช่น SPX..., TH..., KER... หากพบ" },
-                    labelType: { type: Type.STRING, description: "ประเภทเอกสาร เช่น 'SHIP_LABEL' (ใบปะหน้าขนส่ง), 'INBOUND_RECEIPT' (ใบรับของเข้า), 'BARCODE_TAG' (ป้ายบาร์โค้ด), หรือ 'UNKNOWN'" },
-                    detectedAction: { type: Type.STRING, description: "วัตถุประสงค์ความเคลื่อนไหว: 'OUT' (ส่งของออก), 'IN' (รับของเข้า), หรือ 'UNKNOWN'" },
-                    extractedItems: {
-                      type: Type.ARRAY,
-                      description: "รายการสินค้าที่แกะข้อมูลได้จากใบปะหน้าใบนี้",
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          sku: { type: Type.STRING, description: "รหัส SKU หรือรหัสโมเดลสินค้า (พิมพ์ใหญ่, ลบช่องว่างออก)" },
-                          productName: { type: Type.STRING, description: "ชื่อหรือรายละเอียดสินค้าสั้นๆ" },
-                          quantity: { type: Type.NUMBER, description: "จำนวนสินค้าชิ้นในรายการนั้นๆ หากไม่ระบุให้เป็น 1" }
-                        },
-                        required: ["sku", "productName", "quantity"]
-                      }
-                    }
-                  },
-                  required: ["extractedItems"]
-                }
-              }
-            },
-            required: ["labels"]
-          }
-        }
-      });
-
-      const jsonText = response.text || "{}";
-      const result = JSON.parse(jsonText);
-      const rawLabels = result.labels || [];
-
-      console.log(`[Scan Label] AI returned ${rawLabels.length} labels in JSON.`);
-
-      // Fallback if the AI returned a flat legacy object instead of an array of labels
-      if (rawLabels.length === 0 && (result.orderId || result.trackingNo || (result.extractedItems && result.extractedItems.length > 0))) {
-        console.log(`[Scan Label] Applying flat fallback for legacy structure.`);
-        rawLabels.push({
-          orderId: result.orderId || "",
-          trackingNo: result.trackingNo || "",
-          labelType: result.labelType || "UNKNOWN",
-          detectedAction: result.detectedAction || "UNKNOWN",
-          extractedItems: result.extractedItems || []
-        });
-      }
-
-      // Query live products from Firestore to find matching items
-      const productsSnap = await getDocs(collection(db, "products"));
-      const allProducts: any[] = [];
-      productsSnap.forEach((doc) => {
-        allProducts.push({ id: doc.id, ...doc.data() });
-      });
-
-      // Enrich items for each detected label
-      const enrichedLabels = rawLabels.map((label: any) => {
-        const enrichedItems = (label.extractedItems || []).map((item: any) => {
-          const cleanSku = (item.sku || "").trim().toLowerCase();
-          const cleanName = (item.productName || "").trim().toLowerCase();
-
-          // Exact match by SKU
-          let matchedProduct = allProducts.find(
-            (p) => (p.sku || "").trim().toLowerCase() === cleanSku
-          );
-
-          // Partial match by SKU if exact match fails
-          if (!matchedProduct && cleanSku) {
-            matchedProduct = allProducts.find(
-              (p) => (p.sku || "").trim().toLowerCase().includes(cleanSku) || cleanSku.includes((p.sku || "").trim().toLowerCase())
-            );
-          }
-
-          // Partial match by product name if SKU match fails
-          if (!matchedProduct && cleanName) {
-            matchedProduct = allProducts.find(
-              (p) => (p.name || "").trim().toLowerCase().includes(cleanName) || cleanName.includes((p.name || "").trim().toLowerCase())
-            );
-          }
-
-          return {
-            sku: item.sku || "",
-            productName: item.productName || "",
-            quantity: item.quantity || 1,
-            matched: !!matchedProduct,
-            matchedProduct: matchedProduct ? {
-              id: matchedProduct.id,
-              sku: matchedProduct.sku,
-              name: matchedProduct.name,
-              quantity: matchedProduct.quantity,
-              unit: matchedProduct.unit || "ชิ้น",
-              location: matchedProduct.location || "ไม่ได้ระบุ",
-              weight: matchedProduct.weight,
-              weightUnit: matchedProduct.weightUnit,
-            } : null
-          };
-        });
-
-        return {
-          orderId: label.orderId || "",
-          trackingNo: label.trackingNo || "",
-          labelType: label.labelType || "UNKNOWN",
-          detectedAction: label.detectedAction || "UNKNOWN",
-          extractedItems: enrichedItems
-        };
-      });
-
-      // Get first label for backward compatibility flat response
-      const firstLabel = enrichedLabels[0] || {
-        orderId: "",
-        trackingNo: "",
-        labelType: "UNKNOWN",
-        detectedAction: "UNKNOWN",
-        extractedItems: []
-      };
-
-      return res.status(200).json({
-        orderId: firstLabel.orderId,
-        trackingNo: firstLabel.trackingNo,
-        labelType: firstLabel.labelType,
-        detectedAction: firstLabel.detectedAction,
-        extractedItems: firstLabel.extractedItems,
-        labels: enrichedLabels
-      });
-
-    } catch (err: any) {
-      console.error("AI Label scanning error:", err);
-      return res.status(500).json({ error: "ไม่สามารถสแกนวิเคราะห์ภาพด้วย AI ได้: " + (err.message || String(err)) });
-    }
-  });
-
-  // Gemini AI PDF Text Scanner Endpoint (Batch processing)
-  app.post("/api/scan-pdf-text", async (req, res) => {
-    try {
-      const { pages } = req.body; // Array of { pageNumber: number, text: string }
-      if (!pages || !Array.isArray(pages) || pages.length === 0) {
-        return res.status(400).json({ error: "กรุณาส่งข้อมูลข้อความจากหน้า PDF เพื่อทำการประมวลผล" });
-      }
-
-      // Prepare prompt with page texts
-      const formattedPages = pages.map(p => `--- PAGE ${p.pageNumber} ---\n${p.text}`).join("\n\n");
-      const promptText = `วิเคราะห์ข้อมูลข้อความที่สกัดจากเอกสาร PDF (ซึ่งเป็นใบปะหน้าพัสดุ, ใบสั่งซื้อ, หรือรายการแพ็คของจากแพลตฟอร์มต่างๆ เช่น Shopee, TikTok Shop, Lazada หรือบิลระบบขนส่งอื่นๆ เช่น Flash, J&T, Kerry) 
-
-ให้ทำการแกะข้อมูลรายชื่อสินค้า รหัส SKU จำนวนชิ้น และเลขอ้างอิงออเดอร์/เลขแทรคกิ้งของแต่ละหน้าอย่างละเอียด
-
-ข้อแนะนำสำหรับแพลตฟอร์ม:
-- สำหรับ TikTok Shop: ค้นหาสินค้าในส่วนตารางหรือข้อความที่ระบุ "Seller SKU", "รหัสสินค้า", "ชื่อสินค้า", "จำนวน" หรือ "Qty"
-- สำหรับ Shopee: ค้นหาส่วนของรายการจัดส่งท้ายฉลากพัสดุหรือมุมขวาบน/ล่าง ที่มักมีคำว่า "SKU", "Parent SKU", "จำนวน/Qty" หรือรหัสย่อสินค้า
-- คีย์บอร์ดหรือรหัสตัวเลขมักเป็นตัวชี้วัด SKU
-
-นี่คือข้อมูลข้อความของหน้าต่างๆ:
-${formattedPages}`;
-
-      const response = await generateContentWithFallback({
-        contents: promptText,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              results: {
-                type: Type.ARRAY,
-                description: "รายการผลลัพธ์การประมวลผลแยกตามเลขหน้า",
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    pageNumber: { type: Type.NUMBER, description: "หมายเลขหน้าตรงตามต้นฉบับ" },
-                    orderId: { type: Type.STRING, description: "เลขที่สั่งซื้อ (Order ID) หากพบ" },
-                    trackingNo: { type: Type.STRING, description: "เลขแทรคกิ้งขนส่ง (Tracking Number) หากพบ" },
-                    labelType: { type: Type.STRING, description: "ประเภทเอกสาร: 'SHIP_LABEL' (ใบปะขนส่ง), 'INBOUND_RECEIPT' (ใบรับของเข้า), 'UNKNOWN'" },
-                    detectedAction: { type: Type.STRING, description: "การทำงานที่คาดเดา: 'OUT' (ส่งของออก), 'IN' (รับของเข้า), 'UNKNOWN'" },
-                    extractedItems: {
-                      type: Type.ARRAY,
-                      description: "รายการสินค้าที่สกัดข้อมูลได้",
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          sku: { type: Type.STRING, description: "รหัส SKU หรือรหัสโมเดลสินค้า (พิมพ์ใหญ่, ลบช่องว่างออก)" },
-                          productName: { type: Type.STRING, description: "ชื่อสินค้าหรือรายละเอียดสินค้าสั้นๆ" },
-                          quantity: { type: Type.NUMBER, description: "จำนวนชิ้น หากไม่ระบุให้เป็น 1" }
-                        },
-                        required: ["sku", "productName", "quantity"]
-                      }
-                    }
-                  },
-                  required: ["pageNumber", "extractedItems"]
-                }
-              }
-            }
-          }
-        }
-      });
-
-      const jsonText = response.text || "{}";
-      const result = JSON.parse(jsonText);
-
-      // Query live products from Firestore to find matching items
-      const productsSnap = await getDocs(collection(db, "products"));
-      const allProducts: any[] = [];
-      productsSnap.forEach((doc) => {
-        allProducts.push({ id: doc.id, ...doc.data() });
-      });
-
-      // Enrich all results with matched products
-      const enrichedResults = (result.results || []).map((pageResult: any) => {
-        const enrichedItems = (pageResult.extractedItems || []).map((item: any) => {
-          const cleanSku = (item.sku || "").trim().toLowerCase();
-          const cleanName = (item.productName || "").trim().toLowerCase();
-
-          // Match by SKU
-          let matchedProduct = allProducts.find(
-            (p) => (p.sku || "").trim().toLowerCase() === cleanSku
-          );
-
-          if (!matchedProduct && cleanSku) {
-            matchedProduct = allProducts.find(
-              (p) => (p.sku || "").trim().toLowerCase().includes(cleanSku) || cleanSku.includes((p.sku || "").trim().toLowerCase())
-            );
-          }
-
-          if (!matchedProduct && cleanName) {
-            matchedProduct = allProducts.find(
-              (p) => (p.name || "").trim().toLowerCase().includes(cleanName) || cleanName.includes((p.name || "").trim().toLowerCase())
-            );
-          }
-
-          return {
-            sku: item.sku || "",
-            productName: item.productName || "",
-            quantity: item.quantity || 1,
-            matched: !!matchedProduct,
-            matchedProduct: matchedProduct ? {
-              id: matchedProduct.id,
-              sku: matchedProduct.sku,
-              name: matchedProduct.name,
-              quantity: matchedProduct.quantity,
-              unit: matchedProduct.unit || "ชิ้น",
-              location: matchedProduct.location || "ไม่ได้ระบุ",
-              weight: matchedProduct.weight,
-              weightUnit: matchedProduct.weightUnit,
-            } : null
-          };
-        });
-
-        const actionType = pageResult.detectedAction === "IN" ? "IN" : pageResult.detectedAction === "RETURN" ? "RETURN" : "OUT";
-
-        return {
-          pageNumber: pageResult.pageNumber,
-          orderId: pageResult.orderId || "",
-          trackingNo: pageResult.trackingNo || "",
-          labelType: pageResult.labelType || "UNKNOWN",
-          detectedAction: actionType,
-          extractedItems: enrichedItems
-        };
-      });
-
-      return res.status(200).json({ results: enrichedResults });
-
-    } catch (err: any) {
-      console.error("AI PDF parsing error:", err);
-      return res.status(500).json({ error: "ไม่สามารถประมวลผลข้อความจาก PDF ด้วย AI ได้: " + (err.message || String(err)) });
+      return res.status(500).json({ error: err?.message || "Internal server error" });
     }
   });
 
