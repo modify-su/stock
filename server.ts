@@ -563,6 +563,13 @@ ${skuReferenceListText || "(No SKUs found in system database)"}`;
     }
   });
 
+  // Endpoint to get the server-side version (based on server startup time)
+  // This helps clients detect if the server has been redeployed or restarted
+  const SERVER_VERSION = "build-" + Date.now();
+  app.get("/api/version", (req, res) => {
+    res.json({ version: SERVER_VERSION });
+  });
+
   // Set up Vite server middleware in dev mode, serve index.html directly in prod mode
   if (process.env.NODE_ENV !== "production" || process.env.DISABLE_HMR === "true") {
     const vite = await createViteServer({
@@ -574,6 +581,10 @@ ${skuReferenceListText || "(No SKUs found in system database)"}`;
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
+      // Force cache busting on index.html so clients always load the latest compiled build
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

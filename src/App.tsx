@@ -21,7 +21,9 @@ import {
   Printer,
   Camera,
   Wrench,
-  LogOut
+  LogOut,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf } from './types';
 import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS } from './mockData';
@@ -400,6 +402,93 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('inventory_is_authenticated', String(isAuthenticated));
   }, [isAuthenticated]);
+
+  // --- Real-time Connection Watchdog & Network Status ---
+  const [syncStatus, setSyncStatus] = useState<'connected' | 'offline' | 'syncing'>('connected');
+
+  useEffect(() => {
+    const handleOnline = () => setSyncStatus('connected');
+    const handleOffline = () => setSyncStatus('offline');
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    if (!navigator.onLine) {
+      setSyncStatus('offline');
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // --- Live App Version Checking and Clean Auto-Update ---
+  const [clientVersion, setClientVersion] = useState<string | null>(null);
+  const [isNewVersionAvailable, setIsNewVersionAvailable] = useState(false);
+
+  useEffect(() => {
+    const fetchVersion = async () => {
+      try {
+        const res = await fetch('/api/version');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.version) {
+            setClientVersion(data.version);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to fetch initial app version:", e);
+      }
+    };
+    fetchVersion();
+  }, []);
+
+  useEffect(() => {
+    if (!clientVersion) return;
+
+    const checkVersion = async () => {
+      try {
+        const res = await fetch('/api/version');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.version && data.version !== clientVersion) {
+            setIsNewVersionAvailable(true);
+            setTimeout(() => {
+              window.location.reload();
+            }, 3000);
+          }
+        }
+      } catch (e) {
+        // Silent catch for background polling
+      }
+    };
+
+    const interval = setInterval(checkVersion, 15000);
+    return () => clearInterval(interval);
+  }, [clientVersion]);
+
+  // --- Real-time Current User Profile Watcher ---
+  // Syncs the active logged-in session instantly if an Admin updates their role, status, or name
+  useEffect(() => {
+    if (isAuthenticated && currentUser?.id && users.length > 0) {
+      const freshUser = users.find(u => u.id === currentUser.id);
+      if (freshUser) {
+        if (freshUser.isActive === false) {
+          setIsAuthenticated(false);
+          setTimeout(() => {
+            alert("🔒 บัญชีผู้ใช้งานของคุณถูกระงับการเข้าถึงชั่วคราวโดยผู้ดูแลระบบ");
+          }, 100);
+        } else if (
+          freshUser.role !== currentUser.role || 
+          freshUser.name !== currentUser.name ||
+          freshUser.username !== currentUser.username ||
+          freshUser.password !== currentUser.password
+        ) {
+          setCurrentUser(freshUser);
+        }
+      }
+    }
+  }, [users, currentUser?.id, isAuthenticated]);
 
   // --- Filter states ---
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -1099,6 +1188,12 @@ export default function App() {
 
   return (
     <div id="app-wrapper" className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
+      {isNewVersionAvailable && (
+        <div className="bg-blue-600 text-white text-center py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-md relative z-50">
+          <Sparkles className="w-4 h-4 text-amber-300 animate-spin" />
+          <span>🚀 ตรวจพบการอัปเดตระบบคลังเวอร์ชันใหม่! ระบบกำลังโหลดข้อมูลและปรับปรุงหน้าจอให้คุณโดยอัตโนมัติในอีกสักครู่ (โดยไม่ต้องกด Ctrl+F5)</span>
+        </div>
+      )}
       {/* 1. Header Navigation Bar */}
       <nav id="app-navbar" className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1151,12 +1246,25 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Version indicators */}
-              <div className="hidden lg:flex items-center gap-2 text-[10px] font-mono">
-                <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2 py-1 rounded-sm border border-emerald-200">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span>ONLINE</span>
-                </div>
+              {/* Connection & Live sync indicators */}
+              <div className="hidden sm:flex items-center gap-2 text-[10px] font-mono">
+                {syncStatus === 'connected' ? (
+                  <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                    </span>
+                    <span className="font-semibold text-emerald-700">ซิงค์เรียลไทม์คลาวด์แล้ว ✅</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-rose-800 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 animate-pulse">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                    </span>
+                    <span className="font-semibold text-rose-700 animate-pulse">ออฟไลน์ กำลังรีคอนเนกต์... 🔌</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
