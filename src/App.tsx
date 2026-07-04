@@ -35,6 +35,7 @@ import LoginScreen from './components/LoginScreen';
 import ShelfManagement from './components/ShelfManagement';
 import ShelfAuditModal from './components/ShelfAuditModal';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
+import SmartScanner from './components/SmartScanner';
 
 
 // Import Firebase
@@ -140,6 +141,7 @@ const DEFAULT_MENU_LABELS = {
   SHELVES: 'จัดการชั้นวางสินค้า / QR Code',
   SYNC: 'สำรอง & นำเข้าข้อมูล (CSV / Excel)',
   SETTINGS: 'ตั้งค่า & สิทธิ์ผู้ใช้',
+  SCANNER: 'ระบบสแกนพัสดุ AI',
 };
 
 const fontSizeClasses: Record<string, { btn: string; icon: string }> = {
@@ -402,7 +404,7 @@ export default function App() {
   // --- Filter states ---
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
-  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES'>('OVERVIEW');
+  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER'>('OVERVIEW');
 
   // --- Customizable Menu configuration states ---
   const [menuFontSize, setMenuFontSize] = useState<string>(() => {
@@ -1170,6 +1172,20 @@ export default function App() {
             </button>
 
             <button
+              onClick={() => setActiveMenuTab('SCANNER')}
+              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
+              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
+                activeMenuTab === 'SCANNER'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              <Camera className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
+              <span>{menuLabels.SCANNER || 'ระบบสแกนพัสดุ AI'}</span>
+            </button>
+
+            <button
               onClick={() => setActiveMenuTab('OPERATIONS')}
               className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
                 fontSizeClasses[menuFontSize]?.btn || 'text-sm'
@@ -1446,6 +1462,16 @@ export default function App() {
             transactions={transactions}
             onResetLogs={handleResetLogs}
             canResetLogs={rolePermissions[currentUser.role].resetSystem}
+          />
+        )}
+
+        {activeMenuTab === 'SCANNER' && (
+          <SmartScanner
+            products={products}
+            transactions={transactions}
+            onRecordMultipleTransactions={handleRecordMultipleTransactions}
+            canRecordTransactions={rolePermissions[currentUser.role].recordTransactions}
+            currentUser={currentUser}
           />
         )}
 

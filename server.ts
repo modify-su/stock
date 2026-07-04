@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, collection, getDocs, setDoc, updateDoc } from "firebase/firestore";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const PORT = 3000;
 
@@ -287,6 +287,225 @@ ${productsContext}
 
   // Mount the LINE Webhook handler on the Express App
   app.post("/api/line-webhook", express.raw({ type: "application/json" }), handleLineWebhook);
+
+  // Scan Label Endpoint (Base64 file/image/PDF parsing)
+  app.post("/api/scan-label", express.json({ limit: "25mb" }), async (req, res) => {
+    try {
+      const { image } = req.body;
+      if (!image) {
+        return res.status(400).json({ error: "Missing image/file data" });
+      }
+
+      // Load products to create a reference list for SKU mapping
+      let skuReferenceListText = "";
+      try {
+        const productsSnapshot = await getDocs(collection(db, "products"));
+        const productsList: string[] = [];
+        productsSnapshot.forEach((docSnap) => {
+          const p = docSnap.data();
+          if (p.sku) {
+            productsList.push(`- SKU: ${p.sku} | Name: ${p.name}`);
+          }
+        });
+        skuReferenceListText = productsList.join("\n");
+      } catch (dbErr) {
+        console.error("Failed to read products reference for AI mapping:", dbErr);
+      }
+
+      // Handle base64 format (could be image/png, image/jpeg, or application/pdf)
+      let mimeType = "image/jpeg";
+      let base64Data = image;
+
+      if (image.startsWith("data:")) {
+        const match = image.match(/^data:([^;]+);base64,(.*)$/);
+        if (match) {
+          mimeType = match[1];
+          base64Data = match[2];
+        }
+      }
+
+      console.log(`[Scan Label] Received file of mimeType: ${mimeType}`);
+
+      const systemInstruction = `You are an expert logistics parser. Analyze the provided document (shipping label, parcel invoice, or PDF file).
+Identify and extract fields for ALL shipping labels or parcel invoices present in the document.
+If the document is a multi-page PDF file, you MUST analyze and parse EVERY page (e.g., Page 1, Page 2, Page 3, Page 4, etc.). You must return a separate parsed label object for EACH page in the 'labels' array. DO NOT skip any pages and do NOT aggregate them into a single label; keep them as separate individual labels in the order they appear.
+For each label, you MUST split the items listed on the document into separate entries under 'extractedItems'.
+If there are active SKUs in the system (provided below), map the text to the closest matching SKU in the reference list.
+
+Reference SKUs currently in the System:
+${skuReferenceListText || "(No SKUs found in system database)"}
+
+Ensure that each item has its SKU code, product description, and a numeric quantity.`;
+
+      const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+          orderId: { type: Type.STRING, description: "The order ID or order number of the FIRST label/page, empty if not found" },
+          trackingNo: { type: Type.STRING, description: "The tracking number, barcode, or reference code of the FIRST label/page, empty if not found" },
+          labelType: { type: Type.STRING, description: "Courier or platform of the FIRST label/page e.g. SHOPEE, LAZADA, TIKTOK, FLASH, KERRY, JT, POST, or UNKNOWN" },
+          detectedAction: { type: Type.STRING, description: "Must be OUT for typical courier/shipping labels, IN for intakes, RETURN for customer returns. Default is OUT." },
+          extractedItems: {
+            type: Type.ARRAY,
+            description: "List of individual product items detected on the FIRST label/page",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                sku: { type: Type.STRING, description: "The SKU code matched to the system if possible, otherwise exactly as shown" },
+                productName: { type: Type.STRING, description: "The product description/name as shown on the label" },
+                quantity: { type: Type.INTEGER, description: "The numeric quantity of the item" }
+              },
+              required: ["sku", "productName", "quantity"]
+            }
+          },
+          labels: {
+            type: Type.ARRAY,
+            description: "List of all parsed shipping labels. If the document is a multi-page PDF, create one entry in this array for each page/label in order (e.g. Page 1 is label 1, Page 2 is label 2, etc.). If it's a single image/page, return exactly one entry.",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                orderId: { type: Type.STRING, description: "The order ID or order number, empty if not found" },
+                trackingNo: { type: Type.STRING, description: "The tracking number, barcode, or reference code, empty if not found" },
+                labelType: { type: Type.STRING, description: "Courier or platform e.g. SHOPEE, LAZADA, TIKTOK, FLASH, KERRY, JT, POST, or UNKNOWN" },
+                detectedAction: { type: Type.STRING, description: "Must be OUT for typical courier/shipping labels, IN for intakes, RETURN for customer returns. Default is OUT." },
+                extractedItems: {
+                  type: Type.ARRAY,
+                  description: "List of individual product items detected on this label",
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      sku: { type: Type.STRING, description: "The SKU code matched to the system if possible, otherwise exactly as shown" },
+                      productName: { type: Type.STRING, description: "The product description/name as shown on the label" },
+                      quantity: { type: Type.INTEGER, description: "The numeric quantity of the item" }
+                    },
+                    required: ["sku", "productName", "quantity"]
+                  }
+                }
+              },
+              required: ["orderId", "trackingNo", "labelType", "detectedAction", "extractedItems"]
+            }
+          }
+        },
+        required: ["labels"]
+      };
+
+      const aiResponse = await generateContentWithFallback({
+        contents: [
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: base64Data
+            }
+          },
+          "Parse this document and return the details in structured JSON matching the specified schema."
+        ],
+        config: {
+          systemInstruction: systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: responseSchema,
+          temperature: 0.1
+        }
+      });
+
+      const responseText = aiResponse.text;
+      console.log("[Scan Label] Gemini RAW Response:", responseText);
+
+      const parsedData = JSON.parse(responseText.trim());
+      return res.json(parsedData);
+    } catch (err: any) {
+      console.error("Error in /api/scan-label:", err);
+      return res.status(500).json({ error: err.message || "Internal server error during PDF/label scan" });
+    }
+  });
+
+  // Scan PDF Text Endpoint (Direct text analysis)
+  app.post("/api/scan-pdf-text", express.json(), async (req, res) => {
+    try {
+      const { pages } = req.body;
+      if (!pages || !Array.isArray(pages) || pages.length === 0) {
+        return res.status(400).json({ error: "Missing text pages array" });
+      }
+
+      // Load products reference for SKU matching
+      let skuReferenceListText = "";
+      try {
+        const productsSnapshot = await getDocs(collection(db, "products"));
+        const productsList: string[] = [];
+        productsSnapshot.forEach((docSnap) => {
+          const p = docSnap.data();
+          if (p.sku) {
+            productsList.push(`- SKU: ${p.sku} | Name: ${p.name}`);
+          }
+        });
+        skuReferenceListText = productsList.join("\n");
+      } catch (dbErr) {
+        console.error("Failed to read products reference for text mapping:", dbErr);
+      }
+
+      const results = [];
+
+      // Process each text page
+      for (const page of pages) {
+        const textContent = page.text || "";
+        if (!textContent.trim()) {
+          continue;
+        }
+
+        const systemInstruction = `You are an expert logistics text parser.
+Analyze the provided plain text contents of a PDF page or parcel label bill.
+Identify the Order ID, Tracking Number, Platform/Courier type, stock action (OUT/IN/RETURN), and all product SKU lines with their corresponding quantities.
+Split multiple items into separate rows inside 'extractedItems'.
+Map any SKU/product names to the closest matching SKU in the reference system provided below.
+
+Reference SKUs currently in the System:
+${skuReferenceListText || "(No SKUs found in system database)"}`;
+
+        const pageResultSchema = {
+          type: Type.OBJECT,
+          properties: {
+            orderId: { type: Type.STRING },
+            trackingNo: { type: Type.STRING },
+            labelType: { type: Type.STRING },
+            detectedAction: { type: Type.STRING },
+            extractedItems: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  sku: { type: Type.STRING },
+                  productName: { type: Type.STRING },
+                  quantity: { type: Type.INTEGER }
+                },
+                required: ["sku", "productName", "quantity"]
+              }
+            }
+          },
+          required: ["orderId", "trackingNo", "labelType", "detectedAction", "extractedItems"]
+        };
+
+        const aiResponse = await generateContentWithFallback({
+          contents: [
+            `Please analyze this plain text content from page ${page.pageNumber || 1}:\n\n${textContent}`
+          ],
+          config: {
+            systemInstruction: systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: pageResultSchema,
+            temperature: 0.1
+          }
+        });
+
+        const textResponse = aiResponse.text;
+        console.log(`[Scan PDF Text] Page ${page.pageNumber || 1} RAW Response:`, textResponse);
+        const parsedPage = JSON.parse(textResponse.trim());
+        results.push(parsedPage);
+      }
+
+      return res.json({ results });
+    } catch (err: any) {
+      console.error("Error in /api/scan-pdf-text:", err);
+      return res.status(500).json({ error: err.message || "Internal server error during PDF text scan" });
+    }
+  });
 
   // Google Sheets Update Endpoint
   app.post("/api/sheets-update", express.json(), async (req, res) => {
