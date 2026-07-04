@@ -759,6 +759,9 @@ export default function App() {
     if (txsData.length === 0) return;
     const batch = writeBatch(db);
     const timestamp = new Date().toISOString();
+    
+    // Keep track of accumulated running quantity for products updated multiple times in this single batch
+    const runningQuantities: Record<string, number> = {};
 
     for (let i = 0; i < txsData.length; i++) {
       const txData = txsData[i];
@@ -771,7 +774,11 @@ export default function App() {
 
       const p = products.find(prod => prod.id === txData.productId);
       if (p) {
-        let adjustedQty = p.quantity;
+        if (runningQuantities[p.id] === undefined) {
+          runningQuantities[p.id] = p.quantity;
+        }
+
+        let adjustedQty = runningQuantities[p.id];
 
         if (txData.type === 'IN') {
           adjustedQty += txData.quantity;
@@ -782,6 +789,9 @@ export default function App() {
             adjustedQty += txData.quantity;
           }
         }
+
+        // Update running quantity tracker
+        runningQuantities[p.id] = adjustedQty;
 
         // Add to batch
         batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
