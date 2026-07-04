@@ -381,7 +381,12 @@ Ensure that each item has its SKU code, product description, and a numeric quant
               data: base64Data
             }
           },
-          "Parse this document and return the details in structured JSON matching the specified schema."
+          `This document may have MULTIPLE pages (especially if it is a multi-page PDF with 4 or more pages). 
+You MUST analyze and parse EVERY SINGLE page in the document.
+Do NOT stop at page 1. Do NOT aggregate pages.
+For EACH page, you MUST generate exactly one separate entry in the 'labels' array in the exact order they appear in the file.
+If the document has 4 pages, there MUST be exactly 4 elements in the 'labels' array.
+Parse this document completely and return the details in structured JSON matching the specified schema.`
         ],
         config: {
           systemInstruction: systemInstruction,
