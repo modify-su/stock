@@ -299,13 +299,65 @@ export default function SmartScanner({
     });
   };
 
+  const convertPdfToImages = async (file: File): Promise<{ name: string; type: string; data: string }[]> => {
+    const pdfjsLib = (window as any).pdfjsLib;
+    if (!pdfjsLib) {
+      console.warn("PDF.js library not loaded yet, trying to load dynamically...");
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load PDF.js library"));
+        document.head.appendChild(script);
+      });
+    }
+
+    const activePdfjsLib = (window as any).pdfjsLib;
+    if (!activePdfjsLib) {
+      throw new Error("ระบบไม่สามารถเปิดชุดคำสั่งสแกน PDF ได้ (pdfjsLib is undefined)");
+    }
+
+    // Set worker src
+    activePdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await activePdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const numPages = pdf.numPages;
+    const pagesImages: { name: string; type: string; data: string }[] = [];
+
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      // Scale 2.2 gives incredible clarity for shipping labels and barcodes
+      const viewport = page.getViewport({ scale: 2.2 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Fill white background before rendering PDF (fixes transparent background rendering as black issue)
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        pagesImages.push({
+          name: `${file.name.replace(/\.pdf$/i, '')}_หน้า_${pageNum}.jpg`,
+          type: 'image/jpeg',
+          data: dataUrl
+        });
+      }
+    }
+
+    return pagesImages;
+  };
+
   // Dynamic Batch Analysis of Multiple Files (Images or PDFs)
   const handleMultipleFiles = async (files: File[]) => {
     if (files.length === 0) return;
 
     setIsLoading(true);
     setErrorMessage(null);
-    setSuccessMessage(null);
+    setSuccessMessage("กำลังเตรียมวิเคราะห์เอกสาร...");
     setUploadProgress({ current: 0, total: files.length });
 
     const rawResultsToMap: any[] = [];
@@ -314,41 +366,76 @@ export default function SmartScanner({
     let errText = "";
 
     try {
+      // Step 1: Pre-process and expand PDF files into individual page images client-side
+      const expandedFiles: Array<{ name: string; type: string; data: string; isConvertedFromPdf?: boolean }> = [];
+      
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        setUploadProgress({ current: i + 1, total: files.length });
-
-        // Read file to base64
-        const fileBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error("ไม่สามารถอ่านไฟล์ได้"));
-          reader.readAsDataURL(file);
-        });
-
-        let targetData = fileBase64;
-        if (file.type.startsWith('image/')) {
-          targetData = await compressImage(fileBase64, 1024, 0.8);
+        if (file.type === 'application/pdf') {
+          try {
+            setSuccessMessage(`⏳ กำลังแปลงเอกสาร PDF "${file.name}" แยกออกเป็นหน้าย่อยเพื่อสแกนทีละหน้า...`);
+            const pageImages = await convertPdfToImages(file);
+            expandedFiles.push(...pageImages.map(img => ({ ...img, isConvertedFromPdf: true })));
+          } catch (pdfErr: any) {
+            console.error("PDF conversion failed, falling back to sending original PDF:", pdfErr);
+            const fileBase64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => reject(new Error("ไม่สามารถอ่านไฟล์ได้"));
+              reader.readAsDataURL(file);
+            });
+            expandedFiles.push({
+              name: file.name,
+              type: file.type,
+              data: fileBase64
+            });
+          }
+        } else {
+          const fileBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error("ไม่สามารถอ่านไฟล์ได้"));
+            reader.readAsDataURL(file);
+          });
+          
+          let targetData = fileBase64;
+          if (file.type.startsWith('image/')) {
+            targetData = await compressImage(fileBase64, 1024, 0.8);
+          }
+          expandedFiles.push({
+            name: file.name,
+            type: file.type,
+            data: targetData
+          });
         }
+      }
+
+      // Step 2: Progressively send each page image or file to `/api/scan-label`
+      setUploadProgress({ current: 0, total: expandedFiles.length });
+
+      for (let i = 0; i < expandedFiles.length; i++) {
+        const item = expandedFiles[i];
+        setUploadProgress({ current: i + 1, total: expandedFiles.length });
+        setSuccessMessage(`⏳ กำลังวิเคราะห์สแกนใบปะหน้าหน้าแรก/รูปที่ ${i + 1} จากทั้งหมด ${expandedFiles.length} หน้า...`);
 
         // Store file preview metadata
         previewsToAppend.push({
-          name: file.name,
-          type: file.type,
-          data: file.type.startsWith('image/') ? targetData : fileBase64
+          name: item.name,
+          type: item.type,
+          data: item.data
         });
 
-        // Call scan-label API for this file (supporting multi-page PDFs inside the endpoint!)
+        // Call scan-label API for this file (extremely fast on individual images, avoids Vercel timeout!)
         try {
           const res = await fetch('/api/scan-label', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: targetData })
+            body: JSON.stringify({ image: item.data })
           });
 
           if (!res.ok) {
             const errData = await res.json();
-            throw new Error(errData.error || `ไฟล์ที่ ${i + 1} วิเคราะห์ล้มเหลว`);
+            throw new Error(errData.error || `หน้า/ไฟล์ที่ ${i + 1} วิเคราะห์ล้มเหลว`);
           }
 
           const data = await res.json();
@@ -364,9 +451,9 @@ export default function SmartScanner({
             });
           }
         } catch (fileErr: any) {
-          console.error(`Error processing file ${file.name}:`, fileErr);
+          console.error(`Error processing file/page ${item.name}:`, fileErr);
           hasError = true;
-          errText += `• ไฟล์ "${file.name}": ${fileErr.message || "ล้มเหลว"}\n`;
+          errText += `• ${item.name}: ${fileErr.message || "ล้มเหลว"}\n`;
         }
       }
 
