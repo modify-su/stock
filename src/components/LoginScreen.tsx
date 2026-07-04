@@ -27,6 +27,7 @@ interface LoginScreenProps {
   onLogin: (user: UserProfile) => void;
   onRegister: (newUser: Omit<UserProfile, 'id' | 'isActive'> & { password?: string; securityQuestion?: string; securityAnswer?: string }) => { success: boolean; message: string } | Promise<{ success: boolean; message: string }>;
   onResetPassword: (username: string, securityAnswer: string, newPass: string) => { success: boolean; message: string } | Promise<{ success: boolean; message: string }>;
+  onBackToMaintenance?: () => void;
 }
 
 const SECURITY_QUESTIONS = [
@@ -54,7 +55,8 @@ export default function LoginScreen({
   users,
   onLogin,
   onRegister,
-  onResetPassword
+  onResetPassword,
+  onBackToMaintenance
 }: LoginScreenProps) {
   const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'FORGOT'>('LOGIN');
 
@@ -376,7 +378,7 @@ export default function LoginScreen({
                   <div className="flex-grow border-t border-slate-150"></div>
                 </div>
 
-                <div className="flex justify-center">
+                <div className="flex flex-col items-center gap-3 justify-center">
                   <button
                     onClick={() => {
                       setMode('REGISTER');
@@ -388,6 +390,17 @@ export default function LoginScreen({
                     <UserPlus className="w-4 h-4 text-emerald-500" />
                     <span>สมัครสมาชิกใหม่ (Register Account)</span>
                   </button>
+
+                  {onBackToMaintenance && (
+                    <button
+                      type="button"
+                      onClick={onBackToMaintenance}
+                      className="flex items-center gap-1.5 text-xs text-amber-700 hover:text-amber-800 border border-amber-200 hover:bg-amber-50 bg-amber-50/20 rounded-lg px-4 py-2 transition-all cursor-pointer font-bold w-full justify-center"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>กลับหน้าปิดปรับปรุงระบบ (Back to Maintenance)</span>
+                    </button>
+                  )}
                 </div>
               </motion.div>
             )}

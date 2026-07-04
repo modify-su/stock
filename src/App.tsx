@@ -405,6 +405,7 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
   const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER'>('OVERVIEW');
+  const [showLoginUnderMaintenance, setShowLoginUnderMaintenance] = useState(false);
 
   // --- Customizable Menu configuration states ---
   const [menuFontSize, setMenuFontSize] = useState<string>(() => {
@@ -982,24 +983,35 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated) {
-    return (
-      <LoginScreen
-        settings={settings}
-        users={users}
-        onLogin={(user) => {
-          setCurrentUser(user);
-          setIsAuthenticated(true);
-        }}
-        onRegister={handleRegisterUser}
-        onResetPassword={handleResetPassword}
-      />
-    );
-  }
+  // --- Maintenance & Auth Gate ---
+  const isUserAdmin = isAuthenticated && currentUser?.role === 'ADMIN';
 
-  // Maintenance Mode Gate
-  const isUserAdmin = currentUser?.role === 'ADMIN';
   if (settings.isMaintenanceMode && !isUserAdmin) {
+    if (showLoginUnderMaintenance) {
+      return (
+        <div className="relative">
+          <div className="bg-amber-500 text-white text-center py-2 px-4 text-xs font-bold flex items-center justify-center gap-2 shadow-sm relative z-50 animate-pulse">
+            <Wrench className="w-4 h-4" />
+            <span>🔧 โหมดปิดปรับปรุงระบบ: สามารถเข้าใช้งานได้เฉพาะบัญชีผู้ดูแลระบบ (ADMIN) เท่านั้น</span>
+          </div>
+          <LoginScreen
+            settings={settings}
+            users={users}
+            onLogin={(user) => {
+              setCurrentUser(user);
+              setIsAuthenticated(true);
+              if (user.role !== 'ADMIN') {
+                setShowLoginUnderMaintenance(false);
+              }
+            }}
+            onRegister={handleRegisterUser}
+            onResetPassword={handleResetPassword}
+            onBackToMaintenance={() => setShowLoginUnderMaintenance(false)}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 text-slate-800 font-sans">
         <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-lg w-full mx-auto border border-slate-100 flex flex-col items-center text-center space-y-6 relative overflow-hidden animate-fade-in">
@@ -1038,20 +1050,50 @@ export default function App() {
               <RefreshCcw className="w-4 h-4" />
               <span>โหลดหน้าเว็บใหม่</span>
             </button>
-            <button
-              onClick={() => setIsAuthenticated(false)}
-              className="w-full sm:w-auto px-5 py-2.5 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/80 border border-slate-200 hover:border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>ออกจากระบบ (Log Out)</span>
-            </button>
+            
+            {isAuthenticated ? (
+              <button
+                onClick={() => setIsAuthenticated(false)}
+                className="w-full sm:w-auto px-5 py-2.5 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/80 border border-slate-200 hover:border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>ออกจากระบบ (Log Out)</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowLoginUnderMaintenance(true)}
+                className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Lock className="w-4 h-4" />
+                <span>เข้าสู่ระบบระดับสูง (Admin Login)</span>
+              </button>
+            )}
           </div>
           
           <div className="text-[10px] text-slate-400 font-mono">
-            สิทธิ์ปัจจุบันของคุณ: {currentUser?.role === 'KEEPER' ? '📦 พนักงานคลังสินค้า' : '🔍 ผู้ตรวจสอบบัญชี'}
+            {isAuthenticated ? (
+              <span>สิทธิ์ปัจจุบันของคุณ: {currentUser?.role === 'KEEPER' ? '📦 พนักงานคลังสินค้า' : '🔍 ผู้ตรวจสอบบัญชี'}</span>
+            ) : (
+              <span>สถานะ: ยังไม่ได้เข้าสู่ระบบ (กรุณาให้ผู้ดูแลระบบล็อกอินผ่าน Admin Login เพื่อเปิดใช้งานระบบ)</span>
+            )}
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <LoginScreen
+        settings={settings}
+        users={users}
+        onLogin={(user) => {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+        }}
+        onRegister={handleRegisterUser}
+        onResetPassword={handleResetPassword}
+      />
     );
   }
 
