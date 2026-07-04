@@ -1586,12 +1586,12 @@ export default function SmartScanner({
                               <Check className="w-2.5 h-2.5" /> บันทึกแล้ว
                             </span>
                           ) : allItemsMatched ? (
-                            <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-md">
-                              ตรงคลังทั้งหมด
+                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-md border border-emerald-300">
+                              แจ้งตัดสต๊อกได้ ✅
                             </span>
                           ) : (
-                            <span className="bg-amber-100 border border-amber-200 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-md animate-pulse">
-                              ข้อมูลไม่ตรง ({totalCount - matchedCount} รายการ)
+                            <span className="bg-rose-100 text-rose-800 text-[9px] font-bold px-2 py-0.5 rounded-md border border-rose-300 animate-pulse">
+                              แจ้งเตือนเพื่อปรับแก้ไข ⚠️
                             </span>
                           )}
 
@@ -1624,19 +1624,24 @@ export default function SmartScanner({
                               <span><strong>บันทึกสำเร็จ:</strong> รายการใบปะหน้านี้ได้รับการหักลบและบันทึกลงคลังสต๊อกสำเร็จแล้ว</span>
                             </div>
                           ) : !allItemsMatched ? (
-                            <div className="p-2.5 bg-rose-50 text-rose-900 text-[11px] rounded-lg border border-rose-150 flex flex-col gap-1">
-                              <div className="flex items-center gap-1.5 font-bold">
+                            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-950 text-[11px] rounded-lg flex flex-col gap-1 shadow-xs">
+                              <div className="flex items-center gap-1.5 font-bold text-rose-700">
                                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 animate-bounce" />
-                                <span>แจ้งเตือน: ตรวจพบรหัสสินค้าที่ไม่ตรงกับระบบคลัง!</span>
+                                <span>แจ้งเตือนสินค้าไม่ตรงในระบบ! กรุณาปรับปรุงแก้ไขข้อมูล</span>
                               </div>
                               <p className="text-slate-600 pl-5">
-                                รหัสสินค้าด้านล่างขึ้นแถบสีแดงและมีสถานะว่า "ไม่พบ SKU" กรุณาแก้ไขรหัสสินค้าให้ถูกต้องตรงตามระบบคลัง หรือลบแถวที่ไม่เกี่ยวข้องออก และกดยืนยันบันทึกเพื่อดำเนินการต่อ
+                                ตรวจพบสินค้าในหน้า PDF มี <strong className="text-rose-700 font-bold">รหัส SKU ไม่ตรงในคลังปัจจุบัน (แสดงแถบไม่พบ SKU สีแดง)</strong> กรุณาคลิกเลือกคำแนะนำด้านล่าง พิมพ์ปรับแก้ไขรหัส หรือลบแถวสินค้าที่ไม่ต้องการออก จากนั้นกดปุ่ม <strong>"บันทึกยืนยัน"</strong> ด้านล่างเพื่อบันทึกรายการ
                               </p>
                             </div>
                           ) : (
-                            <div className="p-2 bg-emerald-50/50 text-emerald-800 text-[11px] rounded-lg border border-emerald-100/50 flex items-center gap-1.5">
-                              <Check className="w-4 h-4 shrink-0 text-emerald-600" />
-                              <span>รหัสสินค้าถูกต้องครบถ้วนตามฐานข้อมูล สามารถกด "ตัดสต๊อกใบนี้เลย" ได้ทันที</span>
+                            <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-950 text-[11px] rounded-lg flex flex-col gap-1 shadow-xs">
+                              <div className="flex items-center gap-1.5 font-bold text-emerald-700">
+                                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 animate-pulse" />
+                                <span>รายการสินค้าตรงตามคลัง 100%! แจ้งตัดสต๊อกได้ทันที</span>
+                              </div>
+                              <p className="text-slate-600 pl-5">
+                                รหัส SKU สินค้าทั้งหมดตรงกับฐานข้อมูลคลังเรียบร้อยแล้ว คุณสามารถทำรายการและคลิก <strong>"บันทึกยืนยันตัดสต๊อกเลย"</strong> เพื่อตัดยอดสต๊อกในระบบได้อย่างสมบูรณ์แบบ
+                              </p>
                             </div>
                           )}
 
@@ -1694,28 +1699,61 @@ export default function SmartScanner({
                                   >
                                     {/* Left Side: SKU Matching */}
                                     <div className="flex-1 space-y-1">
-                                      <div className="flex items-center gap-1.5">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
                                         <input
                                           type="text"
                                           disabled={isProcessed}
                                           value={item.sku}
                                           onChange={(e) => handleItemSkuChange(labelIdx, idx, e.target.value)}
-                                          className="px-2 py-0.5 border border-slate-200 rounded font-mono font-bold text-[11px] uppercase w-32 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-60"
+                                          className="px-2 py-0.5 border border-slate-200 rounded font-mono font-bold text-[11px] uppercase w-32 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-60 bg-white text-slate-800"
                                           placeholder="รหัส SKU สินค้า"
                                         />
                                         
                                         {item.matched ? (
-                                          <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 shrink-0">
+                                          <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5 shrink-0 border border-emerald-200">
                                             <Check className="w-2.5 h-2.5" />
-                                            <span>ตรงในคลัง</span>
+                                            <span>ตรงในคลัง - แจ้งตัดสต๊อกได้ ✅</span>
                                           </span>
                                         ) : (
-                                          <span className="bg-red-100 text-red-800 text-[9px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 shrink-0 animate-pulse">
+                                          <span className="bg-rose-100 text-rose-800 text-[9px] px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5 shrink-0 animate-pulse border border-rose-200">
                                             <X className="w-2.5 h-2.5" />
-                                            <span>ไม่พบ SKU</span>
+                                            <span>ไม่พบ SKU - แจ้งปรับแก้ไข ⚠️</span>
                                           </span>
                                         )}
                                       </div>
+
+                                      {/* Suggestions for unmatched SKUs */}
+                                      {!item.matched && !isProcessed && (
+                                        (() => {
+                                          const searchStr = item.sku.trim().toLowerCase();
+                                          const suggestions = products
+                                            .filter(p => 
+                                              p.sku.toLowerCase().includes(searchStr) || 
+                                              p.name.toLowerCase().includes(searchStr)
+                                            )
+                                            .slice(0, 3);
+
+                                          if (suggestions.length > 0) {
+                                            return (
+                                              <div className="mt-1 flex flex-wrap gap-1 items-center bg-slate-50/70 p-1.5 rounded border border-slate-150">
+                                                <span className="text-[9px] text-slate-500 font-bold">🔍 แนะนำรหัส SKU ในคลัง:</span>
+                                                {suggestions.map((p) => (
+                                                  <button
+                                                    key={p.id}
+                                                    type="button"
+                                                    onClick={() => handleItemSkuChange(labelIdx, idx, p.sku)}
+                                                    className="text-[9px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded border border-indigo-100 transition-all cursor-pointer"
+                                                    title={p.name}
+                                                  >
+                                                    {p.sku} ({p.name.slice(0, 12)}...)
+                                                  </button>
+                                                ))}
+                                              </div>
+                                            );
+                                          }
+                                          return null;
+                                        })()
+                                      )}
 
                                       {item.matched && item.matchedProduct ? (
                                         <div className="space-y-0.5">
@@ -1725,7 +1763,7 @@ export default function SmartScanner({
                                           </p>
                                         </div>
                                       ) : (
-                                        <p className="text-[9px] text-red-600 font-semibold line-clamp-1">ชื่อตามใบปะ: {item.productName || 'ไม่ระบุรหัส SKU สินค้า'}</p>
+                                        <p className="text-[9px] text-rose-600 font-semibold line-clamp-1">ชื่อตามใบปะ: {item.productName || 'ไม่ระบุรหัส SKU สินค้า'}</p>
                                       )}
                                     </div>
 
@@ -1778,17 +1816,17 @@ export default function SmartScanner({
                                   className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-bold py-1.5 px-3 rounded text-[11px] flex items-center gap-1 cursor-pointer shadow-sm transition-all"
                                 >
                                   <Sparkles className="w-3.5 h-3.5" />
-                                  <span>⚡ ตัดสต๊อกใบนี้เลย (ตรงในระบบ)</span>
+                                  <span>⚡ กดบันทึกยืนยันและตัดสต๊อกใบนี้เลย (ตรงคลัง)</span>
                                 </button>
                               ) : (
                                 <button
                                   type="button"
                                   onClick={() => handleConfirmSingleTransaction(labelIdx)}
                                   disabled={isLoading}
-                                  className="bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white font-bold py-1.5 px-3 rounded text-[11px] flex items-center gap-1 cursor-pointer shadow-sm transition-all"
+                                  className="bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white font-bold py-1.5 px-3 rounded text-[11px] flex items-center gap-1 cursor-pointer shadow-sm transition-all animate-pulse"
                                 >
                                   <Check className="w-3.5 h-3.5" />
-                                  <span>📝 กดยืนยันบันทึก (มีส่วนไม่ตรง)</span>
+                                  <span>📝 กดบันทึกยืนยัน (ปรับแก้ไขแล้ว)</span>
                                 </button>
                               )}
                             </div>
@@ -1816,7 +1854,7 @@ export default function SmartScanner({
                   className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-400 disabled:to-slate-400 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-1.5 transition-all text-xs cursor-pointer shadow-md"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>บันทึกและตัดสต๊อกอัจฉริยะกลุ่มนี้ทั้งหมด ({scanResults.length} ใบปะหน้า) 📦</span>
+                  <span>กดบันทึกยืนยันและตัดสต๊อกกลุ่มนี้ทั้งหมด ({scanResults.length} ใบปะหน้า) 📦</span>
                 </button>
               </div>
             </div>

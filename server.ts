@@ -694,7 +694,7 @@ ${formattedPages}`;
   });
 
   // Set up Vite server middleware in dev mode, serve index.html directly in prod mode
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" || process.env.DISABLE_HMR === "true") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
