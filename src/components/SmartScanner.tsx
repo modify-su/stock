@@ -267,7 +267,30 @@ export default function SmartScanner({
     return rawLabels.map(label => {
       const extractedItems = (label.extractedItems || []).map((item: any) => {
         const cleanSku = (item.sku || '').trim();
-        const matched = products.find(p => p.sku.toLowerCase() === cleanSku.toLowerCase());
+        
+        // 1. Try EXACT MATCH (ignoring case)
+        let matched = products.find(p => p.sku.toLowerCase() === cleanSku.toLowerCase());
+        
+        // 2. Try SUBSTRING MATCH: Is the system SKU contained in the cleanSku from PDF, or vice versa?
+        if (!matched && cleanSku) {
+          matched = products.find(p => {
+            const sysSku = p.sku.toLowerCase();
+            const pdfSku = cleanSku.toLowerCase();
+            // Match if sysSku or pdfSku contains the other (at least 3 characters to avoid false matches like "A")
+            return (sysSku.length >= 3 && pdfSku.includes(sysSku)) || 
+                   (pdfSku.length >= 3 && sysSku.includes(pdfSku));
+          });
+        }
+
+        // 3. Try to find the system SKU inside the raw PDF product name/description
+        if (!matched && (item.productName || item.name)) {
+          const rawName = (item.productName || item.name || '').toLowerCase();
+          matched = products.find(p => {
+            const sysSku = p.sku.toLowerCase();
+            return sysSku.length >= 3 && rawName.includes(sysSku);
+          });
+        }
+
         const matchedProduct = matched ? {
           id: matched.id,
           sku: matched.sku,
@@ -929,8 +952,19 @@ export default function SmartScanner({
 
   const handleItemSkuChange = (labelIdx: number, itemIdx: number, val: string) => {
     const cleanSku = val.trim();
-    // Try to match on-the-fly
-    const matched = products.find(p => p.sku.toLowerCase() === cleanSku.toLowerCase());
+    // 1. Try EXACT MATCH (ignoring case)
+    let matched = products.find(p => p.sku.toLowerCase() === cleanSku.toLowerCase());
+    
+    // 2. Try SUBSTRING MATCH: Is the system SKU contained in the cleanSku, or vice versa?
+    if (!matched && cleanSku) {
+      matched = products.find(p => {
+        const sysSku = p.sku.toLowerCase();
+        const inputSku = cleanSku.toLowerCase();
+        return (sysSku.length >= 3 && inputSku.includes(sysSku)) || 
+               (inputSku.length >= 3 && sysSku.includes(inputSku));
+      });
+    }
+
     const matchedProduct = matched ? {
       id: matched.id,
       sku: matched.sku,
@@ -1939,10 +1973,18 @@ export default function SmartScanner({
                                         {/* Matches Badges */}
                                         <div className="flex flex-wrap gap-1">
                                           {item.matched ? (
-                                            <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1.5 py-0.5 rounded-sm font-semibold flex items-center gap-0.5 border border-emerald-200 shrink-0">
-                                              <Check className="w-2 h-2" />
-                                              <span>ตรงคลังแล้ว ✅</span>
-                                            </span>
+                                            <>
+                                              <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1.5 py-0.5 rounded-sm font-semibold flex items-center gap-0.5 border border-emerald-200 shrink-0">
+                                                <Check className="w-2 h-2" />
+                                                <span>ตรงคลังแล้ว ✅</span>
+                                              </span>
+                                              {item.matchedProduct && item.matchedProduct.sku.toLowerCase() !== item.sku.toLowerCase() && (
+                                                <span className="bg-blue-50 text-blue-800 text-[8px] px-1.5 py-0.5 rounded-sm font-semibold flex items-center gap-0.5 border border-blue-200 shrink-0">
+                                                  <Sparkles className="w-2.5 h-2.5 text-blue-500 animate-pulse" />
+                                                  <span>จับคู่ระบบ: {item.matchedProduct.sku}</span>
+                                                </span>
+                                              )}
+                                            </>
                                           ) : (
                                             <span className="bg-rose-150 text-rose-850 text-[8px] px-1.5 py-0.5 rounded-sm font-semibold flex items-center gap-0.5 border border-rose-250 shrink-0 animate-pulse">
                                               <X className="w-2 h-2" />
