@@ -1157,6 +1157,32 @@ export default function SmartScanner({
       return;
     }
 
+    // Proactively check for unmatched SKU items before starting loading/processing!
+    const firstUnmatchedIdx = scanResults.findIndex(r => !r.processed && r.extractedItems.some(item => !item.matched));
+    if (firstUnmatchedIdx !== -1) {
+      const unmatchedResult = scanResults[firstUnmatchedIdx];
+      const unmatchedItem = unmatchedResult.extractedItems.find(item => !item.matched);
+      const trackingInfo = unmatchedResult.trackingNo || unmatchedResult.orderId || `รายการที่ ${firstUnmatchedIdx + 1}`;
+      
+      // Auto-expand this card to help user see it immediately!
+      setExpandedIndices(prev => ({
+        ...prev,
+        [firstUnmatchedIdx]: true
+      }));
+
+      playBeep('error');
+      alert(`⚠️ พบสินค้าไม่ตรงในคลังระบบ!\n\nพัสดุ: ${trackingInfo}\nรหัสที่เป็นปัญหา: "${unmatchedItem?.sku || 'ไม่ระบุ'}"\n\nกรุณาปรับแก้ไขรหัส SKU นี้ (หรือคลิกเลือกปุ่มแนะนำสีฟ้า) ให้กลายเป็นสีเขียว "ตรงคลังแล้ว" หรือคลิกไอคอนถังขยะเพื่อลบออกก่อนกดยืนยันบันทึกแบบกลุ่มครับ`);
+      
+      // Focus or scroll to the element if possible
+      setTimeout(() => {
+        const el = document.getElementById(`label-card-${firstUnmatchedIdx}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 150);
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -1865,6 +1891,7 @@ export default function SmartScanner({
                   return (
                     <div 
                       key={labelIdx} 
+                      id={`label-card-${labelIdx}`}
                       className={`border rounded-xl overflow-hidden transition-all duration-200 ${
                         isProcessed
                           ? 'border-emerald-200 bg-emerald-50/5 opacity-85'
@@ -2239,12 +2266,21 @@ export default function SmartScanner({
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => handleConfirmSingleTransaction(labelIdx)}
+                                  onClick={() => {
+                                    const unmatchedItems = label.extractedItems.filter(i => !i.matched);
+                                    if (unmatchedItems.length > 0) {
+                                      const problemSkus = unmatchedItems.map(i => `"${i.sku || 'ไม่ระบุ'}"`).join(', ');
+                                      playBeep('error');
+                                      alert(`⚠️ ตรวจพบรหัสสินค้าไม่ตรงระบบคลังค้างอยู่!\n\nรหัสปัญหา: ${problemSkus}\n\nกรุณาพิมพ์แก้ไขรหัสสินค้า หรือใช้ปุ่มคำแนะนำรหัสสีฟ้าด้านล่างให้กลายเป็นสีเขียว "ตรงคลังแล้ว" หรือคลิกไอคอนถังขยะเพื่อลบรายการสินค้าที่ไม่ต้องการออกก่อนบันทึกครับ`);
+                                      return;
+                                    }
+                                    handleConfirmSingleTransaction(labelIdx);
+                                  }}
                                   disabled={isLoading}
-                                  className="bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white font-bold py-1.5 px-3 rounded text-[11px] flex items-center gap-1 cursor-pointer shadow-sm transition-all animate-pulse"
+                                  className="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-400 text-white font-bold py-1.5 px-3 rounded text-[11px] flex items-center gap-1 cursor-pointer shadow-sm transition-all"
                                 >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>📝 กดบันทึกยืนยัน (ปรับแก้ไขแล้ว)</span>
+                                  <AlertTriangle className="w-3.5 h-3.5" />
+                                  <span>⚠️ ตรวจพบรหัสไม่ตรง (กรุณาแก้ไขก่อนกดยืนยัน)</span>
                                 </button>
                               )}
                             </div>

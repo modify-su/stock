@@ -74,7 +74,9 @@ async function generateContentWithFallback(params: {
   }
 
   if (lastError) {
-    const errorString = JSON.stringify(lastError);
+    const errMsg = lastError?.message || String(lastError);
+    const errStatus = lastError?.status || "";
+    const errorString = errMsg + " " + errStatus + " " + (typeof lastError === "object" ? JSON.stringify(lastError) : "");
     if (
       errorString.includes("429") || 
       errorString.includes("RESOURCE_EXHAUSTED") || 

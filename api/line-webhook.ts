@@ -158,7 +158,7 @@ ${productsContext}
 
         let replyText = "";
         try {
-          const geminiApiKey = process.env.GEMINI_API_KEY || settings.geminiApiKey || "";
+          const geminiApiKey = (settings.geminiApiKey || "").trim() || process.env.GEMINI_API_KEY || "";
           
           let responseText = "";
           if (geminiApiKey) {
@@ -176,12 +176,25 @@ ${productsContext}
             });
             responseText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
           } else {
-            responseText = "⚠️ ยังไม่ได้ตั้งค่าคีย์เปิดใช้บริการ GEMINI_API_KEY ในเครื่องมือหลังบ้าน (Environment Variables) ของ Vercel กรุณาใส่คีย์เพื่อให้ AI ทำงานได้นะครับ";
+            responseText = "⚠️ ยังไม่ได้ตั้งค่าคีย์เปิดใช้บริการ GEMINI_API_KEY ในระบบหลังบ้าน กรุณาระบุ API Key เพื่อให้บอทแชตคลังสินค้าทำงานได้ตามปกตินะครับ";
           }
           replyText = responseText;
-        } catch (geminiError) {
+        } catch (geminiError: any) {
           console.error("Gemini Content Generation Error:", geminiError);
-          replyText = `ขออภัยครับ ระบบวิเคราะห์ AI ขัดข้องชั่วคราว: ${geminiError instanceof Error ? geminiError.message : String(geminiError)}`;
+          const errMsg = geminiError?.message || String(geminiError);
+          const errStatus = geminiError?.status || "";
+          const errString = errMsg + " " + errStatus + " " + JSON.stringify(geminiError);
+          
+          if (
+            errString.includes("429") || 
+            errString.includes("RESOURCE_EXHAUSTED") || 
+            errString.includes("Quota exceeded") || 
+            errString.includes("rate-limits")
+          ) {
+            replyText = "⚠️ ขออภัยครับ โควต้าบริการ Gemini AI ฟรีของระบบแชร์ร่วมกันเต็มชั่วคราว (Error 429: Quota Exceeded)\n\nเพื่อใช้งานต่อได้ทันทีโดยไม่จำกัด กรุณาแจ้งผู้แลระบบ (Admin) ให้กรอก 'Gemini API Key' ส่วนตัวในหน้า 'ตั้งค่าระบบ' หัวข้อ 'ตั้งค่าสิทธิ์เข้าใช้งาน Gemini AI API Key' นะครับ";
+          } else {
+            replyText = `ขออภัยครับ ระบบวิเคราะห์ AI ขัดข้องชั่วคราว: ${errMsg}`;
+          }
         }
 
         // Reply back to LINE using native fetch API
