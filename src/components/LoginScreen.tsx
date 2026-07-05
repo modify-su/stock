@@ -320,7 +320,7 @@ export default function LoginScreen({
                       </div>
                       <input
                         type="text"
-                        placeholder="เช่น modify"
+                        placeholder="ชื่อผู้ใช้"
                         value={loginUsername}
                         onChange={(e) => setLoginUsername(e.target.value)}
                         className="block w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all font-mono"
@@ -605,7 +605,7 @@ export default function LoginScreen({
                         </div>
                         <input
                           type="text"
-                          placeholder="ระบุ username เช่น modify"
+                          placeholder="ระบุชื่อผู้ใช้"
                           value={forgotUsername}
                           onChange={(e) => setForgotUsername(e.target.value)}
                           className="block w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 focus:bg-white focus:outline-hidden font-mono"
