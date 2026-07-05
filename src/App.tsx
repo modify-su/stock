@@ -453,8 +453,35 @@ export default function App() {
           const data = await res.json();
           if (data && data.version && data.version !== clientVersion) {
             setIsNewVersionAvailable(true);
+            
+            // 🔒 ออกจากระบบโดยอัตโนมัติ เพื่อความปลอดภัยและบังคับดึงข้อมูลโค้ดใหม่ล่าสุด
+            localStorage.removeItem('inventory_current_user');
+            localStorage.removeItem('inventory_is_authenticated');
+            sessionStorage.clear();
+            
+            // สั่งล้างแคชใน Cache Storage และปิด Service Worker ของเบราว์เซอร์ทันที
+            try {
+              if ('caches' in window) {
+                const cacheKeys = await caches.keys();
+                await Promise.all(cacheKeys.map(key => caches.delete(key)));
+              }
+              if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(registrations.map(reg => reg.unregister()));
+              }
+            } catch (cacheErr) {
+              console.warn("Failed to clear cache during autoupdate:", cacheErr);
+            }
+
+            // ตั้งเวลาหน่วงให้บันทึกสเตตก่อนทำ Hard Reload ข้ามแคช (Bypass Cache)
             setTimeout(() => {
-              window.location.reload();
+              setCurrentUser(null);
+              setIsAuthenticated(false);
+              const origin = window.location.origin;
+              const pathname = window.location.pathname;
+              const searchParams = new URLSearchParams(window.location.search);
+              searchParams.set('nocache', String(Date.now()));
+              window.location.href = `${origin}${pathname}?${searchParams.toString()}${window.location.hash}`;
             }, 3000);
           }
         }
@@ -1197,16 +1224,26 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <LoginScreen
-        settings={settings}
-        users={users}
-        onLogin={(user) => {
-          setCurrentUser(user);
-          setIsAuthenticated(true);
-        }}
-        onRegister={handleRegisterUser}
-        onResetPassword={handleResetPassword}
-      />
+      <div className="min-h-screen flex flex-col bg-slate-50">
+        {isNewVersionAvailable && (
+          <div className="bg-blue-600 text-white text-center py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-md relative z-50 animate-pulse">
+            <Sparkles className="w-4 h-4 text-amber-300 animate-spin" />
+            <span>🚀 ระบบพบคลิปต์บิลด์ใหม่ล่าสุดจาก AI Studio! บังคับเคลียร์แคชและระบบได้ Logout ชั่วคราวเพื่ออัปเดตไฟล์แบบไม่สะดุดในอีกสักครู่...</span>
+          </div>
+        )}
+        <div className="flex-1 flex flex-col">
+          <LoginScreen
+            settings={settings}
+            users={users}
+            onLogin={(user) => {
+              setCurrentUser(user);
+              setIsAuthenticated(true);
+            }}
+            onRegister={handleRegisterUser}
+            onResetPassword={handleResetPassword}
+          />
+        </div>
+      </div>
     );
   }
 

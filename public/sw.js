@@ -48,13 +48,13 @@ self.addEventListener('fetch', (event) => {
     return; // Fetch directly from live network
   }
 
+  // Network-First Strategy:
+  // We ALWAYS attempt to fetch from the network first. This ensures the client
+  // gets the absolute latest changes immediately when online.
+  // If the network request fails (e.g., user is offline), we fallback to the Cache.
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse; // Return cache match
-      }
-      
-      return fetch(event.request).then((networkResponse) => {
+    fetch(event.request)
+      .then((networkResponse) => {
         // Cache new static assets dynamically if valid
         if (
           networkResponse &&
@@ -68,9 +68,10 @@ self.addEventListener('fetch', (event) => {
           });
         }
         return networkResponse;
-      }).catch(() => {
-        // Offline fallback - do nothing or return a placeholder for resources
-      });
-    })
+      })
+      .catch(() => {
+        // Network failed (offline), look for it in the cache
+        return caches.match(event.request);
+      })
   );
 });
