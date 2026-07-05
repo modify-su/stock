@@ -281,14 +281,17 @@ export default function SmartScanner({
     }
   };
 
-  // Helper to check if a tracking number or order ID already exists in transactions
-  const checkDuplicateNo = (refNo: string, trackNo: string) => {
+  // Helper to check if a tracking number or order ID already exists in transactions with the same type
+  const checkDuplicateNo = (refNo: string, trackNo: string, currentType?: 'IN' | 'OUT' | 'RETURN') => {
     if (!refNo && !trackNo) return null;
     
+    const targetType = currentType || actionType;
     const duplicate = transactions.find(t => 
-      (refNo && t.referenceNo === refNo) || 
-      (trackNo && t.referenceNo === trackNo) ||
-      (trackNo && t.id.includes(trackNo))
+      t.type === targetType && (
+        (refNo && t.referenceNo === refNo) || 
+        (trackNo && t.referenceNo === trackNo) ||
+        (trackNo && t.id.includes(trackNo))
+      )
     );
 
     return duplicate || null;
@@ -565,7 +568,7 @@ export default function SmartScanner({
         let hasInsufficientStock = false;
 
         resultsToAppend.forEach((label) => {
-          const duplicateTx = checkDuplicateNo(label.orderId, label.trackingNo);
+          const duplicateTx = checkDuplicateNo(label.orderId, label.trackingNo, actionType);
           if (duplicateTx) {
             hasDuplicate = true;
             duplicateNames += `${label.trackingNo || label.orderId || 'ไม่ทราบเลข'}, `;
@@ -650,7 +653,7 @@ export default function SmartScanner({
         const firstLabel = newLabels[0];
         if (!firstLabel) return;
 
-        const duplicateTx = checkDuplicateNo(firstLabel.orderId, firstLabel.trackingNo);
+        const duplicateTx = checkDuplicateNo(firstLabel.orderId, firstLabel.trackingNo, firstLabel.detectedAction || 'OUT');
         const allMatched = firstLabel.extractedItems && firstLabel.extractedItems.length > 0 && firstLabel.extractedItems.every(item => item.matched && item.matchedProduct);
         
         if (allMatched && !duplicateTx) {
@@ -712,7 +715,7 @@ export default function SmartScanner({
         let hasDuplicate = false;
         let duplicateNames = "";
         newLabels.forEach((label) => {
-          const duplicateTx = checkDuplicateNo(label.orderId, label.trackingNo);
+          const duplicateTx = checkDuplicateNo(label.orderId, label.trackingNo, actionType);
           if (duplicateTx) {
             hasDuplicate = true;
             duplicateNames += `${label.trackingNo || label.orderId || 'ไม่ทราบเลข'}, `;
@@ -953,7 +956,7 @@ export default function SmartScanner({
           return next;
         });
 
-        const duplicateTx = checkDuplicateNo(firstPageResult.orderId, firstPageResult.trackingNo);
+        const duplicateTx = checkDuplicateNo(firstPageResult.orderId, firstPageResult.trackingNo, actionType);
         if (duplicateTx) {
           playBeep('error');
           setErrorMessage(`⚠️ ตรวจพบเลขออเดอร์/แทรคกิ้งนี้ (${firstPageResult.trackingNo || firstPageResult.orderId}) ได้เคยทำรายการตัดคลังไปแล้วเมื่อ ${new Date(duplicateTx.date).toLocaleString()} กรุณาเลือก 'อนุญาตให้ลงรายการซ้ำ' ด้านล่างหากต้องการบันทึกสต๊อกซ้ำครับ`);
@@ -1126,7 +1129,7 @@ export default function SmartScanner({
 
       // Validate duplicates
       if (!allowDuplicateForce) {
-        const duplicateTx = checkDuplicateNo(result.orderId, result.trackingNo);
+        const duplicateTx = checkDuplicateNo(result.orderId, result.trackingNo, actionType);
         if (duplicateTx) {
           throw new Error(`ใบปะหน้านี้ (เลขอ้างอิง: ${result.trackingNo || result.orderId || 'ไม่ระบุ'}) เคยลงคลังไปแล้ว หากยืนยันจะทำซ้ำ กรุณาติ๊กเลือก 'อนุญาตให้บันทึกซ้ำ' ด้านล่างก่อนกดยืนยันครับ`);
         }
@@ -1251,7 +1254,7 @@ export default function SmartScanner({
 
         // Validate duplicates before recording
         if (!allowDuplicateForce) {
-          const duplicateTx = checkDuplicateNo(result.orderId, result.trackingNo);
+          const duplicateTx = checkDuplicateNo(result.orderId, result.trackingNo, actionType);
           if (duplicateTx) {
             duplicateDetails += `• ใบปะหน้าที่ ${i + 1} (เลขอ้างอิง: ${result.trackingNo || result.orderId || 'ไม่ระบุ'}) เคยลงคลังไปแล้ว\n`;
           }
@@ -2076,7 +2079,7 @@ export default function SmartScanner({
                   const hasQtyMismatch = label.extractedItems.some(i => i.matched && i.matchedProduct && i.matchedProduct.quantity < i.quantity);
                   const allItemsMatched = label.extractedItems.length > 0 && !hasSkuMismatch && !hasQtyMismatch;
                   
-                  const isLabelDuplicate = checkDuplicateNo(label.orderId, label.trackingNo);
+                  const isLabelDuplicate = checkDuplicateNo(label.orderId, label.trackingNo, actionType);
                   const isProcessed = !!label.processed;
 
                   return (
