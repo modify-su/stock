@@ -1750,15 +1750,23 @@ export default function SmartScanner({
 
           {/* Error Message Notifications inside Column */}
           {errorMessage && !isLoading && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-900 p-3.5 rounded-lg text-xs space-y-2">
-              <div className="flex items-center gap-2">
+            <div className="bg-rose-50 border border-rose-200 text-rose-900 p-3.5 rounded-lg text-xs space-y-2 relative animate-fade-in">
+              <button
+                type="button"
+                onClick={() => setErrorMessage(null)}
+                className="absolute top-2.5 right-2.5 text-rose-400 hover:text-rose-700 font-bold w-5 h-5 flex items-center justify-center hover:bg-rose-100/60 rounded-full transition-all cursor-pointer"
+                title="ปิดข้อความแจ้งเตือน"
+              >
+                ✕
+              </button>
+              <div className="flex items-center gap-2 pr-6">
                 <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
                 <span className="font-bold">ข้อมูลการลงคลัง / คำแจ้งเตือนความถูกต้อง:</span>
               </div>
-              <p className="text-slate-700 leading-relaxed whitespace-pre-line">{errorMessage}</p>
+              <p className="text-slate-700 leading-relaxed whitespace-pre-line pr-6">{errorMessage}</p>
               
               <div className="pt-1.5">
-                <label className="flex items-center gap-2 bg-white/70 px-3 py-1.5 border border-rose-300 rounded-md cursor-pointer text-slate-800 text-[11px] font-bold">
+                <label className="flex items-center gap-2 bg-white/70 px-3 py-1.5 border border-rose-300 rounded-md cursor-pointer text-slate-800 text-[11px] font-bold w-fit">
                   <input
                     type="checkbox"
                     checked={allowDuplicateForce}
@@ -1772,9 +1780,17 @@ export default function SmartScanner({
           )}
 
           {successMessage && !isLoading && (
-            <div className="bg-emerald-50 border border-emerald-200 text-emerald-950 p-3.5 rounded-lg text-xs flex items-start gap-2 animate-fade-in">
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-950 p-3.5 rounded-lg text-xs flex items-start gap-2 animate-fade-in relative">
               <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-              <div className="font-medium whitespace-pre-line">{successMessage}</div>
+              <div className="font-medium whitespace-pre-line pr-6">{successMessage}</div>
+              <button
+                type="button"
+                onClick={() => setSuccessMessage(null)}
+                className="absolute top-2.5 right-2.5 text-emerald-400 hover:text-emerald-700 font-bold w-5 h-5 flex items-center justify-center hover:bg-emerald-100/60 rounded-full transition-all cursor-pointer"
+                title="ปิดข้อความแจ้งเตือน"
+              >
+                ✕
+              </button>
             </div>
           )}
 
