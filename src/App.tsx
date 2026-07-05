@@ -490,6 +490,30 @@ export default function App() {
     }
   }, [users, currentUser?.id, isAuthenticated]);
 
+  // --- Safe Clear Cache & Hard Reload function to bypass any stale iframe caching ---
+  const handleClearCacheAndHardReload = async () => {
+    try {
+      if ('caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map(key => caches.delete(key)));
+      }
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(reg => reg.unregister()));
+      }
+      sessionStorage.clear();
+    } catch (err) {
+      console.warn("Failed to clear browser cache API:", err);
+    } finally {
+      // Force reload by appending a timestamp to URL search params to break cache proxies
+      const origin = window.location.origin;
+      const pathname = window.location.pathname;
+      const searchParams = new URLSearchParams(window.location.search);
+      searchParams.set('nocache', String(Date.now()));
+      window.location.href = `${origin}${pathname}?${searchParams.toString()}${window.location.hash}`;
+    }
+  };
+
   // --- Filter states ---
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
@@ -1216,6 +1240,17 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3 shrink-0">
+              {/* ⚡ ปุ่มเคลียร์แคชและดึงไฟล์ล่าสุด (Quick Cache Bypass & Update) */}
+              <button 
+                onClick={handleClearCacheAndHardReload}
+                className="px-2.5 py-1.5 text-[11px] font-bold text-amber-700 hover:text-white hover:bg-amber-600 bg-amber-50 border border-amber-200 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-xs hover:scale-102"
+                title="ล้างแคชเว็บแอปพลิเคชันและอัปเดตระบบ เพื่อดึงโค้ดเวอร์ชันล่าสุดจาก AI Studio"
+              >
+                <RefreshCcw className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden md:inline">⚡ ดึงไฟล์ล่าสุด (เคลียร์แคช)</span>
+                <span className="inline md:hidden">⚡ เคลียร์แคช</span>
+              </button>
+
               {/* Menu Customizer Button in Top Right - ADMIN ONLY */}
               {currentUser?.role === 'ADMIN' && (
                 <button 

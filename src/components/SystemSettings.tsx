@@ -1439,64 +1439,123 @@ export default function SystemSettings({
       </div>
 
       {/* 5. Maintenance / Clear cache zone */}
-      <div className="bg-rose-50 border border-rose-200 rounded-xl p-6 shadow-sm space-y-4">
-        <div className="flex items-start gap-3">
-          <div className="p-2 bg-rose-100 rounded-lg text-rose-700 shrink-0">
-            <RefreshCcw className="w-5 h-5" />
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 shadow-sm space-y-5">
+        {/* 5.1 Safe Cache Clearance (100% Safe, No Data Loss) */}
+        <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="p-1.5 bg-indigo-100 rounded-lg text-indigo-700 shrink-0">
+              <RefreshCcw className="w-4 h-4 animate-spin-hover" />
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-indigo-950 uppercase tracking-wider">
+                ⚡ ระบบล้างแคชระบบเบราว์เซอร์อย่างปลอดภัย (Safe Cache Clearance - 100% ปลอดภัย)
+              </h4>
+              <p className="text-[11px] text-indigo-700 mt-1 max-w-2xl leading-relaxed">
+                ใช้เมื่อพบปัญหาการบิลด์โค้ดใน AI Studio แล้วหน้าจอไม่เปลี่ยนแปลงหรือทำงานผิดพลาด
+                ฟังก์ชันนี้จะทำลาย Cache Storage, ยกเลิก Service Worker ทั่วเบราว์เซอร์ และบังคับโหลดไฟล์โค้ดชุดใหม่ล่าสุดแบบข้ามแคช (Hard Reload Bypass) <strong>โดยที่ข้อมูลสินค้า รายการ และประวัติสต๊อกบนคลาวด์จะไม่สูญหายใดๆ ทั้งสิ้น</strong>
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-rose-900">
-              🧹 ฝ่ายควบคุมระบบ: โหมดทำความสะอาดฐานข้อมูล & รีเซ็ตคืนค่าโรงงาน (Factory Reset & Clear Cache)
-            </h3>
-            <p className="text-xs text-rose-700 mt-1 max-w-3xl leading-relaxed">
-              หากต้องการลบธุรกรรมประวัติเก็บ บันทึกรับเข้าส่งออกสินค้า แฟ้มบัญชีผู้ใช้ หรือข้อมูลสินค้าคลาวน์ที่ค้างสถิติทั้งหมด สามารถรันฟังก์ชันทำลายล้างเพื่อกลับเข้าสู่อสัญกรรมแรกสุดของระบบ
-            </p>
+          <div className="flex flex-wrap gap-2 items-center">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  if ('caches' in window) {
+                    const cacheKeys = await caches.keys();
+                    await Promise.all(cacheKeys.map(key => caches.delete(key)));
+                  }
+                  if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(registrations.map(reg => reg.unregister()));
+                  }
+                  sessionStorage.clear();
+                  
+                  setConfirmDialog({
+                    isOpen: true,
+                    title: '⚡ เคลียร์แคชระบบสำเร็จ!',
+                    message: 'ระบบได้ล้างไฟล์แคชในเบราว์เซอร์และ Service Worker เรียบร้อยแล้ว กำลังจะทำการรีโหลดหน้าจอใหม่แบบ Bypass Cache เพื่อดึงสคริปต์เวอร์ชันล่าสุดจาก AI Studio ครับ',
+                    confirmText: 'ตกลง รีโหลดระบบเลย',
+                    isAlertOnly: true,
+                    variant: 'info',
+                    onConfirm: () => {
+                      const origin = window.location.origin;
+                      const pathname = window.location.pathname;
+                      const searchParams = new URLSearchParams(window.location.search);
+                      searchParams.set('nocache', String(Date.now()));
+                      window.location.href = `${origin}${pathname}?${searchParams.toString()}${window.location.hash}`;
+                    }
+                  });
+                } catch (err: any) {
+                  alert("ไม่สามารถล้างแคชได้: " + err.message);
+                }
+              }}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+            >
+              <RefreshCcw className="w-3.5 h-3.5" />
+              <span>เคลียร์แคชระบบ & รีเฟรชหน้าจอ (Safe Clear Cache & Hard Reload)</span>
+            </button>
           </div>
         </div>
 
-        <div className="pt-2 flex flex-wrap gap-3 items-center">
-          <button
-            onClick={() => {
-              setConfirmDialog({
-                isOpen: true,
-                title: '⚠️ โหมดลบทำลายล้าง & คืนสิทธิ์แรกสุด',
-                message: 'คำเตือนเร่งด่วนขั้นวิกฤต: ระบบกำลังจะสั่งเคลียร์ประวัติ สรุปผลสต๊อกสินค้า แฟ้มรายชื่อผู้ใช้งาน และธุรกรรมทุกชนิดบน Cloud ทั้งหมด!\n\nต้องการล้างและบูตระบบเริ่มต้นใหม่ทั้งหมดจริงหรือไม่?',
-                confirmText: 'ยืนยันล้างข้อมูลและบูตใหม่',
-                cancelText: 'ยกเลิก',
-                variant: 'danger',
-                onConfirm: async () => {
-                  try {
-                    // Clear state on firebase
-                    await onImportProducts([], true);
-                    
-                    // Clear local memory
-                    localStorage.removeItem('inventory_current_user');
-                    localStorage.removeItem('inventory_is_authenticated');
-                    localStorage.setItem('inventory_modify_v3_cleared', 'true');
-                    window.location.reload();
-                  } catch (err: any) {
-                    setConfirmDialog({
-                      isOpen: true,
-                      title: '❌ รีเซ็ตล้มเหลว',
-                      message: 'ไม่สามารถสั่งเคลียร์ระบบ Cloud ได้: ' + err.message,
-                      confirmText: 'รับทราบ',
-                      isAlertOnly: true,
-                      variant: 'danger',
-                      onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false }))
-                    });
+        {/* 5.2 Factory Reset Zone (Danger Zone) */}
+        <div className="bg-rose-50 border border-rose-100 rounded-lg p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-700 shrink-0">
+              <RefreshCcw className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-rose-950 uppercase tracking-wider">
+                ⚠️ โหมดรีเซ็ตล้างคลังบน Cloud และคืนค่าโรงงาน (Factory Reset & Cloud Wipe - อันตรายมาก)
+              </h4>
+              <p className="text-[11px] text-rose-700 mt-1 max-w-2xl leading-relaxed">
+                ใช้ในกรณีที่ต้องการล้างสินค้า บันทึกประวัติเคลื่อนไหว แฟ้มรายชื่อผู้ใช้งาน และธุรกรรมทุกอย่างในคลังระบบแชร์ออกทั้งหมด เพื่อเริ่มตั้งต้นระบบใหม่จากศูนย์เท่านั้น <strong>*ข้อมูลทุกอย่างจะถูกลบถาวร</strong>
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <button
+              onClick={() => {
+                setConfirmDialog({
+                  isOpen: true,
+                  title: '⚠️ โหมดลบทำลายล้าง & คืนสิทธิ์แรกสุด',
+                  message: 'คำเตือนเร่งด่วนขั้นวิกฤต: ระบบกำลังจะสั่งเคลียร์ประวัติ สรุปผลสต๊อกสินค้า แฟ้มรายชื่อผู้ใช้งาน และธุรกรรมทุกชนิดบน Cloud ทั้งหมด!\n\nต้องการล้างและบูตระบบเริ่มต้นใหม่ทั้งหมดจริงหรือไม่?',
+                  confirmText: 'ยืนยันล้างข้อมูลและบูตใหม่',
+                  cancelText: 'ยกเลิก',
+                  variant: 'danger',
+                  onConfirm: async () => {
+                    try {
+                      // Clear state on firebase
+                      await onImportProducts([], true);
+                      
+                      // Clear local memory
+                      localStorage.removeItem('inventory_current_user');
+                      localStorage.removeItem('inventory_is_authenticated');
+                      localStorage.setItem('inventory_modify_v3_cleared', 'true');
+                      window.location.reload();
+                    } catch (err: any) {
+                      setConfirmDialog({
+                        isOpen: true,
+                        title: '❌ รีเซ็ตล้มเหลว',
+                        message: 'ไม่สามารถสั่งเคลียร์ระบบ Cloud ได้: ' + err.message,
+                        confirmText: 'รับทราบ',
+                        isAlertOnly: true,
+                        variant: 'danger',
+                        onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false }))
+                      });
+                    }
                   }
-                }
-              });
-            }}
-            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
-          >
-            <RefreshCcw className="w-4 h-4" />
-            <span>ล้างคลัง Cloud & คืนค่าแรกเริ่ม (Force Cloud Reset & Wipe)</span>
-          </button>
-          
-          <span className="text-[11px] text-rose-600 font-medium">
-            *ระบบจะทำการรีโหลดเบราว์เซอร์และกลับไปสถิติวางสิทธิ์แบบดั้งเดิมหลังการกู้คืนเสร็จสิ้น
-          </span>
+                });
+              }}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+            >
+              <RefreshCcw className="w-3.5 h-3.5" />
+              <span>ล้างคลัง Cloud & คืนค่าแรกเริ่ม (Force Cloud Reset & Wipe)</span>
+            </button>
+            <span className="text-[10px] text-rose-600 font-medium">
+              *ระบบจะทำการรีโหลดเบราว์เซอร์และกลับไปสถิติวางสิทธิ์แบบดั้งเดิมหลังการกู้คืนเสร็จสิ้น
+            </span>
+          </div>
         </div>
       </div>
 
