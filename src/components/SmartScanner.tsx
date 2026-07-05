@@ -481,8 +481,15 @@ export default function SmartScanner({
 
       for (let i = 0; i < expandedFiles.length; i++) {
         const item = expandedFiles[i];
+        
+        // Safe rate limit delay for multiple files
+        if (i > 0) {
+          setSuccessMessage(`⏳ พักระบบสั้นๆ 2 วินาทีเพื่อป้องกันข้อจำกัดโควต้าฟรี (Rate Limit)... (รูปที่ ${i + 1}/${expandedFiles.length})`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
         setUploadProgress({ current: i + 1, total: expandedFiles.length });
-        setSuccessMessage(`⏳ กำลังวิเคราะห์สแกนใบปะหน้าหน้าแรก/รูปที่ ${i + 1} จากทั้งหมด ${expandedFiles.length} หน้า...`);
+        setSuccessMessage(`⏳ กำลังวิเคราะห์สแกนใบปะหน้า/รูปที่ ${i + 1} จากทั้งหมด ${expandedFiles.length} หน้า...`);
 
         // Store file preview metadata
         previewsToAppend.push({
@@ -1492,9 +1499,96 @@ export default function SmartScanner({
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
         {/* Left Column: Input Source */}
         <div className="md:col-span-5 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-xs space-y-4">
+          {/* จุดประสงค์การสแกน (สแกนปกติ vs สแกนคืนของตีกลับ) */}
+          <div className="bg-indigo-50/60 p-3.5 rounded-xl border border-indigo-100 space-y-2.5">
+            <span className="block text-xs font-black text-indigo-950 flex items-center gap-1.5">
+              <Scan className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>1. เลือกจุดประสงค์การสแกนพัสดุ (Scan Purpose)</span>
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setActionType('OUT')}
+                className={`py-2 px-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                  actionType === 'OUT'
+                    ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <ArrowUpRight className={`w-4 h-4 ${actionType === 'OUT' ? 'text-white' : 'text-red-500'}`} />
+                <span>ตัดออก (OUT)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActionType('IN')}
+                className={`py-2 px-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                  actionType === 'IN'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <ArrowDownLeft className={`w-4 h-4 ${actionType === 'IN' ? 'text-white' : 'text-emerald-500'}`} />
+                <span>รับเข้า (IN)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActionType('RETURN')}
+                className={`py-2 px-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                  actionType === 'RETURN'
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <RotateCcw className={`w-4 h-4 ${actionType === 'RETURN' ? 'text-white' : 'text-amber-500'}`} />
+                <span>ตีกลับ (RETURN)</span>
+              </button>
+            </div>
+
+            {actionType === 'RETURN' && (
+              <div className="pt-2 border-t border-indigo-200/40 text-xs space-y-1.5 animate-fade-in">
+                <span className="font-bold text-indigo-950 text-[10px] block">📦 การจัดการของตีกลับ (Return Handling):</span>
+                <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReturnStatus('RE_STOCK')}
+                    className={`flex-1 py-1 px-2 rounded font-semibold text-[10px] transition-all cursor-pointer border text-center ${
+                      returnStatus === 'RE_STOCK'
+                        ? 'bg-emerald-700 text-white border-emerald-700'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    คืนคลังพร้อมขาย
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReturnStatus('DAMAGED_WRITE_OFF')}
+                    className={`flex-1 py-1 px-2 rounded font-semibold text-[10px] transition-all cursor-pointer border text-center ${
+                      returnStatus === 'DAMAGED_WRITE_OFF'
+                        ? 'bg-red-700 text-white border-red-700'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    ชำรุดคัดทิ้ง
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReturnStatus('PENDING_INSPECT')}
+                    className={`flex-1 py-1 px-2 rounded font-semibold text-[10px] transition-all cursor-pointer border text-center ${
+                      returnStatus === 'PENDING_INSPECT'
+                        ? 'bg-amber-700 text-white border-amber-700'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    รอตรวจสอบ
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-indigo-500" />
-            <span>ต้นทางข้อมูลใบปะหน้าพัสดุ</span>
+            <span>2. ต้นทางข้อมูลใบปะหน้าพัสดุ</span>
           </h4>
 
           {/* UPLOAD MODE */}

@@ -51,7 +51,7 @@ async function generateContentWithFallback(params: {
   config?: any;
 }) {
   const ai = await getGeminiClient();
-  const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+  const models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.5-flash", "gemini-1.5-flash"];
   let lastError: any = null;
 
   for (const model of models) {
@@ -85,8 +85,7 @@ async function generateContentWithFallback(params: {
     ) {
       throw new Error(
         "⚠️ โควต้าบริการ Gemini AI ของระบบแชร์ฟรีเต็มชั่วคราว (Error 429: Quota Exceeded) " +
-        "เพื่อแก้ปัญหานี้และใช้งานสแกนพัสดุต่อได้ทันทีโดยไม่จำกัด กรุณาไปที่เมนู 'ตั้งค่าระบบ' -> หัวข้อ 'ตั้งค่าสิทธิ์เข้าใช้งาน Gemini AI API Key' " +
-        "แล้วป้อน API Key ส่วนตัวของคุณเอง (ใช้งานได้ฟรี 100% ตามวิธีสมัครในหน้าดังกล่าวครับ)"
+        "เพื่อแก้ปัญหานี้และใช้งานสแกนพัสดุต่อได้ทันทีโดยไม่จำกัด กรุณาใช้กล่องสีฟ้ายักษ์ที่ปรากฏขึ้นด้านบนเพื่อบันทึก 'Gemini API Key' ส่วนตัวของคุณเอง (ใช้งานได้ฟรี 100% ครับ)"
       );
     }
   }
