@@ -291,6 +291,17 @@ export default function SmartScanner({
           });
         }
 
+        // 4. Try matching by Product Name fallback (ignoring case and matching substrings)
+        if (!matched && (item.productName || item.name)) {
+          const rawName = (item.productName || item.name || '').toLowerCase().trim();
+          matched = products.find(p => {
+            const sysName = p.name.toLowerCase().trim();
+            // Match if system name or PDF name contains each other (min 4 chars to prevent false matches)
+            return (sysName.length >= 4 && rawName.includes(sysName)) ||
+                   (rawName.length >= 4 && sysName.includes(rawName));
+          });
+        }
+
         const matchedProduct = matched ? {
           id: matched.id,
           sku: matched.sku,
@@ -508,20 +519,42 @@ export default function SmartScanner({
         }
         setSuccessMessage(successStr);
 
-        // Check duplicates for newly scanned labels
+        // Check duplicates, unmatched SKUs, or insufficient stock for newly scanned labels
         let hasDuplicate = false;
         let duplicateNames = "";
+        let hasUnmatchedSku = false;
+        let hasInsufficientStock = false;
+
         resultsToAppend.forEach((label) => {
           const duplicateTx = checkDuplicateNo(label.orderId, label.trackingNo);
           if (duplicateTx) {
             hasDuplicate = true;
             duplicateNames += `${label.trackingNo || label.orderId || 'ไม่ทราบเลข'}, `;
           }
+
+          label.extractedItems.forEach((item) => {
+            if (!item.matched) {
+              hasUnmatchedSku = true;
+            } else if (item.matchedProduct && item.matchedProduct.quantity < item.quantity) {
+              hasInsufficientStock = true;
+            }
+          });
         });
 
         if (hasDuplicate) {
           playBeep('error');
           setErrorMessage(`⚠️ ตรวจพบเลขอ้างอิงใบปะหน้าบางชิ้น (${duplicateNames.slice(0, -2)}) เคยทำรายการลงคลังไปแล้ว หากต้องการบันทึกสต๊อกซ้ำ กรุณาติ๊กเลือก 'อนุญาตให้ลงรายการซ้ำ' ด้านล่างครับ`);
+        } else if (hasUnmatchedSku || hasInsufficientStock) {
+          playBeep('error');
+          let warningMsg = "⚠️ ตรวจพบข้อมูลไม่ตรงคลังสินค้าหลังวิเคราะห์:";
+          if (hasUnmatchedSku) {
+            warningMsg += " [มีรหัส SKU ไม่ตรงในระบบ]";
+          }
+          if (hasInsufficientStock) {
+            warningMsg += " [มีสินค้าที่ยอดสต๊อกคงเหลือจริง (Qty Total) ไม่พอตัดจ่าย]";
+          }
+          warningMsg += " กรุณาเลื่อนลงไปตรวจสอบจุดแจ้งเตือนสีแดง/ส้ม ด้านล่างครับ";
+          setErrorMessage(warningMsg);
         }
 
       } else {
@@ -965,6 +998,15 @@ export default function SmartScanner({
       });
     }
 
+    // 3. Try to match by Product Name fallback (if input matches system name)
+    if (!matched && cleanSku) {
+      const inputName = cleanSku.toLowerCase();
+      matched = products.find(p => {
+        const sysName = p.name.toLowerCase();
+        return (sysName.length >= 4 && (sysName.includes(inputName) || inputName.includes(sysName)));
+      });
+    }
+
     const matchedProduct = matched ? {
       id: matched.id,
       sku: matched.sku,
@@ -1027,6 +1069,20 @@ export default function SmartScanner({
     try {
       const txsToRecord: Omit<Transaction, 'id' | 'date'>[] = [];
       
+      // Validate unmatched SKU items
+      const hasUnmatched = result.extractedItems.some(item => !item.matched);
+      if (hasUnmatched) {
+        throw new Error("พบสินค้าที่ 'ไม่ตรงในระบบ' หรือไม่มีรหัส SKU กรุณาเลือกคำแนะนำจับคู่หรือลบรายการสินค้าที่ไ่ม่เกี่ยวข้องออกก่อนบันทึกครับ");
+      }
+
+      // Validate stock quantity for outbound transactions
+      if (actionType === 'OUT') {
+        const hasInsufficient = result.extractedItems.some(item => item.matched && item.matchedProduct && item.matchedProduct.quantity < item.quantity);
+        if (hasInsufficient) {
+          throw new Error("ตรวจพบสินค้ามียอดคงเหลือจริง (Qty Total) ไม่เพียงพอสำหรับแจ้งหักสต๊อก กรุณาเติมสต๊อกสินค้าตัวนั้นก่อนบันทึกครับ");
+        }
+      }
+
       // Validate duplicates
       if (!allowDuplicateForce) {
         const duplicateTx = checkDuplicateNo(result.orderId, result.trackingNo);
@@ -1105,11 +1161,27 @@ export default function SmartScanner({
     try {
       const txsToRecord: Omit<Transaction, 'id' | 'date'>[] = [];
       let duplicateDetails = "";
+      let unmatchedDetails = "";
+      let insufficientDetails = "";
 
       for (let i = 0; i < scanResults.length; i++) {
         const result = scanResults[i];
         if (result.processed) continue; // Skip already processed ones
         
+        // Check for unmatched SKU items
+        const hasUnmatched = result.extractedItems.some(item => !item.matched);
+        if (hasUnmatched) {
+          unmatchedDetails += `• ใบปะหน้าที่ ${i + 1} (เลขอ้างอิง: ${result.trackingNo || result.orderId || 'ไม่ระบุ'})\n`;
+        }
+
+        // Check for stock quantity for outbound transactions
+        if (actionType === 'OUT') {
+          const hasInsufficient = result.extractedItems.some(item => item.matched && item.matchedProduct && item.matchedProduct.quantity < item.quantity);
+          if (hasInsufficient) {
+            insufficientDetails += `• ใบปะหน้าที่ ${i + 1} (เลขอ้างอิง: ${result.trackingNo || result.orderId || 'ไม่ระบุ'})\n`;
+          }
+        }
+
         // Validate duplicates before recording
         if (!allowDuplicateForce) {
           const duplicateTx = checkDuplicateNo(result.orderId, result.trackingNo);
@@ -1137,6 +1209,14 @@ export default function SmartScanner({
 
           txsToRecord.push(txData);
         }
+      }
+
+      if (unmatchedDetails) {
+        throw new Error(`พบสินค้าที่ไม่ตรงในระบบคลัง (รหัส SKU ผิดพลาด):\n${unmatchedDetails}\nกรุณาแก้ไขรหัสสินค้าให้ถูกต้องตรงกับคลังในระบบก่อนบันทึกแบบกลุ่มครับ`);
+      }
+
+      if (insufficientDetails) {
+        throw new Error(`พบสินค้าที่ยอดคงเหลือในคลังจริง (Qty Total) ไม่เพียงพอดังนี้:\n${insufficientDetails}\nกรุณาเพิ่มยอดสต๊อกในระบบหรือข้ามใบปะหน้าเหล่านั้นก่อนบันทึกแบบกลุ่มครับ`);
       }
 
       if (duplicateDetails && !allowDuplicateForce) {
@@ -1772,7 +1852,11 @@ export default function SmartScanner({
                   const isExpanded = !!expandedIndices[labelIdx];
                   const matchedCount = label.extractedItems.filter(i => i.matched).length;
                   const totalCount = label.extractedItems.length;
-                  const allItemsMatched = label.extractedItems.length > 0 && label.extractedItems.every(i => i.matched);
+                  
+                  const hasSkuMismatch = label.extractedItems.some(i => !i.matched);
+                  const hasQtyMismatch = label.extractedItems.some(i => i.matched && i.matchedProduct && i.matchedProduct.quantity < i.quantity);
+                  const allItemsMatched = label.extractedItems.length > 0 && !hasSkuMismatch && !hasQtyMismatch;
+                  
                   const isLabelDuplicate = checkDuplicateNo(label.orderId, label.trackingNo);
                   const isProcessed = !!label.processed;
 
@@ -1786,7 +1870,9 @@ export default function SmartScanner({
                             ? 'border-rose-250 bg-rose-50/10' 
                             : allItemsMatched
                               ? 'border-emerald-200 bg-white hover:border-emerald-300 shadow-sm'
-                              : 'border-amber-300 bg-amber-50/5'
+                              : hasSkuMismatch
+                                ? 'border-rose-300 bg-rose-50/20'
+                                : 'border-amber-300 bg-amber-50/20'
                       }`}
                     >
                       {/* Accordion Card Header */}
@@ -1797,7 +1883,9 @@ export default function SmartScanner({
                             ? 'bg-emerald-50/20'
                             : allItemsMatched
                               ? 'bg-emerald-50/10 hover:bg-emerald-50/20'
-                              : 'bg-amber-50/20 hover:bg-amber-50/40'
+                              : hasSkuMismatch
+                                ? 'bg-rose-50/20 hover:bg-rose-50/40'
+                                : 'bg-amber-50/20 hover:bg-amber-50/40'
                         }`}
                       >
                         <div className="flex-1 min-w-0 flex items-center gap-2">
@@ -1874,15 +1962,38 @@ export default function SmartScanner({
                               <span><strong>บันทึกสำเร็จ:</strong> รายการใบปะหน้านี้ได้รับการหักลบและบันทึกลงคลังสต๊อกสำเร็จแล้ว</span>
                             </div>
                           ) : !allItemsMatched ? (
-                            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-950 text-[11px] rounded-lg flex flex-col gap-1 shadow-xs">
-                              <div className="flex items-center gap-1.5 font-bold text-rose-700">
-                                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 animate-bounce" />
-                                <span>แจ้งเตือนสินค้าไม่ตรงในระบบ! กรุณาปรับปรุงแก้ไขข้อมูล</span>
+                            hasSkuMismatch && hasQtyMismatch ? (
+                              <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-950 text-[11px] rounded-lg flex flex-col gap-1 shadow-xs">
+                                <div className="flex items-center gap-1.5 font-bold text-rose-700">
+                                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 animate-bounce" />
+                                  <span>แจ้งเตือนสินค้าไม่ตรงในระบบและสต๊อกคลังไม่พอ! (มีทั้งรหัสไม่พบ SKU และ ยอดไม่พอตัดจ่าย) ⚠️</span>
+                                </div>
+                                <p className="text-slate-600 pl-5 leading-relaxed">
+                                  • ตรวจพบรหัส SKU บางรายการ <strong className="text-rose-700 font-bold">ไม่ตรงกับคลังปัจจุบัน (แถบสีแดง)</strong> กรุณาเลือกคำแนะนำหรือพิมพ์แก้ไขให้ถูกต้อง<br />
+                                  • ตรวจพบว่าจำนวนตัด <strong className="text-rose-700 font-bold">Qty มากกว่าสต๊อกระบบ Qty Total (แถบสีแดง/ส้ม)</strong> กรุณาเช็คจำนวนในระบบหรือข้ามรายการนี้
+                                </p>
                               </div>
-                              <p className="text-slate-600 pl-5">
-                                ตรวจพบสินค้าในหน้า PDF มี <strong className="text-rose-700 font-bold">รหัส SKU ไม่ตรงในคลังปัจจุบัน (แสดงแถบไม่พบ SKU สีแดง)</strong> กรุณาคลิกเลือกคำแนะนำด้านล่าง พิมพ์ปรับแก้ไขรหัส หรือลบแถวสินค้าที่ไม่ต้องการออก จากนั้นกดปุ่ม <strong>"บันทึกยืนยัน"</strong> ด้านล่างเพื่อบันทึกรายการ
-                              </p>
-                            </div>
+                            ) : hasSkuMismatch ? (
+                              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-950 text-[11px] rounded-lg flex flex-col gap-1 shadow-xs">
+                                <div className="flex items-center gap-1.5 font-bold text-rose-700">
+                                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 animate-bounce" />
+                                  <span>แจ้งเตือนไม่พบรหัสสินค้าในระบบ! (ไม่ตรงกับ SKU คลัง) ⚠️</span>
+                                </div>
+                                <p className="text-slate-600 pl-5">
+                                  ตรวจพบสินค้าในหน้า PDF มี <strong className="text-rose-700 font-bold">รหัส SKU ไม่ตรงในคลังปัจจุบัน (แสดงแถบไม่พบ SKU สีแดง)</strong> กรุณาคลิกเลือกคำแนะนำด้านล่าง พิมพ์ปรับแก้ไขรหัส หรือลบแถวสินค้าที่ไม่ต้องการออก จากนั้นกดยืนยันบันทึกครับ
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="p-2.5 bg-amber-50 border border-amber-250 text-amber-950 text-[11px] rounded-lg flex flex-col gap-1 shadow-xs">
+                                <div className="flex items-center gap-1.5 font-bold text-amber-700">
+                                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 animate-bounce" />
+                                  <span>แจ้งเตือนยอดสต๊อกคงเหลือจริงในคลังไม่เพียงพอ! (Qty เกินกว่า Qty Total ในคลัง) ⚠️</span>
+                                </div>
+                                <p className="text-slate-600 pl-5">
+                                  รหัสสินค้าจับคู่ตรงหมดแล้ว แต่ตรวจพบว่า <strong className="text-rose-700 font-bold">จำนวนสินค้าที่จะตัด (Qty) เกินสต๊อกคงเหลือในคลัง (Qty Total)</strong> กรุณาเติมสต๊อกในระบบก่อนทำรายการ หรือตรวจสอบความถูกต้องอีกครั้งครับ
+                                </p>
+                              </div>
+                            )
                           ) : (
                             <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-950 text-[11px] rounded-lg flex flex-col gap-1 shadow-xs">
                               <div className="flex items-center gap-1.5 font-bold text-emerald-700">
@@ -1952,9 +2063,11 @@ export default function SmartScanner({
                                       className={`p-3 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center text-xs transition-all ${
                                         isProcessed 
                                           ? 'bg-slate-50/50 opacity-80'
-                                          : item.matched 
-                                            ? 'bg-white hover:bg-slate-50/30' 
-                                            : 'bg-rose-50/30 border-l-4 border-rose-500'
+                                          : !item.matched 
+                                            ? 'bg-rose-50/35 border-l-4 border-rose-500'
+                                            : item.matchedProduct && item.matchedProduct.quantity < item.quantity
+                                              ? 'bg-amber-50/35 border-l-4 border-amber-500'
+                                              : 'bg-white hover:bg-slate-50/30'
                                       }`}
                                     >
                                       {/* Column 1: SKU with Match indicator */}
