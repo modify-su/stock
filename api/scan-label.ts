@@ -217,7 +217,7 @@ export default async function handler(req: IncomingMessage & { method?: string }
       }
 
       return {
-        sku: item.sku || "",
+        sku: matchedProduct ? matchedProduct.sku : (item.sku || ""),
         productName: item.productName || "",
         quantity: item.quantity || 1,
         matched: !!matchedProduct,

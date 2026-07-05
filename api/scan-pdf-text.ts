@@ -223,7 +223,7 @@ ${formattedPages}`;
         }
 
         return {
-          sku: item.sku || "",
+          sku: matchedProduct ? matchedProduct.sku : (item.sku || ""),
           productName: item.productName || "",
           quantity: item.quantity || 1,
           matched: !!matchedProduct,

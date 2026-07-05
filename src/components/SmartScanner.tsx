@@ -314,7 +314,7 @@ export default function SmartScanner({
         } : null;
 
         return {
-          sku: cleanSku,
+          sku: matched ? matched.sku : cleanSku,
           productName: item.productName || item.name || 'สินค้าวิเคราะห์ทั่วไป',
           quantity: parseInt(item.quantity) || 1,
           matched: !!matched,
@@ -1018,13 +1018,15 @@ export default function SmartScanner({
       weightUnit: matched.weightUnit,
     } : null;
 
+    const isExactMatch = matched && (matched.sku.trim().toLowerCase() === cleanSku.toLowerCase());
+
     setScanResults(prev => {
       const copy = [...prev];
       if (!copy[labelIdx]) return prev;
       const items = [...copy[labelIdx].extractedItems];
       items[itemIdx] = {
         ...items[itemIdx],
-        sku: cleanSku,
+        sku: isExactMatch ? matched.sku : cleanSku,
         matched: !!matched,
         matchedProduct: matchedProduct
       };
