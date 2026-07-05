@@ -30,7 +30,8 @@ import {
   ExternalLink,
   Check,
   Wrench,
-  Power
+  Power,
+  Sparkles
 } from 'lucide-react';
 import { UserProfile, AppSettings, RolePermissions, Product, Transaction } from '../types';
 import ConfirmModal from './ConfirmModal';
@@ -126,6 +127,20 @@ export default function SystemSettings({
   const [lineBotSystemPrompt, setLineBotSystemPrompt] = useState(settings.lineBotSystemPrompt || '');
   const [isLineCopied, setIsLineCopied] = useState(false);
   const [lineSuccessMessage, setLineSuccessMessage] = useState('');
+
+  // Gemini API Key local states
+  const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || '');
+  const [geminiSuccessMessage, setGeminiSuccessMessage] = useState('');
+
+  const handleSaveGeminiConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateSettings({
+      ...settings,
+      geminiApiKey: geminiApiKey.trim()
+    });
+    setGeminiSuccessMessage('บันทึก Gemini API Key สำเร็จ! ระบบสแกนพัสดุและบอทแชตจะสลับมาใช้โควต้าส่วนตัวของคุณทันทีครับ 🚀');
+    setTimeout(() => setGeminiSuccessMessage(''), 5500);
+  };
 
   const handleSaveLineConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -866,6 +881,101 @@ export default function SystemSettings({
           </div>
         </form>
       </div>
+
+      {/* 2.6 Gemini AI API Settings Card */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
+        <div className="border-b border-slate-150 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-blue-50 rounded-xl text-blue-600">
+              <Sparkles className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-800">
+                ตั้งค่าสิทธิ์เข้าใช้งาน Gemini AI API Key (แก้ปัญหาโควต้าเต็ม / Error 429)
+              </h2>
+              <p className="text-xs text-slate-500 mt-1 pb-0">
+                ระบุคีย์ API ส่วนตัวเพื่อใช้งาน Gemini ในการสแกนเอกสาร และตอบข้อความบอท หากต้องการขยายขีดจำกัดในการรันสแกนปริมาณมากพร้อมกัน
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {geminiSuccessMessage && (
+          <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-xs text-emerald-850 font-semibold flex items-center gap-1.5 animate-fade-in">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <span>{geminiSuccessMessage}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSaveGeminiConfig} className="space-y-4">
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-slate-600">
+              Gemini API Key ส่วนตัวของคุณ (GEMINI_API_KEY)
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                placeholder="ใส่คีย์ AIzaSy... ของคุณเพื่อรันระบบสแกนและบอทด้วยโควต้าแยกต่างหาก"
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+                disabled={!hasSettingsPermission}
+                className="flex-1 px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 disabled:opacity-55"
+              />
+              {geminiApiKey && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmDialog({
+                      isOpen: true,
+                      title: 'ล้าง Gemini API Key คืนค่าเริ่มต้น',
+                      message: 'คุณต้องการลบคีย์ API ส่วนตัวและกลับไปใช้โควต้าแชร์ฟรีของระบบใช่หรือไม่?',
+                      confirmText: 'ลบคีย์และคืนค่าเริ่มต้น',
+                      cancelText: 'ยกเลิก',
+                      variant: 'warning',
+                      onConfirm: () => {
+                        setGeminiApiKey('');
+                        onUpdateSettings({
+                          ...settings,
+                          geminiApiKey: ''
+                        });
+                        setGeminiSuccessMessage('คืนค่า API Key เป็นค่าเริ่มต้นของระบบเรียบร้อยแล้ว!');
+                        setTimeout(() => setGeminiSuccessMessage(''), 3000);
+                        setConfirmDialog(p => ({ ...p, isOpen: false }));
+                      }
+                    });
+                  }}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold border border-slate-200 transition-all cursor-pointer"
+                >
+                  ล้างคีย์
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-500">
+              *ข้อมูลคีย์จะถูกจัดเก็บอย่างปลอดภัยบนระบบฐานข้อมูลคลาวน์ Firestore ในโครงการแอปพลิเคชันของคุณ และจะใช้ประมวลผลสำหรับการสแกนทุกประเภทในทันที
+            </p>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-150 rounded-lg p-3 text-[11px] text-blue-800 space-y-1.5 leading-relaxed">
+            <p className="font-bold flex items-center gap-1 text-blue-900">วิธีรับ Gemini API Key ฟรีใน 1 นาที:</p>
+            <ol className="list-decimal pl-4 space-y-0.5 text-blue-750">
+              <li>เข้าไปที่หน้าเว็บไซต์ <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">Google AI Studio (aistudio.google.com)</a></li>
+              <li>คลิกปุ่ม <b>"Get API Key"</b> ที่แถบเมนูด้านบนซ้าย</li>
+              <li>กดสร้างโปรเจกต์และกด <b>"Create API Key"</b></li>
+              <li>คัดลอกคีย์ความลับที่ขึ้นต้นด้วย <span className="font-mono bg-blue-100 px-1 rounded font-bold">AIzaSy...</span> มาป้อนใส่ที่นี่แล้วกดบันทึก</li>
+            </ol>
+          </div>
+
+          {hasSettingsPermission && (
+            <button
+              type="submit"
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+            >
+              💾 บันทึก Gemini API Key ส่วนตัว
+            </button>
+          )}
+        </form>
+      </div>
+
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
         <div className="border-b border-slate-150 pb-4">
           <div className="flex items-center gap-3">

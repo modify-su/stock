@@ -69,6 +69,7 @@ export interface AppSettings {
   lineBotSystemPrompt?: string;
   isMaintenanceMode?: boolean;
   maintenanceMessage?: string;
+  geminiApiKey?: string;
 }
 
 export interface RolePermissions {

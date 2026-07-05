@@ -21,21 +21,38 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, "ai-studio-d2035f6d-8e85-41ea-9141-eedfc5e93833");
 
-// Initialize Gemini
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || "",
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
+// Initialize Gemini dynamically using firestore custom key fallback if available
+async function getGeminiClient(): Promise<GoogleGenAI> {
+  let customApiKey: string | null = null;
+  try {
+    const settingsDoc = await getDoc(doc(db, "settings", "appSettings"));
+    if (settingsDoc.exists()) {
+      const data = settingsDoc.data();
+      if (data && data.geminiApiKey) {
+        customApiKey = data.geminiApiKey.trim();
+      }
     }
+  } catch (err) {
+    console.warn("Failed to fetch settings for custom geminiApiKey in server:", err);
   }
-});
+
+  const key = customApiKey || process.env.GEMINI_API_KEY || "";
+  return new GoogleGenAI({
+    apiKey: key,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
+}
 
 // Helper function to generate content with multiple fallback models and retries
 async function generateContentWithFallback(params: {
   contents: any;
   config?: any;
 }) {
+  const ai = await getGeminiClient();
   const models = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.1-flash-lite"];
   let lastError: any = null;
 

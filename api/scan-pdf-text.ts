@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, collection, getDocs } from "firebase/firestore";
+import { getFirestore, collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { IncomingMessage, ServerResponse } from "http";
 
@@ -15,24 +15,34 @@ const firebaseConfig = {
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(firebaseApp, "ai-studio-d2035f6d-8e85-41ea-9141-eedfc5e93833");
 
-// Lazy initialize Gemini
-let aiClient: GoogleGenAI | null = null;
-function getGeminiClient(): GoogleGenAI {
-  if (!aiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) {
-      throw new Error("GEMINI_API_KEY environment variable is required");
-    }
-    aiClient = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
+// Lazy initialize Gemini with firestore custom key fallback
+async function getGeminiClient(): Promise<GoogleGenAI> {
+  let customApiKey: string | null = null;
+  try {
+    const settingsDoc = await getDoc(doc(db, "settings", "appSettings"));
+    if (settingsDoc.exists()) {
+      const data = settingsDoc.data();
+      if (data && data.geminiApiKey) {
+        customApiKey = data.geminiApiKey.trim();
       }
-    });
+    }
+  } catch (err) {
+    console.warn("Failed to fetch settings for custom geminiApiKey:", err);
   }
-  return aiClient;
+
+  const key = customApiKey || process.env.GEMINI_API_KEY;
+  if (!key) {
+    throw new Error("ระบบตรวจไม่พบ API Key สำหรับประมวลผล Gemini AI กรุณาตรวจสอบหรือตั้งค่าในระบบหลังบ้านก่อนครับ");
+  }
+
+  return new GoogleGenAI({
+    apiKey: key,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
 }
 
 // Fallback helper
@@ -40,7 +50,7 @@ async function generateContentWithFallback(params: {
   contents: any;
   config?: any;
 }) {
-  const ai = getGeminiClient();
+  const ai = await getGeminiClient();
   const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
   let lastError: any = null;
 
