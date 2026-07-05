@@ -84,9 +84,7 @@ async function generateContentWithFallback(params: {
       errorString.includes("rate-limits")
     ) {
       throw new Error(
-        "⚠️ โควต้าบริการ Gemini AI ของระบบแชร์ฟรีเต็มชั่วคราว (Error 429: Quota Exceeded) " +
-        "เพื่อแก้ปัญหานี้และใช้งานสแกนพัสดุต่อได้ทันทีโดยไม่จำกัด กรุณาไปที่เมนู 'ตั้งค่าระบบ' -> หัวข้อ 'ตั้งค่าสิทธิ์เข้าใช้งาน Gemini AI API Key' " +
-        "แล้วป้อน API Key ส่วนตัวของคุณเอง (ใช้งานได้ฟรี 100% ตามวิธีสมัครในหน้าดังกล่าวครับ)"
+        "⚠️ โควต้าบริการ Gemini AI เต็มชั่วคราว (Error 429: Quota Exceeded)"
       );
     }
   }

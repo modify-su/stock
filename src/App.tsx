@@ -1622,6 +1622,8 @@ export default function App() {
             onRecordMultipleTransactions={handleRecordMultipleTransactions}
             canRecordTransactions={rolePermissions[currentUser.role].recordTransactions}
             currentUser={currentUser}
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
           />
         )}
 

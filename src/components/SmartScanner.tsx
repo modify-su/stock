@@ -32,6 +32,8 @@ interface SmartScannerProps {
   onRecordMultipleTransactions: (txsData: Omit<Transaction, 'id' | 'date'>[]) => Promise<void>;
   canRecordTransactions: boolean;
   currentUser: UserProfile;
+  settings?: any;
+  onUpdateSettings?: (settings: any) => Promise<void>;
 }
 
 interface ExtractedItem {
@@ -66,13 +68,43 @@ export default function SmartScanner({
   transactions,
   onRecordMultipleTransactions,
   canRecordTransactions,
-  currentUser
+  currentUser,
+  settings,
+  onUpdateSettings
 }: SmartScannerProps) {
   const [activeMode, setActiveMode] = useState<'CAMERA' | 'UPLOAD' | 'PDF_TEXT'>('UPLOAD');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isIframe, setIsIframe] = useState(false);
+
+  // Gemini API Key config for quota issue
+  const [tempGeminiKey, setTempGeminiKey] = useState(settings?.geminiApiKey || '');
+  const [isSavingKey, setIsSavingKey] = useState(false);
+  const [saveKeySuccess, setSaveKeySuccess] = useState(false);
+
+  useEffect(() => {
+    if (settings?.geminiApiKey) {
+      setTempGeminiKey(settings.geminiApiKey);
+    }
+  }, [settings?.geminiApiKey]);
+
+  const handleSaveGeminiKey = async () => {
+    if (!onUpdateSettings || !settings) return;
+    setIsSavingKey(true);
+    try {
+      await onUpdateSettings({
+        ...settings,
+        geminiApiKey: tempGeminiKey.trim()
+      });
+      setSaveKeySuccess(true);
+      setTimeout(() => setSaveKeySuccess(false), 3000);
+    } catch (e) {
+      console.error("Failed to save Gemini key:", e);
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
 
   // Camera states
   const [hasCamera, setHasCamera] = useState(true);
@@ -1791,6 +1823,55 @@ export default function SmartScanner({
               >
                 ✕
               </button>
+            </div>
+          )}
+
+          {/* Inline Gemini API Key Setup for Quota Exceeded Problem */}
+          {((errorMessage && (errorMessage.includes("429") || errorMessage.includes("Quota Exceeded") || errorMessage.includes("โควต้า"))) ||
+            (successMessage && (successMessage.includes("429") || successMessage.includes("Quota Exceeded") || successMessage.includes("โควต้า")))) && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-blue-900 p-4 rounded-xl shadow-xs text-xs space-y-2.5 animate-fade-in relative">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-blue-500 shrink-0 animate-pulse" />
+                <span className="font-bold text-sm text-blue-900">💡 วิธีการแก้ไขปัญหาโควต้า Gemini เต็ม (Error 429)</span>
+              </div>
+              <p className="text-slate-700 leading-relaxed">
+                เนื่องจากขณะนี้โควต้าฟรีแชร์ส่วนกลางของระบบเต็มชั่วคราว ท่านสามารถแก้ไขได้ง่ายๆ <strong>ฟรี 100%</strong> เพียงสมัครรับ <strong>API Key ส่วนตัว</strong> มาป้อนที่กล่องด้านล่างนี้ ระบบจะสลับไปใช้งานแทนทันทีเพื่อช่วยให้ใช้งานได้รวดเร็วและไม่ติดขัดครับ!
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center bg-white p-2 border border-blue-200 rounded-lg">
+                <input
+                  type="text"
+                  placeholder="ป้อน GEMINI_API_KEY ส่วนตัวของคุณที่นี่..."
+                  value={tempGeminiKey}
+                  onChange={(e) => setTempGeminiKey(e.target.value)}
+                  className="flex-grow px-3 py-1.5 border border-slate-200 rounded text-slate-800 font-mono text-[11px] focus:outline-hidden focus:ring-1 focus:ring-blue-500 bg-slate-50"
+                />
+                <button
+                  type="button"
+                  disabled={isSavingKey}
+                  onClick={handleSaveGeminiKey}
+                  className="px-4 py-1.5 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 transition-all shrink-0 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 text-[11px]"
+                >
+                  {isSavingKey ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>{saveKeySuccess ? "บันทึกสำเร็จเรียบร้อย! ✨" : "บันทึกคีย์ส่วนตัว"}</span>
+                </button>
+              </div>
+
+              <div className="text-[11px] text-slate-600 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3 bg-blue-100/50 p-2.5 rounded-md font-medium">
+                <span className="font-bold text-blue-800">🔑 สมัครฟรีใน 1 นาที:</span>
+                <a 
+                  href="https://aistudio.google.com/" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-blue-700 hover:underline font-bold flex items-center gap-0.5 inline-flex"
+                >
+                  คลิกที่นี่เพื่อสมัครรับ API Key ฟรี (Google AI Studio) <ExternalLink className="w-3 h-3 ml-0.5" />
+                </a>
+              </div>
             </div>
           )}
 
