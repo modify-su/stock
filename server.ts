@@ -266,7 +266,7 @@ ${productsContext}
                   }
 
                   try {
-                    const geminiApiKey = process.env.GEMINI_API_KEY || settings.geminiApiKey || "";
+                    const geminiApiKey = (settings.geminiApiKey || "").trim() || process.env.GEMINI_API_KEY || "";
                     let responseText = "";
                     if (geminiApiKey) {
                       const geminiResponse = await generateContentWithFallback({
