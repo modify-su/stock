@@ -95,6 +95,14 @@ async function generateContentWithFallback(params: {
 async function startServer() {
   const app = express();
 
+  // Ensure all API endpoints are NEVER cached, so data updates are instantaneous
+  app.use("/api", (req, res, next) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    next();
+  });
+
   // Webhook for LINE Messaging API
   // Uses raw parser to verify LINE HMAC signature
   const handleLineWebhook = async (req: express.Request, res: express.Response) => {
@@ -612,7 +620,21 @@ ${skuReferenceListText || "(No SKUs found in system database)"}`;
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      maxAge: "1d",
+      setHeaders: (res, filePath) => {
+        // Vite hashed assets are fully immutable and can be cached aggressively
+        const isAsset = filePath.includes("/assets/") || filePath.match(/\.[a-f0-9]{8,24}\./i);
+        if (isAsset) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+          // Service Worker, manifest, and favicon should check for updates immediately
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
+        }
+      }
+    }));
     app.get("*", (req, res) => {
       // Force cache busting on index.html so clients always load the latest compiled build
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
