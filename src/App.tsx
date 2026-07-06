@@ -23,7 +23,11 @@ import {
   Wrench,
   LogOut,
   Wifi,
-  WifiOff
+  WifiOff,
+  Menu,
+  ChevronLeft,
+  ChevronRight,
+  Bot
 } from 'lucide-react';
 import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf } from './types';
 import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS } from './mockData';
@@ -38,6 +42,7 @@ import ShelfManagement from './components/ShelfManagement';
 import ShelfAuditModal from './components/ShelfAuditModal';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import SmartScanner from './components/SmartScanner';
+import LineBotSettings from './components/LineBotSettings';
 
 
 // Import Firebase
@@ -544,7 +549,7 @@ export default function App() {
   // --- Filter states ---
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
-  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER'>('OVERVIEW');
+  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER' | 'LINE_BOT'>('OVERVIEW');
   const [showLoginUnderMaintenance, setShowLoginUnderMaintenance] = useState(false);
 
   // --- Customizable Menu configuration states ---
@@ -578,9 +583,19 @@ export default function App() {
 
   const [isMenuCustomizerOpen, setIsMenuCustomizerOpen] = useState(false);
 
+  // --- Sidebar Collapsible State ---
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebar_collapsed');
+      if (saved !== null) return saved === 'true';
+      return window.innerWidth < 1024;
+    }
+    return false;
+  });
+
   // Redirect non-ADMIN users away from admin-only tabs
   useEffect(() => {
-    if (currentUser?.role !== 'ADMIN' && (activeMenuTab === 'SETTINGS' || activeMenuTab === 'SYNC')) {
+    if (currentUser?.role !== 'ADMIN' && (activeMenuTab === 'SETTINGS' || activeMenuTab === 'SYNC' || activeMenuTab === 'LINE_BOT')) {
       setActiveMenuTab('OVERVIEW');
     }
   }, [currentUser, activeMenuTab]);
@@ -1247,6 +1262,71 @@ export default function App() {
     );
   }
 
+  const menuItems = [
+    {
+      id: 'OVERVIEW',
+      label: menuLabels.OVERVIEW || 'ภาพรวม & แดชบอร์ด',
+      icon: <LayoutDashboard className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: false,
+    },
+    {
+      id: 'SCANNER',
+      label: menuLabels.SCANNER || 'ระบบสแกนพัสดุ AI',
+      icon: <Camera className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: false,
+    },
+    {
+      id: 'OPERATIONS',
+      label: menuLabels.OPERATIONS || 'บันทึกความเคลื่อนไหว',
+      icon: <RefreshCcw className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: false,
+      hasDot: !!preSelectedProductId,
+    },
+    {
+      id: 'INVENTORY',
+      label: menuLabels.INVENTORY || 'จัดการสต๊อกสินค้า',
+      icon: <ShoppingBag className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: false,
+      badge: products.filter(p => p.quantity <= p.minStock).length,
+      badgeColor: 'bg-orange-500 text-white',
+      badgeCondition: products.filter(p => p.quantity <= p.minStock).length > 0,
+      onClickExtra: () => handleClearFilters(),
+    },
+    {
+      id: 'LOGS',
+      label: menuLabels.LOGS || 'ประวัติทำรายการ (Ledger)',
+      icon: <History className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: false,
+      badge: transactions.length,
+      badgeColor: 'bg-slate-200 text-slate-800',
+      badgeCondition: transactions.length > 0,
+    },
+    {
+      id: 'SHELVES',
+      label: menuLabels.SHELVES || 'จัดการชั้นวางสินค้า / QR Code',
+      icon: <MapPin className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: false,
+    },
+    {
+      id: 'SYNC',
+      label: menuLabels.SYNC || 'สำรอง & นำเข้าข้อมูล (CSV / Excel)',
+      icon: <FileSpreadsheet className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: true,
+    },
+    {
+      id: 'LINE_BOT',
+      label: 'ระบบบอท LINE & Gemini AI',
+      icon: <Bot className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: true,
+    },
+    {
+      id: 'SETTINGS',
+      label: menuLabels.SETTINGS || 'ตั้งค่า & สิทธิ์ผู้ใช้',
+      icon: <SettingsIcon className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: true,
+    }
+  ];
+
   return (
     <div id="app-wrapper" className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
       {isNewVersionAvailable && (
@@ -1256,11 +1336,20 @@ export default function App() {
         </div>
       )}
       {/* 1. Header Navigation Bar */}
-      <nav id="app-navbar" className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <nav id="app-navbar" className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40 w-full px-4 sm:px-6 lg:px-8">
+        <div className="w-full">
           <div className="flex justify-between h-16 items-center gap-4">
             <div className="flex items-center gap-3 overflow-hidden">
-              <div className="p-2 bg-blue-600 rounded-lg text-white shadow-xs shrink-0">
+              {/* ปุ่มสไลด์เมนูข้างเข้า-ออก (Sidebar Toggle Button) */}
+              <button
+                onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 transition-all cursor-pointer shrink-0 flex items-center justify-center hover:scale-105 active:scale-95"
+                title={isSidebarCollapsed ? "ขยายแถบเมนูซ้ายมือ" : "ย่อแถบเมนูซ้ายมือ"}
+              >
+                <Menu className="w-4 h-4 md:w-5 h-5 text-slate-700" />
+              </button>
+
+              <div className="p-2 bg-blue-600 rounded-lg text-white shadow-xs shrink-0 hidden xs:block">
                 <AppLogoIcon name={settings.appLogo} className="w-6 h-6" />
               </div>
               <div className="overflow-hidden">
@@ -1343,174 +1432,147 @@ export default function App() {
         </div>
       </nav>
 
-      {/* 2. Main Container */}
-      <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {/* 2. Layout Wrapper: Left Sidebar + Main Content Area */}
+      <div className="flex-grow flex flex-col md:flex-row relative">
         
-        {/* Banner Announcement / Welcoming Block */}
-        <div id="welcome-banner" className="bg-white text-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1 text-blue-600 font-semibold text-xs tracking-wider uppercase">
-              <Sparkles className="w-4 h-4 text-blue-600" />
-              <span>แดชบอร์ดศูนย์ควบคุมคลังสินค้า</span>
-            </div>
-            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800">
-              ยินดีต้อนรับสู่ระบบตรวจสต๊อกคลังและจัดการสินค้า 📦
-            </h1>
-            <p className="text-xs text-slate-500 font-normal">
-              ช่วยให้ร้านค้าควบคุมจำนวนสินค้า รับเข้า-ส่งออกคลัง และบันทึกสินค้าเคลมตัดชำรุดจากการตีกลับได้แบบเรียลไทม์
-            </p>
+        {/* Backdrop overlay for mobile sidebar drawer */}
+        {!isSidebarCollapsed && (
+          <div 
+            onClick={() => setIsSidebarCollapsed(true)}
+            className="md:hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 transition-opacity duration-200 cursor-pointer"
+          />
+        )}
+
+        {/* Left Sidebar Menu */}
+        <aside 
+          className={`bg-white border-r border-slate-200 shadow-md md:shadow-none flex flex-col transition-all duration-300 ease-in-out z-35
+            fixed md:sticky md:top-16 inset-y-0 left-0 h-screen md:h-[calc(100vh-4rem)] shrink-0
+            ${isSidebarCollapsed 
+              ? '-translate-x-full md:translate-x-0 w-72 md:w-20' 
+              : 'translate-x-0 w-72 md:w-64'
+            }
+          `}
+        >
+          {/* Sidebar Section Header */}
+          <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0 bg-slate-50/50">
+            <span className={`font-bold text-slate-800 text-[10px] uppercase tracking-wider truncate transition-opacity duration-200 ${isSidebarCollapsed ? 'md:opacity-0 md:w-0' : 'opacity-100'}`}>
+              เมนูหลัก / NAVIGATION
+            </span>
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              title={isSidebarCollapsed ? "ขยายแถบเมนูข้าง" : "ย่อแถบเมนูข้าง"}
+            >
+              {isSidebarCollapsed ? (
+                <ChevronRight className="w-4 h-4 hidden md:block text-slate-500" />
+              ) : (
+                <ChevronLeft className="w-4 h-4 hidden md:block text-slate-500" />
+              )}
+              {/* On mobile, this is a close trigger */}
+              <span className="md:hidden text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-1 rounded-md">ปิด ✕</span>
+            </button>
           </div>
 
-          <div className="bg-slate-50 px-4 py-3 rounded-lg border border-slate-200 text-xs flex flex-col gap-1 shrink-0">
-            <div className="flex items-center gap-2 text-slate-500">
-              <span className="font-semibold text-[10px] uppercase tracking-widest text-slate-400">พิกัดระบบหลัก:</span>
-              <span className="font-mono bg-slate-200 px-1.5 py-0.5 rounded text-[10px] text-slate-700">GMT+7 THAILAND</span>
-            </div>
-            <div className="flex items-center gap-2 text-slate-600">
-              <span>เวลาปัจจุบัน:</span>
-              <span className="font-mono text-slate-900 font-semibold">{new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* PWA Installation Assistant Banner */}
-        <PWAInstallPrompt />
-
-        {/* Navigation Tabs Bar */}
-        <div className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-sm flex flex-col md:flex-row md:items-stretch lg:items-center md:justify-between gap-3 relative">
-          <div className="flex flex-wrap gap-1.5 items-center flex-grow">
-            <button
-              onClick={() => setActiveMenuTab('OVERVIEW')}
-              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
-                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
-              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
-                activeMenuTab === 'OVERVIEW'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-              }`}
-            >
-              <LayoutDashboard className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-              <span>{menuLabels.OVERVIEW || 'ภาพรวม & แดชบอร์ด'}</span>
-            </button>
-
-            <button
-              onClick={() => setActiveMenuTab('SCANNER')}
-              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
-                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
-              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
-                activeMenuTab === 'SCANNER'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-              }`}
-            >
-              <Camera className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-              <span>{menuLabels.SCANNER || 'ระบบสแกนพัสดุ AI'}</span>
-            </button>
-
-            <button
-              onClick={() => setActiveMenuTab('OPERATIONS')}
-              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
-                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
-              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
-                activeMenuTab === 'OPERATIONS'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-              }`}
-            >
-              <RefreshCcw className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-              <span>{menuLabels.OPERATIONS || 'บันทึกความเคลื่อนไหว'}</span>
-              {preSelectedProductId && (
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setActiveMenuTab('INVENTORY');
-                handleClearFilters();
-              }}
-              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
-                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
-              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
-                activeMenuTab === 'INVENTORY'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-              }`}
-            >
-              <ShoppingBag className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-              <span>{menuLabels.INVENTORY || 'จัดการสต๊อกสินค้า'}</span>
-              {products.filter(p => p.quantity <= p.minStock).length > 0 && (
-                <span className={`px-1.5 py-0.2 text-[10px] rounded-full [line-height:1] ${
-                  activeMenuTab === 'INVENTORY' ? 'bg-white text-blue-600 font-bold' : 'bg-orange-100 text-orange-705 font-bold border border-orange-200'
-                }`}>
-                  {products.filter(p => p.quantity <= p.minStock).length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveMenuTab('LOGS')}
-              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
-                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
-              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
-                activeMenuTab === 'LOGS'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-              }`}
-            >
-              <History className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-              <span>{menuLabels.LOGS || 'ประวัติทำรายการ (Ledger)'}</span>
-              <span className={`px-1.5 py-0.2 text-[10px] rounded-full [line-height:1] ${
-                activeMenuTab === 'LOGS' ? 'bg-white text-blue-600' : 'bg-slate-100 text-slate-600 font-medium border border-slate-200'
-              }`}>
-                {transactions.length}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveMenuTab('SHELVES')}
-              className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
-                fontSizeClasses[menuFontSize]?.btn || 'text-sm'
-              } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
-                activeMenuTab === 'SHELVES'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-              }`}
-            >
-              <MapPin className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-              <span>{menuLabels.SHELVES || 'จัดการชั้นวางสินค้า / QR Code'}</span>
-            </button>
-            {currentUser.role === 'ADMIN' && (
-              <>
+          {/* Navigation Items list */}
+          <div className="flex-grow overflow-y-auto p-3 space-y-1.5 scrollbar-thin">
+            {menuItems.map((item) => {
+              if (item.isAdminOnly && currentUser.role !== 'ADMIN') return null;
+              
+              const isActive = activeMenuTab === item.id;
+              
+              return (
                 <button
-                  onClick={() => setActiveMenuTab('SYNC')}
-                  className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
-                    fontSizeClasses[menuFontSize]?.btn || 'text-sm'
-                  } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
-                    activeMenuTab === 'SYNC'
-                      ? 'bg-blue-600 text-white shadow-xs'
+                  key={item.id}
+                  onClick={() => {
+                    setActiveMenuTab(item.id as any);
+                    if (item.onClickExtra) item.onClickExtra();
+                    // Auto-close on mobile after selecting
+                    if (window.innerWidth < 768) {
+                      setIsSidebarCollapsed(true);
+                    }
+                  }}
+                  className={`w-full flex items-center rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
+                    fontSizeClasses[menuFontSize]?.btn || 'text-xs md:text-sm'
+                  } ${paddingClasses[menuPadding] || 'px-3.5 py-2.5'} ${
+                    isSidebarCollapsed ? 'justify-center px-1 md:px-2 md:py-3.5' : 'justify-start gap-3'
+                  } ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-md'
                       : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
                   }`}
+                  title={item.label}
                 >
-                  <FileSpreadsheet className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-                  <span>{menuLabels.SYNC || 'สำรอง & นำเข้าข้อมูล (CSV / Excel)'}</span>
+                  <div className="relative flex items-center justify-center shrink-0">
+                    {item.icon}
+                    {item.hasDot && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 border-2 border-white animate-pulse" />
+                    )}
+                    {isSidebarCollapsed && item.badgeCondition && (
+                      <span className="absolute -top-2 -right-2 px-1 py-0.2 text-[8px] font-bold rounded-full bg-red-500 text-white leading-none scale-90">
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {!isSidebarCollapsed && (
+                    <span className="truncate flex-grow text-left leading-normal">{item.label}</span>
+                  )}
+                  
+                  {!isSidebarCollapsed && item.badgeCondition && (
+                    <span className={`px-2 py-0.5 text-[10px] rounded-full font-bold ml-auto shrink-0 leading-none ${
+                      isActive ? 'bg-white text-blue-600' : 'bg-red-50 text-red-600 border border-red-100'
+                    }`}>
+                      {item.badge}
+                    </span>
+                  )}
                 </button>
-                <button
-                  onClick={() => setActiveMenuTab('SETTINGS')}
-                  className={`flex items-center gap-2 rounded-lg font-semibold transition-all duration-150 cursor-pointer ${
-                    fontSizeClasses[menuFontSize]?.btn || 'text-sm'
-                  } ${paddingClasses[menuPadding] || 'px-4 py-2.5'} ${
-                    activeMenuTab === 'SETTINGS'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-                  }`}
-                >
-                  <SettingsIcon className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />
-                  <span>{menuLabels.SETTINGS || 'ตั้งค่า & สิทธิ์ผู้ใช้'}</span>
-                </button>
-              </>
-            )}
+              );
+            })}
           </div>
-        </div>
 
-        {/* Tab Contents */}
+          {/* Mini Sidebar Footer Info */}
+          {!isSidebarCollapsed && (
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-[10px] text-slate-400 shrink-0 space-y-1">
+              <div>ล็อกอินโดย: <span className="font-bold text-slate-600">{currentUser.name}</span></div>
+              <div className="font-mono text-slate-400 uppercase text-[9px]">บทบาท: @{currentUser.role}</div>
+            </div>
+          )}
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 overflow-x-hidden">
+          
+          {/* Banner Announcement / Welcoming Block */}
+          <div id="welcome-banner" className="bg-white text-slate-800 p-6 rounded-xl shadow-xs border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-blue-600 font-semibold text-xs tracking-wider uppercase">
+                <Sparkles className="w-4 h-4 text-blue-600" />
+                <span>แดชบอร์ดศูนย์ควบคุมคลังสินค้า</span>
+              </div>
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800">
+                ยินดีต้อนรับสู่ระบบตรวจสต๊อกคลังและจัดการสินค้า 📦
+              </h1>
+              <p className="text-xs text-slate-500 font-normal">
+                ช่วยให้ร้านค้าควบคุมจำนวนสินค้า รับเข้า-ส่งออกคลัง และบันทึกสินค้าเคลมตัดชำรุดจากการตีกลับได้แบบเรียลไทม์
+              </p>
+            </div>
+
+            <div className="bg-slate-50 px-4 py-3 rounded-lg border border-slate-200 text-xs flex flex-col gap-1 shrink-0">
+              <div className="flex items-center gap-2 text-slate-500">
+                <span className="font-semibold text-[10px] uppercase tracking-widest text-slate-400">พิกัดระบบหลัก:</span>
+                <span className="font-mono bg-slate-200 px-1.5 py-0.5 rounded text-[10px] text-slate-700">GMT+7 THAILAND</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600">
+                <span>เวลาปัจจุบัน:</span>
+                <span className="font-mono text-slate-900 font-semibold">{new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* PWA Installation Assistant Banner */}
+          <PWAInstallPrompt />
+
+          {/* Tab Contents */}
         {activeMenuTab === 'OVERVIEW' && (
           <div className="space-y-6">
             {/* KPI stats section */}
@@ -1728,6 +1790,16 @@ export default function App() {
             products={products}
             transactions={transactions}
             onImportProducts={handleImportProducts}
+            onNavigateToLineBot={() => setActiveMenuTab('LINE_BOT')}
+          />
+        )}
+
+        {activeMenuTab === 'LINE_BOT' && (
+          <LineBotSettings
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            products={products}
+            currentUser={currentUser}
           />
         )}
 
@@ -1742,6 +1814,7 @@ export default function App() {
         )}
 
       </main>
+    </div>
 
       {/* 6.5. Shelf Audit modal for scanned QR codes */}
       {scannedShelfForAudit && (

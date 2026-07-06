@@ -329,6 +329,56 @@ ${productsContext}
   // Mount the LINE Webhook handler on the Express App
   app.post("/api/line-webhook", express.raw({ type: "application/json" }), handleLineWebhook);
 
+  // Endpoint to simulate the LINE Chatbot response in real-time
+  app.post("/api/simulate-line-bot", express.json(), async (req, res) => {
+    try {
+      const { text, systemPromptTemplate, products } = req.body;
+      if (!text) {
+        return res.status(400).json({ error: "Missing message text" });
+      }
+
+      // Build productsContext
+      let productsContext = "ไม่มีสินค้าในระบบ";
+      if (Array.isArray(products) && products.length > 0) {
+        productsContext = products
+          .map((p: any) => `- SKU: ${p.sku || 'ไม่มี SKU'}, ชื่อ: ${p.name || 'ไม่มีชื่อ'}, หมวดหมู่: ${p.category || 'ทั่วไป'}, คงเหลือ: ${p.quantity ?? 0} ${p.unit || 'ชิ้น'}, จุดแจ้งเตือน: ${p.minStock ?? 0} ${p.unit || 'ชิ้น'}, พิกัดหน่วยเก็บ: ${p.location || 'ไม่ได้ระบุ'}`)
+          .join("\n");
+      }
+
+      let systemPrompt = "";
+      const template = systemPromptTemplate || "";
+      if (template) {
+        systemPrompt = template
+          .replace(/\{\{productsContext\}\}/g, productsContext)
+          .replace(/\{\{text\}\}/g, text);
+      } else {
+        systemPrompt = `คุณคือผู้ดูแลบอร์ดจัดการคลังสินค้าอัจฉริยะประมวลผลด้วย AI (Warehouse Stock Assistant Bot) สื่อสารผ่านแอพ LINE ด้วยภาษาไทยที่กระชับ ชัดเจน เปี่ยมความช่วยเหลือ และเป็นมิตร
+
+นี่คือข้อมูลคงคลังสินค้าล่าสุดจริงภายในระบบ (เรียลไทม์):
+${productsContext}
+
+พนักงานหรือผู้ใช้พิมพ์คำถามว่า: "${text}"
+
+โปรดทำตามข้อตกลงในการวิเคราะห์ข้อมูลเพื่อตอบพนักงาน:
+1. หากพนักงานกล่าวทักทาย เช่น "สวัสดี", "ดีครับ/ค่ะ" ให้ทักทายกลับและอธิบายงานที่ช่วยตรวจสอบได้ เช่น "สวัสดีครับ! ผมบอทคลังสินค้าอัจฉริยะ ยินดีให้ความช่วยเหลือครับ คุณสามารถพิมพ์ชื่อสินค้าเพื่อตรวจสต๊อก สอบถามพิกัดที่เก็บสินค้า หรือถามหาสินค้าใกล้เหลือน้อยได้เลยครับ! 📦"
+2. หากพิมพ์เกี่ยวกับสต๊อกเหลือน้อย หรือสินค้าใกล้หมด หรือแจ้งเตือน ให้ตรวจสอบสินค้าที่จำนวนเหลือน้อยกว่าค่าจุดแจ้งเตือน (minStock) หรือสต๊อกเป็น 0 แล้วสรุปออกมาเป็นรายการแยกย่อยที่เข้าใจเข้าใจง่าย เช่น "⚠️ สินค้าใกล้หมดในระบบมีดังนี้ครับ..."
+3. หากพิมพ์พิมพ์ชื่อสินค้าหรือส่วนหนึ่งของชื่อ หรือ SKU ทางร้าน ให้ตอบข้อมูลเฉพาะเจาะจง เช่น ชื่อสินค้า, จำนวนคงเหลือ, หน่วยนับ, พิกัดจานจัดเก็บ เพื่อแจ้งพนักงานอย่างมั่นใจ
+4. หากถามสินค้าบางชิ้นที่ไม่มีในรายการข้างต้นเลย ให้ระบุว่า "ขออภัยครับ ไม่พบรายการที่ตรงกับคีย์เวิร์ดนี้ในระบบคลังปัจจุบันครับ" อย่างสุภาพพร้อมบอกให้ลองพิมพ์ค้นหาด้วยรหัสหรือชื่ออื่น
+5. พยายามตอบเรียงเป็นข้อๆ (Bullet points) วงเล็บ และตัวหนาเพื่อให้แสดงผลผ่านหน้าจอแชต LINE บนมือถือได้งดงามและประหยัดพื้นที่มากที่สุด`;
+      }
+
+      const geminiResponse = await generateContentWithFallback({
+        contents: systemPrompt
+      });
+
+      const responseText = geminiResponse.text || "ขออภัยครับ ระบบวิเคราะห์ข้อมูลไม่สำเร็จ";
+      res.json({ reply: responseText, finalPrompt: systemPrompt });
+    } catch (err: any) {
+      console.error("Error in simulate-line-bot endpoint:", err);
+      res.status(500).json({ error: err?.message || String(err) });
+    }
+  });
+
   // Scan Label Endpoint (Base64 file/image/PDF parsing)
   app.post("/api/scan-label", express.json({ limit: "25mb" }), async (req, res) => {
     try {

@@ -50,6 +50,7 @@ interface SystemSettingsProps {
   products: Product[];
   transactions: Transaction[];
   onImportProducts: (parsedProducts: Omit<Product, 'id' | 'updatedAt'>[], overwrite: boolean) => void;
+  onNavigateToLineBot?: () => void;
 }
 
 const SELECTABLE_LOGOS = [
@@ -74,7 +75,8 @@ export default function SystemSettings({
   currentUser,
   products,
   transactions,
-  onImportProducts
+  onImportProducts,
+  onNavigateToLineBot
 }: SystemSettingsProps) {
   // Local form states
   const [editingTitle, setEditingTitle] = useState(settings.appName);
@@ -667,219 +669,34 @@ export default function SystemSettings({
 
       </div>
 
-      {/* 2.5 LINE Bot Configuration & Integration Card */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
-        <div className="border-b border-slate-150 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* 2.5 LINE Bot Configuration & Integration Card (Moved to Dedicated Sub-tab) */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-600">
-              <MessageSquare className="w-6 h-6" />
+            <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-600 shrink-0">
+              <Bot className="w-6 h-6" />
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-800">
                 คุณสมบัติบอทถามตอบแชตอัตโนมัติ (LINE Messaging Bot ร่วมกับ Gemini AI)
               </h2>
-              <p className="text-xs text-slate-500 mt-1 border-none pb-0">
-                เชื่อมต่อสต๊อกคลังสินค้าจริงกับห้องแชต LINE OA ของบริษัท เพื่อให้พนักงานพิมพ์สอบถามสต๊อก พิกัด หรือสินค้าขาดมือได้ทันใจ
+              <p className="text-xs text-slate-500 mt-1">
+                ได้รับการอัปเกรดและแยกออกเป็นเมนูหลักในแถบนำทางเรียบร้อยแล้ว เพื่อการตั้งค่าและการจำลองถามตอบผ่านห้องแชตที่สมบูรณ์แบบยิ่งขึ้น
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg ${
-              lineBotEnabled
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                : 'bg-slate-105 text-slate-600 border border-slate-200'
-            }`}>
-              <Bot className="w-4 h-4 text-emerald-600" />
-              <span>สถานะ: {lineBotEnabled ? 'เปิดใช้งาน (ONLINE)' : 'ปิดใช้งาน (OFFLINE)'}</span>
-            </span>
-          </div>
+          
+          {onNavigateToLineBot && (
+            <button
+              type="button"
+              onClick={onNavigateToLineBot}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shrink-0 shadow-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-98"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>ไปยังเมนูบอท LINE & AI 🤖</span>
+            </button>
+          )}
         </div>
-
-        {lineSuccessMessage && (
-          <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-xs text-emerald-850 font-semibold flex items-center gap-1.5">
-            <Check className="w-4 h-4 text-emerald-600" />
-            <span>{lineSuccessMessage}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSaveLineConfig} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Panel: Form Settings */}
-          <div className="lg:col-span-7 space-y-4">
-            
-            {/* Enable switch */}
-            <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-lg">
-              <div>
-                <span className="block text-xs font-bold text-slate-700">สวิตช์เปิดทำงานบอทแชตอัตโนมัติ</span>
-                <span className="block text-[10px] text-slate-500 mt-0.5">เปิดระบบรับส่งข้อมูลและตอบผู้ใช้งานด้วยระบบแปลสารภาษา AI</span>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
-                <input
-                  type="checkbox"
-                  checked={lineBotEnabled}
-                  onChange={(e) => hasSettingsPermission && setLineBotEnabled(e.target.checked)}
-                  disabled={!hasSettingsPermission}
-                  className="sr-only peer"
-                />
-                <div className="w-10 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-              </label>
-            </div>
-
-            {/* Access token */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-600">
-                LINE Channel Access Token (โทเค็นเชื่อมต่อระยะยาว) *
-              </label>
-              <input
-                type="password"
-                placeholder="ใส่ Channel Access Token (Long-lived) จาก LINE Console"
-                value={lineChannelAccessToken}
-                onChange={(e) => setLineChannelAccessToken(e.target.value)}
-                disabled={!hasSettingsPermission}
-                className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-emerald-100 focus:border-emerald-550 disabled:opacity-55"
-                required={lineBotEnabled}
-              />
-              <p className="text-[10px] text-slate-400">โทเค็นสำหรับตอบสาร ใช้ควบคุมประสงค์คุ้มครองแอปและใช้ป้อนค่าคืน LINE Reply API</p>
-            </div>
-
-            {/* Secret key */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-600">
-                LINE Channel Secret (รหัสความลับแชนเนล) - แนะนำใส่เพื่อระบุตัวตน
-              </label>
-              <input
-                type="password"
-                placeholder="ใส่รหัส Channel Secret จากหน้า Basic Settings (ถ้ามี) เพื่อยืนยันลายเซ็น"
-                value={lineChannelSecret}
-                onChange={(e) => setLineChannelSecret(e.target.value)}
-                disabled={!hasSettingsPermission}
-                className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-emerald-100 focus:border-emerald-550 disabled:opacity-55"
-              />
-              <p className="text-[10px] text-slate-400">ใช้ตรวจสอบ Signature (x-line-signature) เพื่อป้องกันแฮกเกอร์ป้อนข้อมูลเท็จทำลายเซิร์ฟเวอร์</p>
-            </div>
-
-            {/* Custom AI prompt message */}
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <label className="block text-xs font-bold text-slate-600">
-                  🧠 ปรับแต่งบุคลิกภาพ / ข้อความวิเคราะห์ตอบกลับของบอท AI (System Prompt)
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLineBotSystemPrompt(`คุณคือผู้ดูแลบอร์ดจัดการคลังสินค้าอัจฉริยะประมวลผลด้วย AI (Warehouse Stock Assistant Bot) สื่อสารผ่านแอพ LINE ด้วยภาษาไทยที่กระชับ ชัดเจน เปี่ยมความช่วยเหลือ และเป็นมิตร
-
-นี่คือข้อมูลคงคลังสินค้าล่าสุดจริงภายในระบบ (เรียลไทม์):
-{{productsContext}}
-
-พนักงานหรือผู้ใช้พิมพ์คำถามว่า: "{{text}}"
-
-โปรดทำตามข้อตกลงในการวิเคราะห์ข้อมูลเพื่อตอบพนักงาน:
-1. หากพนักงานกล่าวทักทาย เช่น "สวัสดี", "ดีครับ/ค่ะ" ให้ทักทายกลับและอธิบายงานที่ช่วยตรวจสอบได้ เช่น "สวัสดีครับ! ผมบอทคลังสินค้าอัจฉริยะ ยินดีให้ความช่วยเหลือครับ คุณสามารถพิมพ์ชื่อสินค้าเพื่อตรวจสต๊อก สอบถามพิกัดที่เก็บสินค้า หรือถามหาสินค้าใกล้เหลือน้อยได้เลยครับ! 📦"
-2. หากพิมพ์เกี่ยวกับสต๊อกเหลือน้อย หรือสินค้าใกล้หมด หรือแจ้งเตือน ให้ตรวจสอบสินค้าที่จำนวนเหลือน้อยกว่าค่าจุดแจ้งเตือน (minStock) หรือสต๊อกเป็น 0 แล้วสรุปออกมาเป็นรายการแยกย่อยที่เข้าใจเข้าใจง่าย เช่น "⚠️ สินค้าใกล้หมดในระบบมีดังนี้ครับ..."
-3. หากพิมพ์พิมพ์ชื่อสินค้าหรือส่วนหนึ่งของชื่อ หรือ SKU ทางร้าน ให้ตอบข้อมูลเฉพาะเจาะจง เช่น ชื่อสินค้า, จำนวนคงเหลือ, หน่วยนับ, พิกัดจานจัดเก็บ เพื่อแจ้งพนักงานอย่างมั่นใจ
-4. หากถามสินค้าบางชิ้นที่ไม่มีในรายการข้างต้นเลย ให้ระบุว่า "ขออภัยครับ ไม่พบรายการที่ตรงกับคีย์เวิร์ดนี้ในระบบคลังปัจจุบันครับ" อย่างสุภาพพร้อมบอกให้ลองพิมพ์ค้นหาด้วยรหัสหรือชื่ออื่น
-5. พยายามตอบเรียงเป็นข้อๆ (Bullet points) วงเล็บ และตัวหนาเพื่อให้แสดงผลผ่านหน้าจอแชต LINE บนมือถือได้งดงามและประหยัดพื้นที่มากที่สุด`);
-                  }}
-                  className="text-[10px] text-emerald-600 hover:underline cursor-pointer font-bold"
-                >
-                  🔄 คืนค่าเริ่มต้นแบบมาตรฐาน
-                </button>
-              </div>
-              <textarea
-                placeholder="ป้อนคำสั่งและวิธีตอบกลับของ AI บอทได้ตามใจชอบ เช่น 'คุณคือบอทคลังร้านค้าสมบูรณ์การค้า ตอบลูกค้าด้วยน้ำเสียงสุภาพ อ่อนน้อม ลงท้ายด้วย ค้าบ ตลอดเวลา...'"
-                value={lineBotSystemPrompt}
-                onChange={(e) => setLineBotSystemPrompt(e.target.value)}
-                disabled={!hasSettingsPermission}
-                rows={10}
-                className="w-full px-3 py-2 text-xs font-sans bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-emerald-100 focus:border-emerald-550 disabled:opacity-55 leading-relaxed"
-              />
-              <div className="bg-emerald-50/50 border border-emerald-100 rounded-lg p-2.5 text-[10.5px] text-emerald-800 space-y-1">
-                <p className="font-bold flex items-center gap-1">💡 แนะนำการปรับข้อความบอท:</p>
-                <ul className="list-disc pl-4 space-y-0.5 text-emerald-750">
-                  <li>ปรับเปลี่ยนโทนคำตอบ ชื่อบริษัท หรือเพิ่มเงื่อนไขการทำงานเฉพาะของฝ่ายคลังได้ทันที</li>
-                  <li>ระบุ <code className="bg-emerald-100 px-1 rounded text-emerald-900 font-mono font-bold">{"{{productsContext}}"}</code> ในตำแหน่งที่ต้องการให้ระบบวางตารางจำนวนสินค้า</li>
-                  <li>ระบุ <code className="bg-emerald-100 px-1 rounded text-emerald-900 font-mono font-bold">{"{{text}}"}</code> ในตำแหน่งคำถามหรือคีย์เวิร์ดที่พนักงานแชตเข้ามา</li>
-                </ul>
-              </div>
-            </div>
-
-            {/* Save Button */}
-            {hasSettingsPermission && (
-              <button
-                type="submit"
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
-              >
-                💾 ทำการบันทึกเชื่อมต่อ LINE Bot
-              </button>
-            )}
-
-          </div>
-
-          {/* Right Panel: Webhook / Setup Guide */}
-          <div className="lg:col-span-5 space-y-4 bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col justify-between">
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
-                  <span className="w-2 h-2 rounded-full bg-emerald-550 animate-ping shrink-0" />
-                  <span>เว็บบอร์ดปลายทางเพื่อเชื่อมต่อ LINE (Webhook URL)</span>
-                </h4>
-                <p className="text-[10px] text-slate-500 mt-1 border-none pb-0">คัดลอกลิงก์ส่วนล่างนี้ไปกรอกตั้งค่าใน LINE Developer Console เพื่อรับแชตเรียลไทม์</p>
-              </div>
-
-              {/* Webhook Clipboard Copy Area */}
-              <div className="p-3 border border-slate-200 bg-white rounded-lg flex items-center justify-between gap-2 overflow-hidden shadow-xs">
-                <span className="font-mono text-emerald-600 font-semibold text-[10px] truncate select-all">
-                  {window.location.origin}/api/line-webhook
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopyLineWebhook}
-                  className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-105 border border-emerald-200 rounded text-xs font-bold cursor-pointer shrink-0 inline-flex items-center gap-1"
-                >
-                  {isLineCopied ? (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>ก๊อปแล้ว</span>
-                    </>
-                  ) : (
-                    <>
-                      <Clipboard className="w-3.5 h-3.5" />
-                      <span>คัดลอก</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* Step Guides */}
-              <div className="text-[11px] text-slate-600 space-y-2 border-t border-slate-200 pt-3">
-                <h5 className="font-bold text-[11px] text-slate-700 mb-1 flex items-center gap-1">
-                  <Cpu className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span>ขั้นตอนเชื่อมต่อแบบรวดเร็วใน 3 นาที:</span>
-                </h5>
-                <ol className="list-decimal pl-4 space-y-1 text-slate-500 text-[11.5px] leading-relaxed">
-                  <li>เปิดเว็บไซต์ที่ <a href="https://developers.line.biz/" target="_blank" rel="noreferrer" className="text-emerald-600 underline font-semibold">LINE Developers Console</a></li>
-                  <li>เพิ่ม Provider และสร้างแชนเนลใหม่เลือกเป็น **"Messaging API"**</li>
-                  <li>เลื่อนไปแถบ **Messaging API** คลิกปุ่มออกโทเค็น (Channel Access Token) นำมาป้อนกล่องซ้ายมือ</li>
-                  <li>ในแถบ Messaging API หาช่อง **Webhook URL** แล้วกดคัดลอกลิงก์ด้านบนไปกรอกวาง พร้อมสวิตช์ขวาเพื่อเปิด **"Use Webhook"**</li>
-                  <li>
-                    <span className="text-amber-600 font-semibold font-sans">⚠️ หมายเหตุสำคัญเรื่องปุ่ม Verify:</span>
-                    <p className="text-[10px] text-slate-500 font-sans mt-0.5 leading-relaxed">
-                      ลิงก์พรีวิวทดลองของ Google AI Studio (`ais-dev-` และ `ais-pre-`) มีการป้องกันความลับด้วย Google OAuth บังคับล็อกอิน ทำให้อีเวนต์ภายนอกของ LINE กดปุ่ม [Verify] จะติดบล็อกหน้าล็อกอินและได้ผลลัพธ์ **302 Found** เสมอ เป็นสิทธิ์ความปลอดภัยที่เป็นปกติของ Sandbox ครับ!
-                    </p>
-                  </li>
-                  <li>สแกนแอดบอตเพื่อเปิดใช้งานในโทรศัพท์ ลองคุยโดยพิมพ์: <span className="font-bold text-slate-700">"เช็คสต๊อกเสื้อยืด"</span> หรือ <span className="font-bold text-emerald-750">"มีสินค้าอะไรใกล้ขาดคลังบ้าง?"</span> ระบบ Gemini AI จะตอบกลับให้พนักงานของคุณทลายงานทันที!</li>
-                </ol>
-              </div>
-            </div>
-
-            <div className="p-3 bg-blue-50/70 border border-blue-150 rounded-lg text-[10px] text-blue-800 leading-relaxed flex items-start gap-1.5">
-              <Info className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
-              <span>
-                💡 บอทสต๊อกประพฤติคำนวณสเกลข้อมูลตามแบบเรียลไทม์จากตัวฐานข้อมูล Firestore ทำให้พนักงานได้รับคำแนะนำสต๊อกที่ถูกต้องแม่นยำ 100% เสมอ!
-              </span>
-            </div>
-          </div>
-        </form>
       </div>
 
       {/* 2.6 Gemini AI API Settings Card */}
