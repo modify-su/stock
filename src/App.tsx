@@ -1270,12 +1270,6 @@ export default function App() {
       isAdminOnly: false,
     },
     {
-      id: 'SCANNER',
-      label: menuLabels.SCANNER || 'ระบบสแกนพัสดุ AI',
-      icon: <Camera className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
-      isAdminOnly: false,
-    },
-    {
       id: 'OPERATIONS',
       label: menuLabels.OPERATIONS || 'บันทึกความเคลื่อนไหว',
       icon: <RefreshCcw className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
@@ -1305,6 +1299,12 @@ export default function App() {
       id: 'SHELVES',
       label: menuLabels.SHELVES || 'จัดการชั้นวางสินค้า / QR Code',
       icon: <MapPin className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: false,
+    },
+    {
+      id: 'SCANNER',
+      label: menuLabels.SCANNER || 'ระบบสแกนพัสดุ AI',
+      icon: <Camera className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
       isAdminOnly: false,
     },
     {
