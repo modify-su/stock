@@ -17,7 +17,8 @@ import {
   RefreshCw,
   Plus,
   FileDown,
-  FileUp
+  FileUp,
+  FileSpreadsheet
 } from 'lucide-react';
 import { AppSettings, Product, Transaction, UserProfile, RolePermissions, Category, Shelf, CloudBackup } from '../types';
 import ConfirmModal from './ConfirmModal';
@@ -56,7 +57,7 @@ export default function SyncAndBackup({
   shelves,
   onRestoreFullBackup
 }: SyncAndBackupProps) {
-  const [pastedText, setPastedText] = useState('');
+
   const [importStatus, setImportStatus] = useState<{ success?: boolean; count?: number; message?: string } | null>(null);
   const [isUrlCopied, setIsUrlCopied] = useState(false);
 
@@ -453,7 +454,7 @@ const handleExportProductsToCsv = () => {
       }
 
       if (importedList.length === 0) {
-        setImportStatus({ success: false, message: 'ไม่พบแถวข้อมูลผลิตภัณฑ์สินค้าที่มีโครงสร้างคีย์คู่คอลัมน์ถูกต้อง โปรดยึกตามตัวอย่าง' });
+        setImportStatus({ success: false, message: 'ไม่พบแถวข้อมูลผลิตภัณฑ์สินค้าที่มีโครงสร้างคีย์คู่คอลัมน์ถูกต้อง โปรดยึดตามตัวอย่าง' });
         return;
       }
 
@@ -463,22 +464,13 @@ const handleExportProductsToCsv = () => {
         count: importedList.length, 
         message: `นำเข้าข้อมูลสินค้าจำนวน ${importedList.length} รายการ ซิงก์ขึ้น Firebase คลาวด์เรียบร้อยแล้ว!` 
       });
-      setPastedText('');
     } catch (err) {
       console.error(err);
       setImportStatus({ success: false, message: 'เกิดข้อผิดพลาดในการแปลสัญญาณถอดรหัส ตรวจสอบความถูกต้องของแนวสเปรดชีต' });
     }
   };
 
-  const handleImportPasted = (overwrite: boolean) => {
-    if (!hasSettingsPermission) {
-      alert('🔒 ขออภัย คุณไม่มีสิทธิ์ซิงค์นำเข้าสินค้า');
-      return;
-    }
 
-    if (!pastedText.trim()) return;
-    parseAndImportText(pastedText, overwrite);
-  };
 
   return (
     <div id="sync-backup-view" className="space-y-6">
@@ -588,103 +580,31 @@ const handleExportProductsToCsv = () => {
               <div className="flex flex-col items-center justify-center p-10 bg-white/60 border border-dashed border-slate-300 rounded-xl text-center space-y-2">
                 <Cloud className="w-10 h-10 text-slate-300" />
                 <p className="text-xs font-bold text-slate-500">ไม่พบจุดสำรองข้อมูลบนระบบคลาวด์</p>
-                <p className="text-[11px] text-slate-400">คุณยังไม่เคยสำรองข้อมูลบนคลาวด์ หรือประวัติได้รับการล้างไปแล้ว</p>
+                <p className="text-[11px] text-slate-400">คุณยังไม่มีการสร้างจุดสำรองข้อมูลย้อนกลับในขณะนี้</p>
               </div>
             ) : (
-              <div className="max-h-72 overflow-y-auto space-y-2.5 pr-1">
+              <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
                 {backups.map((b) => (
-                  <div key={b.id} className="p-3.5 bg-white border border-slate-200 hover:border-indigo-200 rounded-xl transition-all shadow-xs space-y-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-800 bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full">
-                            {b.note}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-400 pt-0.5">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-slate-400" />
-                            {new Date(b.createdAt).toLocaleString('th-TH')}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <User className="w-3 h-3 text-slate-400" />
-                            ผู้บันทึก: {b.createdByName || 'ระบบ'}
-                          </span>
-                        </div>
+                  <div key={b.id} className="p-4 bg-white border border-slate-200 rounded-xl space-y-3 transition-all hover:border-indigo-200 hover:shadow-xs">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                          <span>📦 {b.note || 'Snapshot อัตโนมัติ'}</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          {b.createdAt ? new Date(b.createdAt).toLocaleString('th-TH') : '-'}
+                        </p>
                       </div>
-
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setConfirmDialog({
-                              isOpen: true,
-                              title: '🔄 ยืนยันการคืนค่าระบบ (System Restore)',
-                              message: `คุณยืนยันที่จะกู้คืนสถานะคลังสินค้ากลับไปยังจุดกู้คืน "${b.note}" ใช่หรือไม่?\n\nข้อมูลระบบ ณ ปัจจุบันของคุณจะถูกเขียนทับทั้งหมด!\n\n(สร้างเมื่อ: ${new Date(b.createdAt).toLocaleString('th-TH')})`,
-                              confirmText: 'ตกลง กู้คืนฐานข้อมูล',
-                              cancelText: 'ยกเลิก',
-                              variant: 'warning',
-                              onConfirm: () => {
-                                setConfirmDialog(p => ({ ...p, isOpen: false }));
-                                handleRestoreBackupPoint(b);
-                              }
-                            });
-                          }}
-                          disabled={isRestoring || !hasSettingsPermission}
-                          className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                        >
-                          <RefreshCw className="w-3 h-3" />
-                          <span>กู้คืน</span>
-                        </button>
-                        
-                        <button
-                          type="button"
-                          onClick={() => {
-                            try {
-                              const jsonStr = JSON.stringify(b, null, 2);
-                              const blob = new Blob([jsonStr], { type: 'application/json' });
-                              const url = URL.createObjectURL(blob);
-                              const link = document.createElement("a");
-                              link.setAttribute("href", url);
-                              link.setAttribute("download", `Backup_${b.note.replace(/\s+/g, '_')}_${new Date(b.createdAt).toISOString().slice(0, 10)}.json`);
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                            } catch (err) {
-                              alert('เกิดข้อผิดพลาดในการแปลงไฟล์');
-                            }
-                          }}
-                          className="p-1.5 hover:bg-slate-100 text-slate-500 rounded-lg transition-colors cursor-pointer border border-slate-200"
-                          title="ดาวน์โหลดชุดสำรองนี้เป็นไฟล์ .JSON"
-                        >
-                          <FileJson className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setConfirmDialog({
-                              isOpen: true,
-                              title: '🗑️ ลบจุดกู้คืนข้อมูลบนคลาวด์',
-                              message: `คุณแน่ใจที่จะลบจุดคืนค่าระบบ "${b.note}" นี้จากฐานคลาวด์อย่างถาวรหรือไม่?\n(การลบนี้เป็นลบถาวร ไม่ส่งผลต่อข้อมูลปัจจุบัน แต่จุดคืนค่านี้จะหายไป)`,
-                              confirmText: 'ลบจุดสำรองถาวร',
-                              cancelText: 'ยกเลิก',
-                              variant: 'danger',
-                              onConfirm: () => {
-                                setConfirmDialog(p => ({ ...p, isOpen: false }));
-                                handleDeleteCloudBackup(b.id);
-                              }
-                            });
-                          }}
-                          disabled={!hasSettingsPermission}
-                          className="p-1.5 hover:bg-rose-50 text-rose-600 rounded-lg transition-colors cursor-pointer border border-rose-100"
-                          title="ลบข้อมูลสำรองจุดนี้"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreBackupPoint(b)}
+                        disabled={!hasSettingsPermission || isRestoring}
+                        className="px-2.5 py-1 text-indigo-600 hover:bg-indigo-50 border border-indigo-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        {isRestoring ? 'กำลังกู้คืน...' : 'กู้คืนสถานะนี้'}
+                      </button>
                     </div>
-
+                    
                     <div className="bg-slate-50 p-2 rounded-lg text-[11px] text-slate-500 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono border border-slate-100">
                       <div>
                         <span className="block text-slate-400 text-[9px] uppercase">📦 สินค้าคลัง</span>
@@ -711,27 +631,27 @@ const handleExportProductsToCsv = () => {
         </div>
       </div>
 
-      {/* Offline JSON File Backup & Recovery Card */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+      {/* 2.5 Offline File Backup & Restore Card */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
         <div>
-          <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+          <h3 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
             <FileJson className="w-5 h-5 text-indigo-600" />
-            <span>💾 สำรองข้อมูลในเครื่องแบบออฟไลน์ (.JSON Backup System)</span>
+            <span>💾 สำรองข้อมูลออฟไลน์ด้วยไฟล์ดิบ (.JSON Backup & Restore)</span>
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            ดาวน์โหลดไฟล์สำรองฐานข้อมูลสต๊อกทั้งหมด (.JSON) เก็บไว้ในเครื่องคอมพิวเตอร์ของคุณแบบออฟไลน์ และสามารถกู้คืนระบบได้ตลอดเวลาแม้ไม่มีเน็ตหรือเปลี่ยนเครื่อง
+            บันทึกรวบยอดทั้งหมดเก็บเป็นไฟล์ข้อมูลความปลอดภัยภายนอก เพื่ออิมพอร์ตคืนสถานะภายหลัง
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 border border-dashed border-slate-200 rounded-xl bg-slate-50/50 flex flex-col justify-between space-y-3">
-            <div>
+          <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3 flex flex-col justify-between">
+            <div className="space-y-1.5">
               <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <FileDown className="w-4 h-4 text-indigo-600" />
-                <span>ดาวน์โหลดไฟล์สำรองฐานระบบ (.JSON Export)</span>
+                <FileJson className="w-4 h-4 text-slate-600" />
+                <span>ดาวน์โหลดชุดสำรองข้อมูล (.JSON Backup)</span>
               </h4>
-              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                สร้างและดาวน์โหลดชุดสตรีม JSON ตัวเต็มที่มีข้อมูลของสินค้า ประวัติเดินคลัง ผังชั้นวางและค่าตั้งค่าแอปพลิเคชันทั้งหมดไว้แบบสมบูรณ์
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                บันทึกเสถียรและดาวน์โหลดชุดสตรีมข้อมูลผลิตภัณฑ์และธุรกรรมของแอปพลิเคชันทั้งหมดไว้แบบสมบูรณ์
               </p>
             </div>
             <button
@@ -832,35 +752,31 @@ const handleExportProductsToCsv = () => {
                       ]);
                       const tsvContent = [headers.join("\t"), ...rows.map(e => e.join("\t"))].join("\n");
                       navigator.clipboard.writeText(tsvContent);
-                      alert("📋 คัดลอกข้อมูลสินค้าแบบแบ่งคอลัมน์ (Tab-Separated) ลงบอร์ดคลิปบอร์ดแล้ว! คุณสามารถเปิด Google Sheets แล้วกด Ctrl+V เพื่อวางข้อมูลได้เลยทันที");
+                      alert("📋 คัดลอกข้อมูลสินค้าแบบแบ่งคอลัมน์ (Tab-Separated) ลงบอร์ดคลิปบอร์ดแล้ว! คุณสามารถกดปุ่มวาง (Ctrl+V) ลงในโปรแกรม Excel หรือ Google Sheets ได้ทันที");
                     }}
-                    className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer border border-slate-300"
+                    className="px-3 py-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer"
                   >
-                    <Clipboard className="w-3 h-3" />
-                    <span>คัดลอกด่วนไป Google Sheets (TSV)</span>
+                    คัดลอกด่วนไป Google Sheets (Tab)
                   </button>
                 </div>
               </div>
 
-              {/* Separator line */}
-              <div className="border-t border-slate-200/60 my-2"></div>
-
               {/* Transactions log export */}
-              <div className="space-y-2">
+              <div className="space-y-2 pt-2 border-t border-slate-100">
                 <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <Download className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>ดาวน์โหลดประวัติการเบิกออก-รับเข้าคลังรายเดือน (Export Monthly Movement Logs)</span>
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>ส่งออกรายงานประวัติความเคลื่อนไหว (Export Operations Logs)</span>
                 </h4>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  ดาวน์โหลดรายงานประวัติการเดินสะพัดคลังทั้งหมด เพื่อนำไปสรุปยอดรายเดือน คำนวณปริมาณการเบิกจ่ายสินค้า และวางแผนงวดสต๊อกถัดไป
+                  ส่งออกประวัติบันทึกการเบิก-จ่าย รับเข้า ปรับจำนวนสินค้าในคลังย้อนหลังทั้งหมด เพื่อนำไปใช้ตรวจสอบกระทบยอดฝ่ายบัญชี
                 </p>
-                <div className="flex flex-wrap gap-2 pt-1">
+                <div className="pt-1">
                   <button
                     onClick={handleExportTransactionsToCsv}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                   >
-                    <Download className="w-3 h-3" />
-                    <span>ดาวน์โหลดประวัติเคลื่อนไหวคลัง (.CSV / Excel)</span>
+                    <FileSpreadsheet className="w-3 h-3" />
+                    <span>ดาวน์โหลดบันทึกธุรกรรม (.CSV / Excel)</span>
                   </button>
                 </div>
               </div>
@@ -903,18 +819,6 @@ const handleExportProductsToCsv = () => {
                 <span>อัปโหลดจากไฟล์ CSV</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  const demoFormat = "ชื่อน้ำดื่มสิงห์ 500ml\tSKU-SING-A1\tเครื่องดื่ม\t150\t20\tขวด\tShelf A2\nสบู่นกแก้ว สมุนไพร\tSKU-PARR-B2\tของใช้ในบ้าน\t80\t15\tก้อน\tShelf B3";
-                  setPastedText(demoFormat);
-                  alert("💡 ได้จำลองรูปแบบข้อความตัวอย่างนำเข้าลงในกล่องกรอกข้อมูลด้านล่างเรียบร้อยแล้ว ลองทดสอบเล่นได้ทันที!");
-                }}
-                className="px-3.5 py-1.5 text-slate-500 border border-slate-300 hover:bg-slate-100 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
-              >
-                โหลดตัวอย่างตาราง (Demo)
-              </button>
-
               {hasResetPermission && products.length > 0 && (
                 <button
                   type="button"
@@ -923,42 +827,32 @@ const handleExportProductsToCsv = () => {
                       isOpen: true,
                       title: '⚠️ ล้างข้อมูลสินค้าในคลังทั้งหมด',
                       message: 'คุณต้องการลบหรือล้างข้อมูลสินค้าทั้งหมดในคลังระบบจริงหรือไม่?\n\n(การลบนี้จะทำให้ฐานข้อมูลสินค้าว่างเปล่าทันที เพื่อเปิดโอกาสให้ควบคุมนำเข้าข้อมูลใหม่ทั้งหมดได้)',
-                      confirmText: 'ล้างข้อมูลสินค้า',
+                      confirmText: 'ล้างข้อมูลสินค้าเด็ดขาด',
                       cancelText: 'ยกเลิก',
                       variant: 'danger',
-                      onConfirm: () => {
-                        setConfirmDialog({
-                          isOpen: true,
-                          title: '💥 คำเตือนขั้นเด็ดขาด',
-                          message: 'ยืนยันการลบล้างเด็ดขาดจริงหรือไม่? (ข้อมูลสินค้าทั้งหมดจะถูกลบและจะไม่สามารถกู้กลับคืนมาได้หากไม่มีการสำรองไฟล์ไว้)',
-                          confirmText: 'ล้างข้อมูลเด็ดขาด',
-                          cancelText: 'ยกเลิก',
-                          variant: 'danger',
-                          onConfirm: async () => {
-                            try {
-                              await onImportProducts([], true);
-                              setConfirmDialog({
-                                isOpen: true,
-                                title: '🧹 ล้างระบบสำเร็จ',
-                                message: 'ล้างข้อมูลสินค้าในระบบคลัง Cloud เรียบร้อยแล้ว! คลังมีสถานะว่างพร้อมใช้งานสร้างใหม่',
-                                confirmText: 'ตกลง',
-                                isAlertOnly: true,
-                                variant: 'info',
-                                onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false }))
-                              });
-                            } catch (err: any) {
-                              setConfirmDialog({
-                                isOpen: true,
-                                title: '❌ เกิดข้อผิดพลาด',
-                                message: 'ไม่สามารถล้างข้อมูลสินค้าได้: ' + err.message,
-                                confirmText: 'ตกลง',
-                                isAlertOnly: true,
-                                variant: 'danger',
-                                onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false }))
-                              });
-                            }
-                          }
-                        });
+                      onConfirm: async () => {
+                        try {
+                          await onImportProducts([], true);
+                          setConfirmDialog({
+                            isOpen: true,
+                            title: '🧹 ล้างระบบสำเร็จ',
+                            message: 'ล้างข้อมูลสินค้าในระบบคลัง Cloud เรียบร้อยแล้ว! คลังมีสถานะว่างพร้อมใช้งานสร้างใหม่',
+                            confirmText: 'ตกลง',
+                            isAlertOnly: true,
+                            variant: 'info',
+                            onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false }))
+                          });
+                        } catch (err: any) {
+                          setConfirmDialog({
+                            isOpen: true,
+                            title: '❌ เกิดข้อผิดพลาด',
+                            message: 'ไม่สามารถล้างข้อมูลสินค้าได้: ' + err.message,
+                            confirmText: 'ตกลง',
+                            isAlertOnly: true,
+                            variant: 'danger',
+                            onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false }))
+                          });
+                        }
                       }
                     });
                   }}
@@ -973,61 +867,7 @@ const handleExportProductsToCsv = () => {
           </div>
         </div>
 
-        {/* Text clipboard fast import area */}
-        <div className="space-y-2 pt-2 border-t border-slate-100">
-          <label className="text-[11.5px] font-bold text-slate-500 uppercase tracking-wider block">
-            กู้คืนสินค้าด้วยกล่องข้อมูลตารางวางตรง (Google Sheets / Excel Copy-Paste Container)
-          </label>
-          <textarea
-            value={pastedText}
-            onChange={(e) => setPastedText(e.target.value)}
-            disabled={!hasSettingsPermission}
-            rows={5}
-            placeholder={`วางสินค้าที่คุณ Copy จาก Google Sheets มาที่นี่ (เรียงตามแนวคอลัมน์: ชื่อสินค้า, SKU, หมวดหมู่, จำนวนคงเหลือ, เกณฑ์ต่ำสุด, หน่วยนับ, ตำแหน่ง)\n\nตัวอย่าง:\nน้ำมันองุ่นพลาสติก\tSKU-M-OIL\tครัวแปรรูป\t175\t20\tขวด\tZone B-3`}
-            className="w-full text-xs font-mono p-3 bg-slate-900 text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <div className="flex flex-wrap gap-2 justify-end">
-            <button
-              onClick={() => handleImportPasted(false)}
-              disabled={!pastedText.trim() || !hasSettingsPermission}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
-            >
-              🚀 ซิงก์ควบสมทบ (Merge & Update ยึด SKU)
-            </button>
-            <button
-              onClick={() => {
-                if (!hasSettingsPermission) {
-                  setConfirmDialog({
-                    isOpen: true,
-                    title: '🔒 ข้อจำกัดการใช้งาน',
-                    message: 'ขออภัย คุณไม่มีบทบาทเป็นผู้ดูแลระบบระดับสูง (ซิงก์ข้อมูลนำเข้า)',
-                    confirmText: 'ตกลง',
-                    isAlertOnly: true,
-                    variant: 'warning',
-                    onConfirm: () => setConfirmDialog(p => ({ ...p, isOpen: false }))
-                  });
-                  return;
-                }
-                setConfirmDialog({
-                  isOpen: true,
-                  title: '⚠️ ยืนยันการลบทับสินค้าเดิมทั้งหมด',
-                  message: 'คุณยืนยันการลบทับสินค้าสะสมและข้อมูลสต๊อกทั้งหมดใน Cloud หรือไม่?\n\nการกระทำนี้จะเคลียร์ล้างข้อมูลที่ชั้นวางที่มีอยู่เดิมทั้งหมด และอัปเดตระบบด้วยชุดตารางใหม่นี้ทันที!',
-                  confirmText: 'ลบทับข้อมูลเดิมและเข้าแทรกแซงกู้คืน',
-                  cancelText: 'ยกเลิก',
-                  variant: 'danger',
-                  onConfirm: () => {
-                    handleImportPasted(true);
-                    setConfirmDialog(p => ({ ...p, isOpen: false }));
-                  }
-                });
-              }}
-              disabled={!pastedText.trim() || !hasSettingsPermission}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
-            >
-              💥 ลบทับพยับหมอกและกู้คืน (Clear & Replace Storage)
-            </button>
-          </div>
-        </div>
+
 
         {/* Display response / parsed count */}
         {importStatus && (
@@ -1047,75 +887,6 @@ const handleExportProductsToCsv = () => {
             </div>
           </div>
         )}
-      </div>
-
-      {/* 4. LINE Official Account & External Integration Guide Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 text-slate-100 shadow-lg space-y-6">
-        <div>
-          <h3 className="text-base font-bold text-emerald-400 flex items-center gap-2">
-            <Link2 className="w-5 h-5 text-emerald-400" />
-            <span>📱 คู่มือใช้งานภายนอก & ติดตั้งเมนูบน LINE Official Account (LINE OA)</span>
-          </h3>
-          <p className="text-xs text-slate-400 mt-1">
-            คุณสามารถย้ายแอปพลิเคชันออกไปเปิดนอก iFrame หรือนำไปผูกเข้ากับปุ่มบนแชต LINE OA ของคุณเพื่อให้ทุกคนในทีมเช็คสต๊อกได้อย่างลื่นไหล
-          </p>
-        </div>
-
-        {/* Live App Link Copier */}
-        <div className="p-4 border border-slate-800 bg-slate-950 rounded-xl space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h4 className="text-xs font-bold text-slate-300">🔗 ลิงก์ตรงสำหรับเปิดแอปพอร์ตจริง (Direct App URL)</h4>
-              <p className="text-[11px] text-slate-500">ใช้ลิงก์นี้ในการเปิดแอปแยกแท็บภายนอกเพื่อหลีกเลี่ยงการติดบล็อกสิทธิ์ของ iFrame หรือนำไปใส่ในเมนู LINE OA</p>
-            </div>
-            <button
-              onClick={handleCopyAppUrl}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all self-start cursor-pointer shrink-0"
-            >
-              {isUrlCopied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-white" />
-                  <span>คัดลอกสำเร็จ!</span>
-                </>
-              ) : (
-                <>
-                  <Clipboard className="w-3.5 h-3.5" />
-                  <span>คัดลอกลิงก์แอป</span>
-                </>
-              )}
-            </button>
-          </div>
-          <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 font-mono text-xs text-emerald-400 select-all overflow-x-auto whitespace-nowrap">
-            {window.location.origin}
-          </div>
-        </div>
-
-        <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
-          <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>ขั้นตอนสร้างริชเมนูบน LINE OA (Rich Menu)</span>
-          </h4>
-          <ul className="space-y-2 text-xs text-slate-400 list-decimal pl-4 leading-relaxed">
-            <li>
-              ล็อกอินเข้าใช้งานระบบหลังบ้าน <a href="https://manager.line.me" target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold">LINE Official Account Manager</a>
-            </li>
-            <li>
-              ไปที่เมนูฝั่งซ้าย เลือก **"ริชเมนู" (Rich Menus)** ภายใต้หัวข้อหน้าหลัก
-            </li>
-            <li>
-              คลิกปุ่ม **"สร้างใหม่"** เพื่อกำหนดหน้าตาปุ่มคีย์ลัดบนแชตไลน์ของคุณ
-            </li>
-            <li>
-              ในขั้นตอนการตั้งค่าเทมเพลตปุ่มกด และการระบุแอ็กชัน (Action) ให้เลือกประเภทแอ็กชันเป็น <span className="font-bold text-slate-200">"ลิงก์" (Link)</span>
-            </li>
-            <li>
-              คัดลอกลิงก์ตัวเต็มด้านบน (ลิงก์แอปพอร์ตจริงที่คัดลอกได้) ไปวางลงในช่อง **URL ลิงก์** พร้อมใส่คำอธิบายปุ่มแชร์
-            </li>
-            <li>
-              กด **บันทึก** เป็นอันเปิดใช้งาน โทรศัพท์มือถือของลูกค้าและพนักงานจะเห็นริชเมนูสวยงาม และสามารถกดเช็คสต๊อกหรือทำรายการได้จากห้องแชตทันที
-            </li>
-          </ul>
-        </div>
       </div>
 
       <ConfirmModal
