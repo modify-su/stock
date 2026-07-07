@@ -669,35 +669,7 @@ export default function SystemSettings({
 
       </div>
 
-      {/* 2.5 LINE Bot Configuration & Integration Card (Moved to Dedicated Sub-tab) */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-600 shrink-0">
-              <Bot className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-800">
-                คุณสมบัติบอทถามตอบแชตอัตโนมัติ (LINE Messaging Bot ร่วมกับ Gemini AI)
-              </h2>
-              <p className="text-xs text-slate-500 mt-1">
-                ได้รับการอัปเกรดและแยกออกเป็นเมนูหลักในแถบนำทางเรียบร้อยแล้ว เพื่อการตั้งค่าและการจำลองถามตอบผ่านห้องแชตที่สมบูรณ์แบบยิ่งขึ้น
-              </p>
-            </div>
-          </div>
-          
-          {onNavigateToLineBot && (
-            <button
-              type="button"
-              onClick={onNavigateToLineBot}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shrink-0 shadow-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-98"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>ไปยังเมนูบอท LINE & AI 🤖</span>
-            </button>
-          )}
-        </div>
-      </div>
+
 
       {/* 2.6 Gemini AI API Settings Card */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
