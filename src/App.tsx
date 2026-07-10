@@ -595,7 +595,7 @@ export default function App() {
 
   // Redirect non-ADMIN users away from admin-only tabs
   useEffect(() => {
-    if (currentUser?.role !== 'ADMIN' && (activeMenuTab === 'SETTINGS' || activeMenuTab === 'SYNC' || activeMenuTab === 'LINE_BOT')) {
+    if (currentUser?.role !== 'ADMIN' && (activeMenuTab === 'SETTINGS' || activeMenuTab === 'SYNC')) {
       setActiveMenuTab('OVERVIEW');
     }
   }, [currentUser, activeMenuTab]);
@@ -1308,15 +1308,15 @@ export default function App() {
       isAdminOnly: false,
     },
     {
+      id: 'LINE_BOT',
+      label: 'ระบบบอท LINE & AI',
+      icon: <Bot className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: false,
+    },
+    {
       id: 'SYNC',
       label: menuLabels.SYNC || 'สำรอง & นำเข้าข้อมูล (CSV / Excel)',
       icon: <FileSpreadsheet className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
-      isAdminOnly: true,
-    },
-    {
-      id: 'LINE_BOT',
-      label: 'ระบบบอท LINE & Gemini AI',
-      icon: <Bot className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
       isAdminOnly: true,
     },
     {
@@ -1790,7 +1790,6 @@ export default function App() {
             products={products}
             transactions={transactions}
             onImportProducts={handleImportProducts}
-            onNavigateToLineBot={() => setActiveMenuTab('LINE_BOT')}
           />
         )}
 
@@ -1800,6 +1799,7 @@ export default function App() {
             onUpdateSettings={handleUpdateSettings}
             products={products}
             currentUser={currentUser}
+            onRecordTransaction={handleRecordTransaction}
           />
         )}
 

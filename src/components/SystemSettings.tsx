@@ -50,7 +50,6 @@ interface SystemSettingsProps {
   products: Product[];
   transactions: Transaction[];
   onImportProducts: (parsedProducts: Omit<Product, 'id' | 'updatedAt'>[], overwrite: boolean) => void;
-  onNavigateToLineBot?: () => void;
 }
 
 const SELECTABLE_LOGOS = [
@@ -75,8 +74,7 @@ export default function SystemSettings({
   currentUser,
   products,
   transactions,
-  onImportProducts,
-  onNavigateToLineBot
+  onImportProducts
 }: SystemSettingsProps) {
   // Local form states
   const [editingTitle, setEditingTitle] = useState(settings.appName);

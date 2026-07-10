@@ -98,94 +98,62 @@ export default function PWAInstallPrompt() {
   };
 
   if (!isVisible) {
-    if (isStandalone) {
-      return (
-        <div className="bg-emerald-950/90 border border-emerald-800 text-emerald-200 rounded-xl p-3 text-xs flex items-center justify-between shadow-xs max-w-7xl mx-auto mb-4">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="font-semibold text-emerald-100">เปิดใช้งานในรูปแบบแอปพลิเคชัน (PWA) เรียบร้อยแล้ว! รวดเร็วและใช้กล้องสแกนได้ลื่นไหล</span>
-          </div>
-          <span className="font-mono text-[9px] bg-emerald-800 text-emerald-100 px-2 py-0.5 rounded-full font-bold">STANDALONE APP</span>
-        </div>
-      );
-    }
     return null;
   }
 
   return (
-    <div className="max-w-7xl mx-auto mb-4 relative">
+    <>
       {/* 
-        This is the sleek, dark, high-contrast PWA card custom-designed to match 
-        the user's exact uploaded layout & reference.
+        This is the sleek, floating action button (FAB) in the bottom-left corner 
+        as requested by the user. It is styled beautifully and non-intrusive.
       */}
-      <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 md:p-5 text-white shadow-xl relative overflow-hidden transition-all duration-300">
-        
-        {/* Background ambient radial glow */}
-        <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-indigo-600/10 rounded-full blur-2xl pointer-events-none"></div>
+      <div className="fixed bottom-4 left-4 z-[9999] flex items-center gap-3 group select-none">
+        {/* Pulsing Outer Background Glow */}
+        <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-md pointer-events-none group-hover:scale-125 transition-transform duration-300"></div>
 
-        {/* Dismiss Button */}
-        <button 
-          onClick={handleDismiss}
-          className="absolute top-3.5 right-3.5 text-slate-400 hover:text-slate-200 p-1 rounded-full hover:bg-slate-800/80 transition-colors cursor-pointer z-10"
-          title="ปิดแบนเนอร์ชั่วคราว"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="relative flex items-center">
+          {/* Main Floating Button */}
+          <button
+            onClick={() => setShowManualModal(true)}
+            className="w-13 h-13 bg-[#0f172a] hover:bg-[#1e293b] text-white rounded-full flex items-center justify-center shadow-2xl hover:shadow-blue-500/10 hover:scale-105 active:scale-95 transition-all duration-300 border border-slate-800 cursor-pointer relative"
+            title="ติดตั้งแอปพลิเคชันมือถือ (PWA)"
+          >
+            {/* Subtle continuous ring pulse */}
+            <span className="absolute inset-0 rounded-full bg-blue-500/30 animate-ping pointer-events-none"></span>
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-5">
-          {/* Header & Description */}
-          <div className="flex items-start gap-3.5">
-            <div className="p-3 bg-blue-600/15 rounded-xl border border-blue-500/20 shrink-0 self-center">
-              <Smartphone className="w-6 h-6 text-blue-400 animate-pulse" />
-            </div>
+            <Smartphone className="w-5 h-5 text-blue-400 relative z-10" />
 
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h3 className="text-[15px] md:text-base font-bold text-slate-100 tracking-tight flex items-center gap-1.5">
-                  พร้อมติดตั้งบนอุปกรณ์นี้
-                </h3>
-                <span className="text-[9px] font-bold tracking-wider uppercase bg-blue-500/10 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/20">
-                  แอปพลิเคชัน PWA
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
-                ติดตั้งระบบเพื่อให้เปิดใช้งานได้รวดเร็วดุจแอปจริงบนมือถือและพีซีของคุณ สแกนลื่นขึ้น ไม่หนักพื้นที่เครื่อง
-              </p>
-            </div>
-          </div>
+            {/* Notification Badge indicator */}
+            <span className="absolute top-0 right-0 w-3 h-3 rounded-full bg-blue-500 border border-slate-900 animate-pulse"></span>
+          </button>
 
-          {/* Action Button & Instructions Link */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
-            <button
-              onClick={() => setShowManualModal(true)}
-              className="text-slate-400 hover:text-white text-xs font-semibold py-2 px-3 rounded-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-1 cursor-pointer border border-transparent hover:border-slate-750"
-            >
-              <HelpCircle className="w-3.5 h-3.5" />
-              <span>คู่มือการติดตั้งแมนนวล</span>
-            </button>
-
-            <button
-              onClick={handleInstallClick}
-              className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-2.5 px-5 rounded-xl text-xs transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer border border-blue-500 hover:scale-[1.02]"
-            >
-              <Download className="w-4 h-4" />
-              <span>ติดตั้งแอปพลิเคชัน</span>
-            </button>
-          </div>
+          {/* Dismiss Button */}
+          <button 
+            onClick={handleDismiss}
+            className="absolute -top-1 -left-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-rose-400 p-0.5 rounded-full transition-colors cursor-pointer z-20 shadow-lg"
+            title="ซ่อนปุ่มนี้"
+          >
+            <X className="w-2.5 h-2.5" />
+          </button>
         </div>
 
-        {/* Show interactive status feedbacks */}
-        {installChoice === 'success' && (
-          <div className="mt-3 bg-emerald-950/50 text-emerald-300 text-[11px] p-2 rounded-lg border border-emerald-500/30 flex items-center gap-2 font-medium">
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span>กำลังรันการติดตั้งระบบลงในเครื่องคุณเรียบร้อย! สามารถสลับไปเปิดแอปจากไอคอนบนหน้าแรกได้เลยครับ 🎉</span>
+        {/* Informative Slide-in Tooltip */}
+        <div className="bg-[#0f172a] border border-slate-800 text-white rounded-xl py-2 px-3.5 shadow-2xl pointer-events-none transition-all duration-300 origin-left scale-90 translate-x-1 opacity-0 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 hidden md:flex flex-col shrink-0 min-w-[210px]">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-blue-400 tracking-tight">📲 ติดตั้งแอปมือถือ (PWA)</span>
+            <span className="text-[8px] bg-blue-500/10 text-blue-300 px-1.5 py-0.2 rounded-full border border-blue-500/20 font-bold font-sans uppercase">FREE</span>
           </div>
-        )}
+          <p className="text-[10px] text-slate-400 mt-0.5 font-normal">สแกนพัสดุผ่านกล้องได้เร็วขึ้น & ลื่นไหล</p>
+        </div>
 
-        {installChoice === 'dismissed' && (
-          <div className="mt-2 text-[10px] text-amber-400/90 font-medium">
-            * การติดตั้งอัตโนมัติแบบคลิกเดียวถูกปัดผ่าน หากต้องการติดตั้งในภายหลังสามารถเปิดผ่าน "คู่มือการติดตั้งแมนนวล" ได้ตลอดเวลาครับ
+        {/* Display native install outcome feedback inside the floating area as small popover if clicked */}
+        {installChoice === 'success' && (
+          <div className="absolute bottom-16 left-0 bg-emerald-950/95 text-emerald-300 text-[10px] p-2 rounded-lg border border-emerald-500/30 w-64 shadow-2xl leading-normal animate-fade-in font-medium">
+            <div className="flex items-center gap-1.5 font-bold text-emerald-400 mb-0.5">
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>กำลังติดตั้งระบบลงเครื่องคุณ!</span>
+            </div>
+            <span>สลับไปใช้งานจากหน้าจอหลักได้เลยครับ 🎉</span>
           </div>
         )}
       </div>
@@ -374,6 +342,6 @@ export default function PWAInstallPrompt() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
