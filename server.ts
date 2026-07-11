@@ -169,13 +169,68 @@ async function startServer() {
               // Query live inventory snapshot
               const productsSnap = await getDocs(collection(db, "products"));
               const productsList: any[] = [];
-              productsSnap.forEach((doc) => {
-                productsList.push(doc.data());
+              productsSnap.forEach((docSnap) => {
+                productsList.push(docSnap.data());
               });
 
               const lowerText = text.toLowerCase();
               let replyText = "";
               let processed = false;
+
+              // Helper function to replace templates with real dynamic variables
+              const replacePlaceholders = (tmpl: string, placeholders: Record<string, any>) => {
+                let str = tmpl;
+                for (const key of Object.keys(placeholders)) {
+                  const val = placeholders[key];
+                  const regex = new RegExp(`\\\\?\\{\\{\\\\?\\s*${key}\\\\?\\s*\\\\?\\}\\}`, 'g');
+                  str = str.replace(regex, val !== undefined && val !== null ? String(val) : "");
+                }
+                return str;
+              };
+
+              // Loaded Custom Templates with clean default fallbacks
+              const welcomeTemplate = settings.lineBotWelcomeTemplate || `สวัสดีครับ! ผมเป็นบอทคลังสินค้าอัจฉริยะ ยินดีให้บริการครับ คุณสามารถเลือกทำรายการด่วนได้ตามนี้ครับ:
+• พิมพ์ "สรุป" เพื่อดูรายงานภาพรวมคลังสินค้า
+• พิมพ์ "ใกล้หมด" เพื่อดูสินค้าที่ต่ำกว่าเกณฑ์หรือหมดสต๊อก
+• พิมพ์ "รับเข้า [ชื่อสินค้า/SKU] [จำนวน]" เพื่อนำของเข้าชั้นวาง
+• พิมพ์ "เบิก [ชื่อสินค้า/SKU] [จำนวน]" เพื่อตัดยอดสต๊อกออก
+• พิมพ์ชื่อสินค้าหรือ SKU เพื่อค้นหาตำแหน่งชั้นวางพิกัดจัดเก็บและข้อมูลทางเทคนิค 📦🤖`;
+
+              const inboundTemplate = settings.lineBotInboundTemplate || `📥 **นำเข้าสินค้าสำเร็จ!**
+• สินค้า: {{productName}}
+• SKU: {{sku}}
+• จำนวนที่เพิ่ม: +{{quantity}} {{unit}}
+• สต๊อกอัปเดต: {{currentStock}} {{unit}}
+• พิกัดชั้นวาง: 📍 {{location}}
+
+บันทึกประวัติการรับเข้าเรียบร้อยเรียลไทม์เรียบร้อยครับ!`;
+
+              const outboundTemplate = settings.lineBotOutboundTemplate || `📤 **เบิกจ่ายสินค้าสำเร็จ!**
+• สินค้า: {{productName}}
+• SKU: {{sku}}
+• จำนวนที่เบิก: -{{quantity}} {{unit}}
+• สต๊อกคงเหลือล่าสุด: {{currentStock}} {{unit}}
+• พิกัดชั้นวาง: 📍 {{location}}
+
+บันทึกประวัติการเบิกออกเรียลไทม์เรียบร้อยครับ!`;
+
+              const lowStockTemplate = settings.lineBotLowStockTemplate || `⚠️ **มีสินค้าในคลังต่ำกว่าเกณฑ์แจ้งเตือน!** (พบ {{count}} รายการ)
+
+{{list}}
+
+💡 กรุณาวางแผนติดต่อซัพพลายเออร์เพื่อเติมสินค้าด้วยนะคะ!`;
+
+              const productDetailTemplate = settings.lineBotProductDetailTemplate || `🔍 **ข้อมูลรายละเอียดสินค้า:**
+• 📦 **ชื่อ:** {{productName}}
+• 🆔 **SKU:** {{sku}}
+• 🏷️ **หมวดหมู่:** {{category}}
+• 🔢 **จำนวนหน้าร้าน:** **{{quantity}}** {{unit}}
+• 📦 **คลังสินค้าใหญ่:** {{wholesaleStock}} {{wholesaleUnit}}
+• 📍 **พิกัดชั้นจัดเก็บ:** ชั้น {{location}}
+• 💰 **ราคาต่อชิ้น:** {{price}} บาท
+• ⚖️ **น้ำหนักสินค้า:** {{weight}} {{weightUnit}}
+
+สถานะสต๊อก: {{statusText}}`;
 
               // 1. Instant Greeting Router
               const isGreeting = ["สวัสดี", "ดีครับ", "ดีค่ะ", "หวัดดี", "เริ่ม", "เริ่มต้น", "hello", "hi", "hey", "บอท", "bot"].some(keyword => lowerText.includes(keyword));
@@ -184,18 +239,14 @@ async function startServer() {
               const isLowStockQuery = ["ใกล้หมด", "เหลือน้อย", "หมด", "เตือน", "แจ้งเตือน", "alert", "low stock", "out of stock"].some(keyword => lowerText.includes(keyword));
               
               // 3. Instant Summary Router
-              const isSummaryQuery = (["สรุป", "ภาพรวม", "ทั้งหมด", "summary", "report", "overview"].some(keyword => lowerText.includes(keyword)) && 
-                                     ["สต๊อก", "สินค้า", "คลัง", "stock", "product"].some(keyword => lowerText.includes(keyword))) || lowerText === "สต๊อก";
+              const isSummaryQuery = ["สรุป", "ภาพรวม", "ทั้งหมด", "summary"].some(keyword => lowerText.includes(keyword));
+
+              // 4. Inbound / Outbound Routers
+              const isInbound = lowerText.startsWith("รับเข้า") || lowerText.startsWith("เติม") || lowerText.startsWith("เติมสต๊อก") || lowerText.startsWith("รับสินค้าเข้า");
+              const isOutbound = lowerText.startsWith("เบิก") || lowerText.startsWith("จ่าย") || lowerText.startsWith("ส่งออก") || lowerText.startsWith("ตัดสต๊อก");
 
               if (isGreeting) {
-                replyText = `สวัสดีครับ! 📦 ผมคือ บอทคลังสินค้าอัจฉริยะ (AI Warehouse Assistant) ยินดีให้บริการครับ!
-
-คุณสามารถพิมพ์ถามคำสั่งด่วนเหล่านี้ได้เลยเพื่อการทำงานที่เร็วที่สุด (ระบบจะวิเคราะห์และดึงข้อมูลสดทันที):
-• ⚠️ พิมพ์ "สต๊อกใกล้หมด" เพื่อดูสินค้าที่เหลือน้อยเตือนภัย
-• 📊 พิมพ์ "สรุปสต๊อก" เพื่อดูรายงานภาพรวมคลังสินค้า
-• 🔍 พิมพ์ [ชื่อสินค้า หรือ รหัส SKU] เช่น "KP-GR" เพื่อเช็คยอดคงเหลือและพิกัดชั้นวางได้ทันที!
-
-ยินดีช่วยพนักงานทุกคนดูแลคลังสินค้าครับ! 😊`;
+                replyText = welcomeTemplate;
                 processed = true;
               } else if (isLowStockQuery) {
                 const alertProducts = productsList.filter(p => (Number(p.quantity || 0) <= Number(p.minStock || 0)) || Number(p.quantity || 0) === 0);
@@ -209,7 +260,11 @@ async function startServer() {
 
                   const totalAlerts = alertProducts.length;
                   const footer = totalAlerts > 20 ? `\n\n...และยังมีอีก ${totalAlerts - 20} รายการที่ใกล้หมดในคลัง` : "";
-                  replyText = `⚠️ รายงานสินค้าเหลือน้อยและต่ำกว่าเกณฑ์ (${totalAlerts} รายการ):\n\n${listText}${footer}\n\n💡 รีบจัดเตรียมเติมสต๊อกด่วนนะครับ!`;
+
+                  replyText = replacePlaceholders(lowStockTemplate, {
+                    count: alertProducts.length,
+                    list: listText + footer
+                  });
                 }
                 processed = true;
               } else if (isSummaryQuery) {
@@ -226,6 +281,128 @@ async function startServer() {
 
 💡 พิมพ์ชื่อสินค้าหรือ SKU เพื่อค้นหารายละเอียดเฉพาะเจาะจงได้เลยครับ!`;
                 processed = true;
+              } else if (isInbound) {
+                const qtyRegex = /(\d+)\s*(?:ชิ้น|ตัว|กล่อง|แพ็ค|หน่วย|ซอง|ถุง|แผง|ขวด|ลัง|ม้วน|เมตร|กก|กิโล|อัน|คู่|เม็ด|กระป๋อง)?$/i;
+                const qtyMatch = text.match(qtyRegex) || text.match(/(?:จำนวน|เติม|เข้า)\s*(\d+)/i);
+                const quantity = qtyMatch ? parseInt(qtyMatch[1], 10) : 0;
+                
+                let searchKey = text
+                  .replace(/รับเข้า|เติมสต๊อก|เติม|รับสินค้าเข้า/g, '')
+                  .replace(qtyRegex, '')
+                  .replace(/(?:จำนวน|เข้า)?\s*\d+/g, '')
+                  .trim();
+
+                if (quantity <= 0) {
+                  replyText = '❌ ขออภัยครับ! ไม่พบจำนวนสินค้าที่ระบุในการรับเข้า กรุณาลองใช้รูปแบบ:\n\n👉 *พิมพ์:* "รับเข้า [ชื่อสินค้า/SKU] [ตัวเลข]"\n👉 *ตัวอย่าง:* "รับเข้าปลังเขียว 500 ซอง"';
+                } else if (!searchKey) {
+                  replyText = '❌ กรุณาระบุรหัสสินค้า (SKU) หรือชื่อสินค้าที่ต้องการรับเข้าด้วยครับ\n\n👉 *ตัวอย่าง:* "รับเข้าปลังเขียว 500"';
+                } else {
+                  const foundProduct = productsList.find(p => p.sku?.toLowerCase() === searchKey.toLowerCase()) ||
+                                       productsList.find(p => p.name?.toLowerCase().includes(searchKey.toLowerCase())) ||
+                                       productsList.find(p => searchKey.toLowerCase().includes(p.name?.toLowerCase() || ''));
+
+                  if (foundProduct) {
+                    try {
+                      // 1. Record transaction in Firestore
+                      const txId = `tx-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+                      await setDoc(doc(db, "transactions", txId), {
+                        id: txId,
+                        productId: foundProduct.id,
+                        productSku: foundProduct.sku,
+                        productName: foundProduct.name,
+                        type: 'IN',
+                        quantity: quantity,
+                        reason: 'แจ้งบันทึกรับเข้าคลังด่วนผ่านบอท LINE OA 🤖',
+                        operator: 'พนักงานคลัง (ผ่าน LINE Bot)',
+                        date: new Date().toISOString()
+                      });
+
+                      // 2. Update product stock in Firestore
+                      const newQty = Number(foundProduct.quantity || 0) + quantity;
+                      await updateDoc(doc(db, "products", foundProduct.id), {
+                        quantity: newQty,
+                        updatedAt: new Date().toISOString()
+                      });
+
+                      replyText = replacePlaceholders(inboundTemplate, {
+                        productName: foundProduct.name,
+                        sku: foundProduct.sku,
+                        quantity: quantity,
+                        unit: foundProduct.unit,
+                        currentStock: newQty,
+                        location: foundProduct.location || 'ไม่ได้ระบุ'
+                      });
+                    } catch (err: any) {
+                      replyText = `❌ ขออภัยครับ เกิดข้อผิดพลาดในการอัปเดตสต๊อกลงฐานข้อมูล: ${err.message}`;
+                    }
+                  } else {
+                    replyText = `❌ ไม่พบสินค้าที่มี SKU หรือชื่อใกล้เคียงกับ "${searchKey}" ในระบบครับ`;
+                  }
+                }
+                processed = true;
+              } else if (isOutbound) {
+                const qtyRegex = /(\d+)\s*(?:ชิ้น|ตัว|กล่อง|แพ็ค|หน่วย|ซอง|ถุง|แผง|ขวด|ลัง|ม้วน|เมตร|กก|กิโล|อัน|คู่|เม็ด|กระป๋อง)?$/i;
+                const qtyMatch = text.match(qtyRegex) || text.match(/(?:จำนวน|เบิก|ออก)\s*(\d+)/i);
+                const quantity = qtyMatch ? parseInt(qtyMatch[1], 10) : 0;
+                
+                let searchKey = text
+                  .replace(/ส่งออก|เบิกสินค้า|เบิก|ตัดสต๊อก/g, '')
+                  .replace(qtyRegex, '')
+                  .replace(/(?:จำนวน|ออก)?\s*\d+/g, '')
+                  .trim();
+
+                if (quantity <= 0) {
+                  replyText = '❌ ขออภัยครับ! ไม่พบจำนวนสินค้าที่ระบุในการเบิกออก กรุณาลองใช้รูปแบบ:\n\n👉 *พิมพ์:* "เบิก [ชื่อสินค้า/SKU] [ตัวเลข]"\n👉 *ตัวอย่าง:* "เบิกปลังเขียว 10 ซอง"';
+                } else if (!searchKey) {
+                  replyText = '❌ กรุณาระบุรหัสสินค้า (SKU) หรือชื่อสินค้าที่ต้องการเบิกด้วยครับ\n\n👉 *ตัวอย่าง:* "เบิกปลังเขียว 10"';
+                } else {
+                  const foundProduct = productsList.find(p => p.sku?.toLowerCase() === searchKey.toLowerCase()) ||
+                                       productsList.find(p => p.name?.toLowerCase().includes(searchKey.toLowerCase())) ||
+                                       productsList.find(p => searchKey.toLowerCase().includes(p.name?.toLowerCase() || ''));
+
+                  if (foundProduct) {
+                    if (Number(foundProduct.quantity || 0) < quantity) {
+                      replyText = `⚠️ **สต๊อกคงเหลือไม่เพียงพอสำหรับทำรายการ!**\n\n📦 **สินค้า:** ${foundProduct.name}\n🆔 **SKU:** ${foundProduct.sku}\n❌ **จำนวนที่พยายามเบิก:** ${quantity} ${foundProduct.unit}\n📉 **คงเหลือพร้อมส่งจริง:** ${foundProduct.quantity} ${foundProduct.unit}\n\nกรุณาตรวจสอบจำนวนที่เบิก หรือนำเข้าสินค้าเพิ่มเติมเข้ามาในสต๊อกก่อนครับ`;
+                    } else {
+                      try {
+                        // 1. Record transaction in Firestore
+                        const txId = `tx-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+                        await setDoc(doc(db, "transactions", txId), {
+                          id: txId,
+                          productId: foundProduct.id,
+                          productSku: foundProduct.sku,
+                          productName: foundProduct.name,
+                          type: 'OUT',
+                          quantity: quantity,
+                          reason: 'แจ้งบันทึกส่งออกคลังผ่านบอท LINE OA 🤖',
+                          operator: 'พนักงานคลัง (ผ่าน LINE Bot)',
+                          date: new Date().toISOString()
+                        });
+
+                        // 2. Update product stock in Firestore
+                        const newQty = Number(foundProduct.quantity || 0) - quantity;
+                        await updateDoc(doc(db, "products", foundProduct.id), {
+                          quantity: newQty,
+                          updatedAt: new Date().toISOString()
+                        });
+
+                        replyText = replacePlaceholders(outboundTemplate, {
+                          productName: foundProduct.name,
+                          sku: foundProduct.sku,
+                          quantity: quantity,
+                          unit: foundProduct.unit,
+                          currentStock: newQty,
+                          location: foundProduct.location || 'ไม่ได้ระบุ'
+                        });
+                      } catch (err: any) {
+                        replyText = `❌ ขออภัยครับ เกิดข้อผิดพลาดในการตัดสต๊อกลงฐานข้อมูล: ${err.message}`;
+                      }
+                    }
+                  } else {
+                    replyText = `❌ ไม่พบสินค้าที่มี SKU หรือชื่อใกล้เคียงกับ "${searchKey}" ในคลังครับ`;
+                  }
+                }
+                processed = true;
               } else {
                 // Find products matching SKU or Name directly
                 const matchedProducts = productsList.filter(p => {
@@ -234,12 +411,33 @@ async function startServer() {
                   return skuMatch || nameMatch;
                 });
 
-                if (matchedProducts.length > 0 && matchedProducts.length <= 5) {
+                if (matchedProducts.length === 1) {
+                  const foundProduct = matchedProducts[0];
+                  const statusText = Number(foundProduct.quantity || 0) <= Number(foundProduct.minStock || 0) 
+                    ? '🔴 สินค้าใกล้หมดแล้ว! ควรเติมสินค้า' 
+                    : '🟢 มีสินค้าเพียงพอในคลัง';
+
+                  replyText = replacePlaceholders(productDetailTemplate, {
+                    productName: foundProduct.name,
+                    sku: foundProduct.sku,
+                    category: foundProduct.category || 'ทั่วไป',
+                    quantity: foundProduct.quantity,
+                    unit: foundProduct.unit,
+                    wholesaleStock: foundProduct.wholesaleStock || 0,
+                    wholesaleUnit: foundProduct.wholesaleUnit || foundProduct.unit,
+                    location: foundProduct.location || 'ไม่ได้ระบุ',
+                    price: foundProduct.price ? foundProduct.price.toLocaleString() : 'ไม่ได้ระบุ',
+                    weight: foundProduct.weight || 'ไม่ได้ระบุ',
+                    weightUnit: foundProduct.weightUnit || 'กก.',
+                    statusText: statusText
+                  });
+                  processed = true;
+                } else if (matchedProducts.length > 1 && matchedProducts.length <= 5) {
                   const listText = matchedProducts.map((p) => {
                     const statusIcon = Number(p.quantity || 0) === 0 ? "❌ หมดสต๊อก" : (Number(p.quantity || 0) <= Number(p.minStock || 0) ? "⚠️ ต่ำกว่าเกณฑ์" : "✅ ปกติ");
-                    return `• [${p.sku || 'ไม่มี SKU'}] *${p.name}*\n• หมวดหมู่: ${p.category || 'ทั่วไป'}\n• คงเหลือสต๊อก: *${p.quantity}* ${p.unit || 'ชิ้น'} (เกณฑ์เตือน: ${p.minStock})\n• พิกัดจัดเก็บ: 📍 *${p.location || 'ไม่ระบุ'}*\n• สถานะปัจจุบัน: ${statusIcon}`;
+                    return `• [${p.sku || 'ไม่มี SKU'}] *${p.name}*\n• คงเหลือ: *${p.quantity}* ${p.unit || 'ชิ้น'}\n• พิกัดจัดเก็บ: 📍 *${p.location || 'ไม่ระบุ'}* (${statusIcon})`;
                   }).join("\n\n");
-                  replyText = `🔍 ดึงข้อมูลสินค้าตรงคีย์เวิร์ด "${text}" สำเร็จ:\n\n${listText}`;
+                  replyText = `🔍 ดึงข้อมูลสินค้าตรงคีย์เวิร์ด "${text}" สำเร็จ (พบ ${matchedProducts.length} รายการ):\n\n${listText}`;
                   processed = true;
                 } else {
                   // Fall back to Gemini API
@@ -328,6 +526,7 @@ ${productsContext}
 
   // Mount the LINE Webhook handler on the Express App
   app.post("/api/line-webhook", express.raw({ type: "application/json" }), handleLineWebhook);
+  app.post("/api/line/webhook", express.raw({ type: "application/json" }), handleLineWebhook);
 
   // Endpoint to simulate the LINE Chatbot response in real-time
   app.post("/api/simulate-line-bot", express.json(), async (req, res) => {

@@ -51,20 +51,63 @@ export default function LineBotSettings({
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
+  // Default bot reply templates
+  const DEFAULT_WELCOME_TEMPLATE = `สวัสดีครับ! ยินดีต้อนรับสู่ระบบ "บอท LINE & AI คลังสินค้าอัจฉริยะ" 🤖📦\n\nผมพร้อมช่วยอัปเดตและเช็คสต๊อกแบบเรียลไทม์ผ่าน LINE แชตแล้วครับ คุณสามารถพิมพ์ถามสต๊อก, เช็คสินค้า, แจ้งรับเข้า, หรือแจ้งส่งออกสินค้า ได้ทันทีผ่านเมนูปุ่มทางลัดหรือพิมพ์คุยกับผมได้เลย!`;
+  const DEFAULT_INBOUND_TEMPLATE = `✅ **บันทึกรับเข้าสำเร็จเรียบร้อย!**\n\n📦 **สินค้า:** {{productName}}\n🆔 **SKU:** {{sku}}\n➕ **จำนวนรับเข้า:** +{{quantity}} {{unit}}\n📊 **สต๊อกปัจจุบัน:** {{currentStock}} {{unit}}\n📍 **พิกัดชั้นวาง:** {{location}}\n\nข้อมูลถูกอัปเดตลงในระบบคลังส่วนกลางและฐานข้อมูลหลักเรียบร้อยแล้วครับ!`;
+  const DEFAULT_OUTBOUND_TEMPLATE = `✅ **บันทึกส่งออก (เบิกสินค้า) สำเร็จ!**\n\n📦 **สินค้า:** {{productName}}\n🆔 **SKU:** {{sku}}\n➖ **จำนวนส่งออก:** -{{quantity}} {{unit}}\n📊 **คงเหลือในชั้นวาง:** {{currentStock}} {{unit}}\n📍 **พิกัดคลังสินค้า:** {{location}}\n\nระบบดำเนินการตัดสต๊อกและสร้างประวัติบันทึกการเบิกพัสดุเรียบร้อยแล้ว!`;
+  const DEFAULT_LOW_STOCK_TEMPLATE = `⚠️ **แจ้งเตือนสินค้าสต๊อกต่ำกว่าเกณฑ์ ({{count}} ชิ้น):**\n\n{{list}}\n\n💡 แนะนำให้เบิกสินค้าจากคลังใหญ่เข้ามาเพิ่ม หรือทำการสั่งซื้อสินค้าด่วนครับ`;
+  const DEFAULT_PRODUCT_DETAIL_TEMPLATE = `🔍 **ข้อมูลพัสดุจากคลังอัจฉริยะ:**\n\n📦 **ชื่อสินค้า:** {{productName}}\n🆔 **SKU:** {{sku}}\n🏷️ **หมวดหมู่:** {{category}}\n\n📊 **สต๊อกคงเหลือในระบบ:**\n- **คงเหลือหน้าร้าน:** {{quantity}} {{unit}}\n- **สต๊อกคลังใหญ่ (Wholesale):** {{wholesaleStock}} {{wholesaleUnit}}\n\n📍 **พิกัดชั้นวาง:** {{location}}\n💰 **ราคาสินค้า:** {{price}} บาท\n⚖️ **น้ำหนักสินค้า:** {{weight}} {{weightUnit}}\n\n⚠️ **สถานะการติดตาม:** {{statusText}}`;
+
+  // Custom template state definitions
+  const [welcomeTemplate, setWelcomeTemplate] = useState(settings.lineBotWelcomeTemplate || DEFAULT_WELCOME_TEMPLATE);
+  const [inboundTemplate, setInboundTemplate] = useState(settings.lineBotInboundTemplate || DEFAULT_INBOUND_TEMPLATE);
+  const [outboundTemplate, setOutboundTemplate] = useState(settings.lineBotOutboundTemplate || DEFAULT_OUTBOUND_TEMPLATE);
+  const [lowStockTemplate, setLowStockTemplate] = useState(settings.lineBotLowStockTemplate || DEFAULT_LOW_STOCK_TEMPLATE);
+  const [productDetailTemplate, setProductDetailTemplate] = useState(settings.lineBotProductDetailTemplate || DEFAULT_PRODUCT_DETAIL_TEMPLATE);
+  const [activeTemplateTab, setActiveTemplateTab] = useState('welcome');
+
+  // Sync templates on settings change
+  useEffect(() => {
+    if (settings.lineChannelAccessToken !== undefined) setToken(settings.lineChannelAccessToken || '');
+    if (settings.lineChannelSecret !== undefined) setSecret(settings.lineChannelSecret || '');
+    if (settings.lineBotEnabled !== undefined) setIsEnabled(settings.lineBotEnabled ?? true);
+    if (settings.lineBotWelcomeTemplate !== undefined) setWelcomeTemplate(settings.lineBotWelcomeTemplate || DEFAULT_WELCOME_TEMPLATE);
+    if (settings.lineBotInboundTemplate !== undefined) setInboundTemplate(settings.lineBotInboundTemplate || DEFAULT_INBOUND_TEMPLATE);
+    if (settings.lineBotOutboundTemplate !== undefined) setOutboundTemplate(settings.lineBotOutboundTemplate || DEFAULT_OUTBOUND_TEMPLATE);
+    if (settings.lineBotLowStockTemplate !== undefined) setLowStockTemplate(settings.lineBotLowStockTemplate || DEFAULT_LOW_STOCK_TEMPLATE);
+    if (settings.lineBotProductDetailTemplate !== undefined) setProductDetailTemplate(settings.lineBotProductDetailTemplate || DEFAULT_PRODUCT_DETAIL_TEMPLATE);
+  }, [settings]);
+
+  // Placeholder substitution helper
+  const replacePlaceholders = (template: string, data: Record<string, any>) => {
+    let result = template;
+    for (const key of Object.keys(data)) {
+      const value = data[key] !== undefined && data[key] !== null ? String(data[key]) : '';
+      result = result.replace(new RegExp(`\\\\{\\\\{${key}\\\\}\\\\}`, 'g'), value);
+    }
+    return result;
+  };
+
   // Simulated Webhook details
   const simulatedWebhookUrl = `${window.location.origin}/api/line/webhook`;
   const [isCopiedWebhook, setIsCopiedWebhook] = useState(false);
 
   // Chat simulator states
   const [chatInput, setChatInput] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome-1',
-      sender: 'bot',
-      text: 'สวัสดีครับ! ยินดีต้อนรับสู่ระบบ "บอท LINE & AI คลังสินค้าอัจฉริยะ" 🤖📦\n\nผมพร้อมช่วยอัปเดตและเช็คสต๊อกแบบเรียลไทม์ผ่าน LINE แชตแล้วครับ คุณสามารถพิมพ์ถามสต๊อก, เช็คสินค้า, แจ้งรับเข้า, หรือแจ้งส่งออกสินค้า ได้ทันทีผ่านเมนูปุ่มทางลัดหรือพิมพ์คุยกับผมได้เลย!',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  // Initialize welcome message from custom welcomeTemplate on component load / update
+  useEffect(() => {
+    setMessages([
+      {
+        id: 'welcome-1',
+        sender: 'bot',
+        text: welcomeTemplate,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+    ]);
+  }, [welcomeTemplate]);
+
   const [isBotTyping, setIsBotTyping] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -83,7 +126,33 @@ export default function LineBotSettings({
       await onUpdateSettings({
         lineChannelAccessToken: token,
         lineChannelSecret: secret,
-        lineBotEnabled: isEnabled
+        lineBotEnabled: isEnabled,
+        lineBotWelcomeTemplate: welcomeTemplate,
+        lineBotInboundTemplate: inboundTemplate,
+        lineBotOutboundTemplate: outboundTemplate,
+        lineBotLowStockTemplate: lowStockTemplate,
+        lineBotProductDetailTemplate: productDetailTemplate
+      });
+      setSaveStatus('success');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    } catch (err) {
+      setSaveStatus('error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handle template saving individually
+  const handleSaveTemplates = async () => {
+    setIsSaving(true);
+    setSaveStatus('idle');
+    try {
+      await onUpdateSettings({
+        lineBotWelcomeTemplate: welcomeTemplate,
+        lineBotInboundTemplate: inboundTemplate,
+        lineBotOutboundTemplate: outboundTemplate,
+        lineBotLowStockTemplate: lowStockTemplate,
+        lineBotProductDetailTemplate: productDetailTemplate
       });
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 3000);
@@ -112,8 +181,15 @@ export default function LineBotSettings({
     let replyText = '';
     let isAction = false;
 
+    // 0. ทักทาย / เริ่มต้น
+    const lowerText = text.toLowerCase();
+    const isGreeting = ["สวัสดี", "ดีครับ", "ดีค่ะ", "หวัดดี", "เริ่ม", "เริ่มต้น", "hello", "hi", "hey", "บอท", "bot"].some(keyword => lowerText.includes(keyword));
+
+    if (isGreeting) {
+      replyText = welcomeTemplate;
+    }
     // 1. ตรวจสต๊อกสินค้าทั้งหมด หรือ คลังใกล้หมด
-    if (
+    else if (
       text.includes('ตรวจสต๊อก') || 
       text.includes('เช็คสต๊อกทั้งหมด') || 
       text.includes('สินค้าทั้งหมด') || 
@@ -138,7 +214,10 @@ export default function LineBotSettings({
         const listText = lowStockList.map(p => 
           `🚨 [${p.sku}] ${p.name}\n  คงเหลือ: ${p.quantity} (เกณฑ์ต่ำสุด: ${p.minStock} ${p.unit})`
         ).join('\n\n');
-        replyText = `⚠️ **แจ้งเตือนสินค้าสต๊อกต่ำกว่าเกณฑ์ (${lowStockList.length} ชิ้น):**\n\n${listText}\n\n💡 แนะนำให้เบิกสินค้าจากคลังใหญ่เข้ามาเพิ่ม หรือทำการสั่งซื้อสินค้าด่วนครับ`;
+        replyText = replacePlaceholders(lowStockTemplate, {
+          count: lowStockList.length,
+          list: listText
+        });
       }
     }
     // 3. แจ้งรับเข้าสินค้า (Inbound Transaction)
@@ -183,7 +262,14 @@ export default function LineBotSettings({
               operator: currentUser?.name || 'พนักงานคลัง (ผ่าน LINE Bot)',
             });
             isAction = true;
-            replyText = `✅ **บันทึกรับเข้าสำเร็จเรียบร้อย!**\n\n📦 **สินค้า:** ${foundProduct.name}\n🆔 **SKU:** ${foundProduct.sku}\n➕ **จำนวนรับเข้า:** +${quantity} ${foundProduct.unit}\n📊 **สต๊อกปัจจุบัน:** ${foundProduct.quantity + quantity} ${foundProduct.unit}\n📍 **พิกัดชั้นวาง:** ${foundProduct.location || 'ไม่ได้ระบุ'}\n\nข้อมูลถูกอัปเดตลงในระบบคลังส่วนกลางและฐานข้อมูลหลักเรียบร้อยแล้วครับ!`;
+            replyText = replacePlaceholders(inboundTemplate, {
+              productName: foundProduct.name,
+              sku: foundProduct.sku,
+              quantity: quantity,
+              unit: foundProduct.unit,
+              currentStock: foundProduct.quantity + quantity,
+              location: foundProduct.location || 'ไม่ได้ระบุ'
+            });
           } catch (err) {
             replyText = '❌ ขออภัยครับ เกิดข้อผิดพลาดทางเทคนิคในการอัปเดตสต๊อกลงฐานข้อมูล กรุณาลองใหม่อีกครั้ง';
           }
@@ -234,7 +320,14 @@ export default function LineBotSettings({
                 operator: currentUser?.name || 'พนักงานคลัง (ผ่าน LINE Bot)',
               });
               isAction = true;
-              replyText = `✅ **บันทึกส่งออก (เบิกสินค้า) สำเร็จ!**\n\n📦 **สินค้า:** ${foundProduct.name}\n🆔 **SKU:** ${foundProduct.sku}\n➖ **จำนวนส่งออก:** -${quantity} ${foundProduct.unit}\n📊 **คงเหลือในชั้นวาง:** ${foundProduct.quantity - quantity} ${foundProduct.unit}\n📍 **พิกัดคลังสินค้า:** ${foundProduct.location || 'ไม่ได้ระบุ'}\n\nระบบดำเนินการตัดสต๊อกและสร้างประวัติบันทึกการเบิกพัสดุเรียบร้อยแล้ว!`;
+              replyText = replacePlaceholders(outboundTemplate, {
+                productName: foundProduct.name,
+                sku: foundProduct.sku,
+                quantity: quantity,
+                unit: foundProduct.unit,
+                currentStock: foundProduct.quantity - quantity,
+                location: foundProduct.location || 'ไม่ได้ระบุ'
+              });
             } catch (err) {
               replyText = '❌ ขออภัยครับ เกิดข้อผิดพลาดทางเทคนิคในการตัดสต๊อก กรุณาลองใหม่อีกครั้ง';
             }
@@ -302,7 +395,20 @@ export default function LineBotSettings({
             ? '🔴 สินค้าใกล้หมดแล้ว! ควรเติมสินค้า' 
             : '🟢 มีสินค้าเพียงพอในคลัง';
 
-          replyText = `🔍 **ข้อมูลพัสดุจากคลังอัจฉริยะ:**\n\n📦 **ชื่อสินค้า:** ${foundProduct.name}\n🆔 **SKU:** ${foundProduct.sku}\n🏷️ **หมวดหมู่:** ${foundProduct.category}\n\n📊 **สต๊อกคงเหลือในระบบ:**\n- **คงเหลือหน้าร้าน:** ${foundProduct.quantity} ${foundProduct.unit}\n- **สต๊อกคลังใหญ่ (Wholesale):** ${foundProduct.wholesaleStock || 0} ${foundProduct.wholesaleUnit || foundProduct.unit}\n\n📍 **พิกัดชั้นวาง:** ${foundProduct.location || 'ไม่ได้ระบุ'}\n💰 **ราคาสินค้า:** ${foundProduct.price ? `${foundProduct.price.toLocaleString()} บาท` : 'ไม่ได้ระบุ'}\n⚖️ **น้ำหนักสินค้า:** ${foundProduct.weight ? `${foundProduct.weight} ${foundProduct.weightUnit || 'กก.'}` : 'ไม่ได้ระบุ'}\n\n⚠️ **สถานะการติดตาม:** ${statusText}`;
+          replyText = replacePlaceholders(productDetailTemplate, {
+            productName: foundProduct.name,
+            sku: foundProduct.sku,
+            category: foundProduct.category || 'ทั่วไป',
+            quantity: foundProduct.quantity,
+            unit: foundProduct.unit,
+            wholesaleStock: foundProduct.wholesaleStock || 0,
+            wholesaleUnit: foundProduct.wholesaleUnit || foundProduct.unit,
+            location: foundProduct.location || 'ไม่ได้ระบุ',
+            price: foundProduct.price ? foundProduct.price.toLocaleString() : 'ไม่ได้ระบุ',
+            weight: foundProduct.weight || 'ไม่ได้ระบุ',
+            weightUnit: foundProduct.weightUnit || 'กก.',
+            statusText: statusText
+          });
         } else {
           replyText = `🔍 ไม่พบสินค้าที่ค้นหาใกล้เคียงกับคำว่า "${searchKey}"\n\n💡 ท่านสามารถลองพิมพ์เฉพาะรหัส SKU เช่น "TS-001" หรือตรวจดูรายการทั้งหมดด้วยพิมพ์ "ตรวจสต๊อก" ครับ`;
         }
@@ -519,6 +625,218 @@ export default function LineBotSettings({
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* Custom templates section */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-indigo-500" />
+              <span>ปรับแต่งคำพูด / ข้อความตอบกลับของบอท 💬</span>
+            </h2>
+            <p className="text-[11px] text-slate-500 leading-normal">
+              คุณสามารถกำหนดรูปแบบคำที่บอทพิมพ์ตอบกลับพนักงานเมื่อทำรายการได้ตามที่ต้องการ โดยสามารถใช้ตัวแปร 
+              <code className="bg-indigo-50 border border-indigo-100 text-indigo-600 px-1 py-0.5 rounded mx-0.5 font-mono">{"{{...}}"}</code> 
+              เพื่อดึงข้อมูลจริงของแต่ละพัสดุมาแทรกอัตโนมัติ
+            </p>
+
+            {/* Template editing panel */}
+            <div className="space-y-4">
+              {/* Tabs for choosing templates */}
+              <div className="flex gap-1 border-b border-slate-150 pb-2 overflow-x-auto scrollbar-none">
+                {[
+                  { id: 'welcome', label: '👋 ต้อนรับ' },
+                  { id: 'inbound', label: '📥 รับเข้า' },
+                  { id: 'outbound', label: '📤 เบิกออก' },
+                  { id: 'lowStock', label: '⚠️ สต๊อกต่ำ' },
+                  { id: 'detail', label: '🔍 เช็คละเอียด' }
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setActiveTemplateTab(t.id)}
+                    className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
+                      activeTemplateTab === t.id
+                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-150 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Template Textarea */}
+              {activeTemplateTab === 'welcome' && (
+                <div className="space-y-2 animate-fade-in">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[11px] font-bold text-slate-700">👋 ข้อความต้อนรับ / ทักทายเริ่มต้น:</label>
+                    <button 
+                      type="button" 
+                      onClick={() => setWelcomeTemplate(DEFAULT_WELCOME_TEMPLATE)}
+                      className="text-[10px] text-indigo-600 hover:underline cursor-pointer"
+                    >
+                      คืนค่าเริ่มต้น ↩️
+                    </button>
+                  </div>
+                  <textarea
+                    rows={6}
+                    value={welcomeTemplate}
+                    onChange={(e) => setWelcomeTemplate(e.target.value)}
+                    className="w-full text-xs font-sans p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all leading-relaxed"
+                    placeholder="พิมพ์ข้อความต้อนรับ..."
+                  />
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 text-[10px] text-slate-500">
+                    <span className="font-bold text-slate-700 block mb-0.5">💡 คำแนะนำ:</span>
+                    เป็นข้อความส่งต้อนรับเมื่อเริ่มต้นแชต หรือผู้ใช้ทักทาย เช่น "สวัสดี", "บอท"
+                  </div>
+                </div>
+              )}
+
+              {activeTemplateTab === 'inbound' && (
+                <div className="space-y-2 animate-fade-in">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[11px] font-bold text-slate-700">📥 ข้อความรับเข้าสำเร็จ:</label>
+                    <button 
+                      type="button" 
+                      onClick={() => setInboundTemplate(DEFAULT_INBOUND_TEMPLATE)}
+                      className="text-[10px] text-indigo-600 hover:underline cursor-pointer"
+                    >
+                      คืนค่าเริ่มต้น ↩️
+                    </button>
+                  </div>
+                  <textarea
+                    rows={6}
+                    value={inboundTemplate}
+                    onChange={(e) => setInboundTemplate(e.target.value)}
+                    className="w-full text-xs font-sans p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all leading-relaxed"
+                    placeholder="พิมพ์ข้อความรับเข้า..."
+                  />
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 text-[10px] text-slate-500 space-y-1">
+                    <span className="font-bold text-slate-700 block">💡 ตัวแปรที่ใช้ได้:</span>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{productName}}"}</code> : ชื่อสินค้า</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{sku}}"}</code> : รหัส SKU</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{quantity}}"}</code> : จำนวนรับเข้า</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{unit}}"}</code> : หน่วยนับ</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{currentStock}}"}</code> : ยอดสต๊อกอัปเดตล่าสุด</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{location}}"}</code> : พิกัดชั้นจัดเก็บ</p>
+                  </div>
+                </div>
+              )}
+
+              {activeTemplateTab === 'outbound' && (
+                <div className="space-y-2 animate-fade-in">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[11px] font-bold text-slate-700">📤 ข้อความส่งออก / เบิกสำเร็จ:</label>
+                    <button 
+                      type="button" 
+                      onClick={() => setOutboundTemplate(DEFAULT_OUTBOUND_TEMPLATE)}
+                      className="text-[10px] text-indigo-600 hover:underline cursor-pointer"
+                    >
+                      คืนค่าเริ่มต้น ↩️
+                    </button>
+                  </div>
+                  <textarea
+                    rows={6}
+                    value={outboundTemplate}
+                    onChange={(e) => setOutboundTemplate(e.target.value)}
+                    className="w-full text-xs font-sans p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all leading-relaxed"
+                    placeholder="พิมพ์ข้อความเบิกออก..."
+                  />
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 text-[10px] text-slate-500 space-y-1">
+                    <span className="font-bold text-slate-700 block">💡 ตัวแปรที่ใช้ได้:</span>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{productName}}"}</code> : ชื่อสินค้า</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{sku}}"}</code> : รหัส SKU</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{quantity}}"}</code> : จำนวนที่เบิกออก</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{unit}}"}</code> : หน่วยนับ</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{currentStock}}"}</code> : ยอดสต๊อกคงเหลือ</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{location}}"}</code> : พิกัดชั้นจัดเก็บ</p>
+                  </div>
+                </div>
+              )}
+
+              {activeTemplateTab === 'lowStock' && (
+                <div className="space-y-2 animate-fade-in">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[11px] font-bold text-slate-700">⚠️ ข้อความแจ้งเตือนสต๊อกต่ำกว่าเกณฑ์:</label>
+                    <button 
+                      type="button" 
+                      onClick={() => setLowStockTemplate(DEFAULT_LOW_STOCK_TEMPLATE)}
+                      className="text-[10px] text-indigo-600 hover:underline cursor-pointer"
+                    >
+                      คืนค่าเริ่มต้น ↩️
+                    </button>
+                  </div>
+                  <textarea
+                    rows={6}
+                    value={lowStockTemplate}
+                    onChange={(e) => setLowStockTemplate(e.target.value)}
+                    className="w-full text-xs font-sans p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all leading-relaxed"
+                    placeholder="พิมพ์ข้อความสต๊อกต่ำ..."
+                  />
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 text-[10px] text-slate-500 space-y-1">
+                    <span className="font-bold text-slate-700 block">💡 ตัวแปรที่ใช้ได้:</span>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{count}}"}</code> : จำนวนชนิดสินค้าที่ต่ำกว่าเกณฑ์</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{list}}"}</code> : ข้อความรายการสินค้าพร้อมสถานะคงเหลือ</p>
+                  </div>
+                </div>
+              )}
+
+              {activeTemplateTab === 'detail' && (
+                <div className="space-y-2 animate-fade-in">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[11px] font-bold text-slate-700">🔍 ข้อความข้อมูลเชิงลึกของพัสดุ:</label>
+                    <button 
+                      type="button" 
+                      onClick={() => setProductDetailTemplate(DEFAULT_PRODUCT_DETAIL_TEMPLATE)}
+                      className="text-[10px] text-indigo-600 hover:underline cursor-pointer"
+                    >
+                      คืนค่าเริ่มต้น ↩️
+                    </button>
+                  </div>
+                  <textarea
+                    rows={8}
+                    value={productDetailTemplate}
+                    onChange={(e) => setProductDetailTemplate(e.target.value)}
+                    className="w-full text-xs font-sans p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all leading-relaxed"
+                    placeholder="พิมพ์ข้อความข้อมูลสินค้า..."
+                  />
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 text-[10px] text-slate-500 space-y-1">
+                    <span className="font-bold text-slate-700 block">💡 ตัวแปรที่ใช้ได้:</span>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{productName}}"}</code> : ชื่อสินค้า</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{sku}}"}</code> : SKU</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{category}}"}</code> : หมวดหมู่</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{quantity}}"}</code> : จำนวนหน้าร้าน</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{unit}}"}</code> : หน่วยนับ</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{wholesaleStock}}"}</code> : ยอดคงคลังใหญ่</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{wholesaleUnit}}"}</code> : หน่วยคลังใหญ่</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{location}}"}</code> : พิกัดชั้นวาง</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{price}}"}</code> : ราคาสินค้าต่อหน่วย</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{weight}}"}</code> : น้ำหนัก</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{weightUnit}}"}</code> : หน่วยน้ำหนัก</p>
+                    <p><code className="bg-white border border-slate-200 px-1 rounded text-indigo-600">{"{{statusText}}"}</code> : ข้อความสัญลักษณ์สถานะสต๊อก (เช่น สต๊อกต่ำ/ปกติ)</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Action status & Save button */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={handleSaveTemplates}
+                  disabled={isSaving}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-50"
+                >
+                  {isSaving ? (
+                    <>
+                      <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+                      <span>กำลังเซฟความคุยบอท...</span>
+                    </>
+                  ) : (
+                    <span>บันทึกข้อความตอบกลับของบอท 💬💾</span>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Quick instructions guide */}

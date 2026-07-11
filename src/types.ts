@@ -67,6 +67,11 @@ export interface AppSettings {
   lineChannelSecret?: string;
   lineBotEnabled?: boolean;
   lineBotSystemPrompt?: string;
+  lineBotWelcomeTemplate?: string;
+  lineBotInboundTemplate?: string;
+  lineBotOutboundTemplate?: string;
+  lineBotLowStockTemplate?: string;
+  lineBotProductDetailTemplate?: string;
   isMaintenanceMode?: boolean;
   maintenanceMessage?: string;
   geminiApiKey?: string;
