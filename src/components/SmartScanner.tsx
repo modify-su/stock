@@ -1060,7 +1060,7 @@ export default function SmartScanner({
       weightUnit: matched.weightUnit,
     } : null;
 
-    const isExactMatch = matched && (matched.sku.trim().toLowerCase() === cleanSku.toLowerCase());
+    const isExactMatch = matched && ((matched.sku || '').trim().toLowerCase() === cleanSku.toLowerCase());
 
     setScanResults(prev => {
       const copy = [...prev];
@@ -2332,11 +2332,11 @@ export default function SmartScanner({
                                         {/* Suggestions for unmatched SKUs */}
                                         {!item.matched && !isProcessed && (
                                           (() => {
-                                            const searchStr = item.sku.trim().toLowerCase();
+                                            const searchStr = (item.sku || '').trim().toLowerCase();
                                             const suggestions = products
                                               .filter(p => 
-                                                p.sku.toLowerCase().includes(searchStr) || 
-                                                p.name.toLowerCase().includes(searchStr)
+                                                (p.sku || '').toLowerCase().includes(searchStr) || 
+                                                (p.name || '').toLowerCase().includes(searchStr)
                                               )
                                               .slice(0, 3);
 

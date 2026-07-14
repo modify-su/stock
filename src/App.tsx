@@ -551,6 +551,7 @@ export default function App() {
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
   const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER' | 'LINE_BOT'>('OVERVIEW');
   const [showLoginUnderMaintenance, setShowLoginUnderMaintenance] = useState(false);
+  const [showRecentOnlyOneWeek, setShowRecentOnlyOneWeek] = useState<boolean>(true);
 
   // --- Customizable Menu configuration states ---
   const [menuFontSize, setMenuFontSize] = useState<string>(() => {
@@ -996,7 +997,7 @@ export default function App() {
       }
 
       parsedProducts.forEach((p) => {
-        const existing = overwrite ? null : products.find(prod => prod.sku.trim().toLowerCase() === p.sku.trim().toLowerCase());
+        const existing = overwrite ? null : products.find(prod => (prod.sku || '').trim().toLowerCase() === (p.sku || '').trim().toLowerCase());
         const id = existing ? existing.id : `prod-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
         
         batch.set(doc(db, 'products', id), {
@@ -1634,26 +1635,65 @@ export default function App() {
 
               {/* Latest transactions stream */}
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                    <History className="w-4 h-4 text-slate-450" />
-                    ประวัติเล็ดเจอร์ด่วนล่าสุด (4 รายการล่าสุด)
-                  </h3>
-                  <button
-                    onClick={() => setActiveMenuTab('LOGS')}
-                    className="text-xs text-blue-600 font-semibold hover:underline cursor-pointer"
-                  >
-                    ดูประวัติทั้งหมด →
-                  </button>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                  <div className="space-y-0.5">
+                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                      <History className="w-4 h-4 text-slate-450" />
+                      ประวัติเล็ดเจอร์ด่วนล่าสุด
+                    </h3>
+                    <p className="text-[10px] text-slate-400">
+                      แสดงรายการเด่นเพื่อความสะดวกรวดเร็ว
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 select-none hover:bg-slate-100 transition-colors cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showRecentOnlyOneWeek}
+                        onChange={(e) => setShowRecentOnlyOneWeek(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                      />
+                      <span>📅 กรอง 1 สัปดาห์ล่าสุด</span>
+                    </label>
+                    <button
+                      onClick={() => setActiveMenuTab('LOGS')}
+                      className="text-xs text-blue-600 font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                    >
+                      ดูประวัติทั้งหมด →
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
-                  {transactions.length === 0 ? (
-                    <div className="py-12 text-center text-slate-400 text-xs">
-                      ยังไม่มีรายการเคลื่อนไหวใดๆ ในระบบขณะนี้
-                    </div>
-                  ) : (
-                    transactions.slice(0, 4).map((tx) => {
+                  {(() => {
+                    const oneWeekAgo = new Date();
+                    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+                    
+                    const displayedTx = showRecentOnlyOneWeek
+                      ? transactions.filter(tx => new Date(tx.date) >= oneWeekAgo)
+                      : transactions;
+
+                    if (displayedTx.length === 0) {
+                      return (
+                        <div className="py-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2.5">
+                          <p className="text-slate-400 text-xs font-medium">
+                            {showRecentOnlyOneWeek 
+                              ? '🧹 ไม่มีประวัติทำรายการใน 1 สัปดาห์ล่าสุด (พรีวิวเคลียร์แล้ว)' 
+                              : 'ยังไม่มีรายการเคลื่อนไหวใดๆ ในระบบขณะนี้'}
+                          </p>
+                          {showRecentOnlyOneWeek && (
+                            <button
+                              onClick={() => setShowRecentOnlyOneWeek(false)}
+                              className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 hover:border-blue-200 px-2.5 py-1.5 rounded-lg cursor-pointer transition-all mx-auto block"
+                            >
+                              📂 แสดงรายการย้อนหลังทั้งหมด
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return displayedTx.slice(0, 4).map((tx) => {
                       return (
                         <div key={tx.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex items-center justify-between hover:bg-slate-100/50 transition-colors">
                           <div className="space-y-1">
@@ -1681,8 +1721,8 @@ export default function App() {
                           </div>
                         </div>
                       );
-                    })
-                  )}
+                    });
+                  })()}
                 </div>
               </div>
             </div>

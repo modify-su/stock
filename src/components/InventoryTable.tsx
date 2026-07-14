@@ -1180,7 +1180,7 @@ export default function InventoryTable({
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">ชั้นที่เก็บสินค้า (Shelf Location)</label>
                   <select
-                    value={showCustomEditLoc ? 'CUSTOM' : editingProduct.location}
+                    value={showCustomEditLoc ? 'CUSTOM' : (editingProduct.location || '')}
                     onChange={(e) => {
                       const val = e.target.value;
                       if (val === 'CUSTOM') {
@@ -1207,7 +1207,7 @@ export default function InventoryTable({
                   {showCustomEditLoc && (
                     <input
                       type="text"
-                      value={editingProduct.location}
+                      value={editingProduct.location || ''}
                       onChange={(e) => setEditingProduct({ ...editingProduct, location: e.target.value })}
                       placeholder="พิมพ์ระบุตำแหน่งที่เก็บ..."
                       className="w-full px-3 py-1.5 text-sm bg-blue-50/30 border border-blue-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-semibold animate-fade-in"

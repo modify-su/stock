@@ -28,13 +28,25 @@ export default function ActionForms({
 
   // Form Fields
   const [productId, setProductId] = useState('');
-  const [quantity, setQuantity] = useState<number>(1);
+  const [quantity, setQuantity] = useState<number | string>(1);
   const [reason, setReason] = useState('');
   const [operator, setOperator] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [returnStatus, setReturnStatus] = useState<ReturnStatus>('RE_STOCK');
   const [weight, setWeight] = useState<string>('');
   const [weightUnit, setWeightUnit] = useState<string>('g');
+
+  // Pending multiple items list
+  const [pendingItems, setPendingItems] = useState<{
+    productId: string;
+    productSku: string;
+    productName: string;
+    quantity: number;
+    weight?: number;
+    weightUnit?: string;
+    unit: string;
+    location?: string;
+  }[]>([]);
 
   // Autocomplete state
   const [productSearchQuery, setProductSearchQuery] = useState('');
@@ -85,61 +97,146 @@ export default function ActionForms({
     }
   };
 
-  const handleFormSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    setSuccessMessage('');
+  const handleAddItem = () => {
     setErrorMessage('');
+    setSuccessMessage('');
 
     if (!productId) {
-      setErrorMessage('กรุณาเลือกสินค้าสำหรับการทำรายการ');
+      setErrorMessage('กรุณาเลือกสินค้าสำหรับการทำรายการก่อนเพิ่มลงชุดรายการ');
       return;
     }
 
-    if (quantity <= 0) {
+    const parsedQty = Number(quantity);
+    if (isNaN(parsedQty) || parsedQty <= 0) {
       setErrorMessage('จำนวนสินค้าต้องมากกว่า 0 เสมอ');
       return;
     }
+
+    if (!selectedProduct) return;
+
+    // Safety checks for checkout
+    if (activeTab === 'OUT') {
+      const alreadyAddedQty = pendingItems
+        .filter(item => item.productId === productId)
+        .reduce((sum, item) => sum + item.quantity, 0);
+
+      const totalTargetQty = alreadyAddedQty + parsedQty;
+
+      if (selectedProduct.quantity < totalTargetQty) {
+        setErrorMessage(
+          `ไม่สามารถเบิกจ่ายได้เนื่องจาก สต๊อกคงเหลือในคลังมีเพียง ${selectedProduct.quantity} ชิ้น (ในรายการเลือกแล้ว ${alreadyAddedQty} ชิ้น, พยายามเพิ่มอีก ${parsedQty} ชิ้น)`
+        );
+        return;
+      }
+    }
+
+    const newItem = {
+      productId,
+      productSku: selectedProduct.sku,
+      productName: selectedProduct.name,
+      quantity: parsedQty,
+      weight: weight ? Number(weight) : undefined,
+      weightUnit: weight ? weightUnit : undefined,
+      unit: selectedProduct.unit || 'ชิ้น',
+      location: selectedProduct.location,
+    };
+
+    setPendingItems(prev => [...prev, newItem]);
+
+    // Reset current selection fields but keep operator/referenceNo/reason
+    setProductId('');
+    setProductSearchQuery('');
+    setQuantity(1);
+    setWeight('');
+  };
+
+  const handleFormSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setSuccessMessage('');
+    setErrorMessage('');
 
     if (!operator.trim()) {
       setErrorMessage('กรุณากรอกชื่อผู้ทำรายการหรือพนักงานดําเนินงาน');
       return;
     }
 
-    // Safety checks for checkout
-    if (activeTab === 'OUT') {
-      if (!selectedProduct) return;
-      if (selectedProduct.quantity < quantity) {
-        setErrorMessage(
-          `ไม่สามารถเบิกจ่ายได้เนื่องจาก สต๊อกคงเหลือในคลังมีเพียง ${selectedProduct.quantity} ชิ้น (คุณพยายามเบิก ${quantity} ชิ้น)`
-        );
+    if (pendingItems.length > 0) {
+      // Record multiple transactions
+      const txs = pendingItems.map(item => ({
+        productId: item.productId,
+        productSku: item.productSku,
+        productName: item.productName,
+        type: activeTab,
+        quantity: item.quantity,
+        reason: reason.trim() || 'ทำรายการทั่วไป',
+        operator: operator.trim(),
+        referenceNo: referenceNo.trim() || undefined,
+        returnStatus: activeTab === 'RETURN' ? returnStatus : undefined,
+        weight: item.weight,
+        weightUnit: item.weightUnit,
+      }));
+
+      try {
+        await onRecordMultipleTransactions(txs);
+        setSuccessMessage(`บันทึกรายการทั้งหมด ${pendingItems.length} รายการ "${activeTab === 'IN' ? 'รับเข้า' : activeTab === 'OUT' ? 'ส่งออก' : 'ตีกลับสินค้า'}" สำเร็จเรียบร้อย!`);
+        setPendingItems([]);
+
+        // Reset forms
+        setQuantity(1);
+        setReason('');
+        setReferenceNo('');
+        setWeight('');
+        onClearPreSelection();
+      } catch (err: any) {
+        setErrorMessage(err.message || 'เกิดข้อผิดพลาดในการบันทึกหลายรายการ');
+      }
+    } else {
+      // Single transaction
+      if (!productId) {
+        setErrorMessage('กรุณาเลือกสินค้าหรือเพิ่มรายการในชุดรายการเพื่อทำการบันทึก');
         return;
       }
+
+      const parsedQty = Number(quantity);
+      if (isNaN(parsedQty) || parsedQty <= 0) {
+        setErrorMessage('จำนวนสินค้าต้องมากกว่า 0 เสมอ');
+        return;
+      }
+
+      // Safety checks for checkout
+      if (activeTab === 'OUT') {
+        if (!selectedProduct) return;
+        if (selectedProduct.quantity < parsedQty) {
+          setErrorMessage(
+            `ไม่สามารถเบิกจ่ายได้เนื่องจาก สต๊อกคงเหลือในคลังมีเพียง ${selectedProduct.quantity} ชิ้น (คุณพยายามเบิก ${parsedQty} ชิ้น)`
+          );
+          return;
+        }
+      }
+
+      onRecordTransaction({
+        productId,
+        productSku: selectedProduct?.sku || 'UNKNOWN',
+        productName: selectedProduct?.name || 'สินค้าทั่วไป',
+        type: activeTab,
+        quantity: parsedQty,
+        reason: reason.trim() || 'ทำรายการทั่วไป',
+        operator: operator.trim(),
+        referenceNo: referenceNo.trim() || undefined,
+        returnStatus: activeTab === 'RETURN' ? returnStatus : undefined,
+        weight: weight ? Number(weight) : undefined,
+        weightUnit: weight ? weightUnit : undefined,
+      });
+
+      setSuccessMessage(`บันทึกรายการ "${activeTab === 'IN' ? 'รับเข้า' : activeTab === 'OUT' ? 'ส่งออก' : 'ตีกลับสินค้า'}" สำเร็จเรียบร้อย!`);
+      
+      // Reset forms (hold operator name for convenience)
+      setQuantity(1);
+      setReason('');
+      setReferenceNo('');
+      setWeight('');
+      onClearPreSelection();
     }
-
-    // Record transaction
-    onRecordTransaction({
-      productId,
-      productSku: selectedProduct?.sku || 'UNKNOWN',
-      productName: selectedProduct?.name || 'สินค้าทั่วไป',
-      type: activeTab,
-      quantity,
-      reason: reason.trim() || 'ทำรายการทั่วไป',
-      operator: operator.trim(),
-      referenceNo: referenceNo.trim() || undefined,
-      returnStatus: activeTab === 'RETURN' ? returnStatus : undefined,
-      weight: weight ? Number(weight) : undefined,
-      weightUnit: weight ? weightUnit : undefined,
-    });
-
-    // Success response and clear state
-    setSuccessMessage(`บันทึกรายการ "${activeTab === 'IN' ? 'รับเข้า' : activeTab === 'OUT' ? 'ส่งออก' : 'ตีกลับสินค้า'}" สำเร็จเรียบร้อย!`);
-    
-    // Reset forms (hold operator name for convenience)
-    setQuantity(1);
-    setReason('');
-    setReferenceNo('');
-    setWeight('');
-    onClearPreSelection();
 
     // Auto clear success message
     const timer = setTimeout(() => {
@@ -253,6 +350,18 @@ export default function ActionForms({
 
         <fieldset disabled={!canRecordTransactions} className="space-y-4">
 
+        {/* Button to add to list */}
+        <div className="flex justify-start pt-1">
+          <button
+            type="button"
+            onClick={handleAddItem}
+            className="px-4 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+            id="add-item-btn"
+          >
+            ➕ เพิ่มรายการสินค้า
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Product selection */}
           <div>
@@ -275,7 +384,7 @@ export default function ActionForms({
                     setIsDropdownOpen(true);
                   }}
                   onFocus={() => setIsDropdownOpen(true)}
-                  required={!productId}
+                  required={pendingItems.length === 0 && !productId}
                 />
                 {productSearchQuery && (
                   <button
@@ -364,7 +473,15 @@ export default function ActionForms({
                 type="number"
                 min={1}
                 value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '') {
+                    setQuantity('');
+                  } else {
+                    const parsed = Number(val);
+                    setQuantity(isNaN(parsed) ? val : parsed);
+                  }
+                }}
                 className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
                 required
               />
@@ -406,6 +523,65 @@ export default function ActionForms({
             </p>
           </div>
         </div>
+
+        {/* Pending Items List */}
+        {pendingItems.length > 0 && (
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2.5 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <ClipboardList className="w-4 h-4 text-blue-600" />
+                รายการสินค้าในชุดนี้ ({pendingItems.length} รายการ)
+              </h4>
+              <button
+                type="button"
+                onClick={() => setPendingItems([])}
+                className="text-[11px] text-rose-600 hover:text-rose-800 font-semibold cursor-pointer"
+              >
+                ล้างทั้งหมด
+              </button>
+            </div>
+            
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                    <th className="px-3 py-2">ชื่อสินค้า / SKU</th>
+                    <th className="px-3 py-2 text-right">จำนวน</th>
+                    <th className="px-3 py-2 text-right">น้ำหนักรวม</th>
+                    <th className="px-3 py-2 text-center w-12">ลบ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                  {pendingItems.map((item, index) => (
+                    <tr key={index} className="hover:bg-slate-50/50">
+                      <td className="px-3 py-2">
+                        <div className="font-semibold text-slate-800">{item.productName}</div>
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">SKU: {item.productSku} | พิกัด: {item.location || 'ไม่ได้ระบุ'}</div>
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                        {item.quantity} {item.unit}
+                      </td>
+                      <td className="px-3 py-2 text-right text-slate-500 font-mono">
+                        {item.weight ? `${item.weight} ${item.weightUnit}` : '-'}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingItems(prev => prev.filter((_, i) => i !== index));
+                          }}
+                          className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Return Actions - "จัดการสินค้าตีกลับ" */}
         {activeTab === 'RETURN' && (
@@ -473,21 +649,7 @@ export default function ActionForms({
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Reference Document */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-550 mb-1">
-              เลขที่เอกสารอ้างอิง
-            </label>
-            <input
-              type="text"
-              placeholder={activeTab === 'IN' ? 'เช่น PO-2026-001' : activeTab === 'OUT' ? 'เช่น SO-99120' : 'เช่น RET-10091'}
-              value={referenceNo}
-              onChange={(e) => setReferenceNo(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
-            />
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Operator Staff */}
           <div>
             <label className="block text-xs font-semibold text-slate-550 mb-1">

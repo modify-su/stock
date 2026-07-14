@@ -77,9 +77,9 @@ export default function SystemSettings({
   onImportProducts
 }: SystemSettingsProps) {
   // Local form states
-  const [editingTitle, setEditingTitle] = useState(settings.appName);
-  const [editingSubtitle, setEditingSubtitle] = useState(settings.appSubtitle);
-  const [selectedLogo, setSelectedLogo] = useState(settings.appLogo);
+  const [editingTitle, setEditingTitle] = useState(settings.appName || '');
+  const [editingSubtitle, setEditingSubtitle] = useState(settings.appSubtitle || '');
+  const [selectedLogo, setSelectedLogo] = useState(settings.appLogo || 'PackageOpen');
 
   // Maintenance mode local states
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(settings.isMaintenanceMode || false);

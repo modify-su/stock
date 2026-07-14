@@ -343,7 +343,7 @@ export default function ShelfManagement({
 
   // Get products assigned to a shelf
   const getProductsForShelf = (shelfName: string) => {
-    return products.filter(p => (p.location || '').trim().toLowerCase() === shelfName.trim().toLowerCase());
+    return products.filter(p => (p.location || '').trim().toLowerCase() === (shelfName || '').trim().toLowerCase());
   };
 
   // Generate product QR Code URL

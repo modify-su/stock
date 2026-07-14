@@ -13,6 +13,7 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
   // Filters state
   const [logSearch, setLogSearch] = useState('');
   const [logTypeFilter, setLogTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'RETURN'>('ALL');
+  const [timeframeFilter, setTimeframeFilter] = useState<'1_WEEK' | 'ALL' | 'TODAY' | '1_MONTH'>('1_WEEK');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -21,11 +22,13 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
   // Reset page when filters change
   const [prevLogSearch, setPrevLogSearch] = useState(logSearch);
   const [prevLogTypeFilter, setPrevLogTypeFilter] = useState(logTypeFilter);
+  const [prevTimeframeFilter, setPrevTimeframeFilter] = useState(timeframeFilter);
 
-  if (logSearch !== prevLogSearch || logTypeFilter !== prevLogTypeFilter) {
+  if (logSearch !== prevLogSearch || logTypeFilter !== prevLogTypeFilter || timeframeFilter !== prevTimeframeFilter) {
     setCurrentPage(1);
     setPrevLogSearch(logSearch);
     setPrevLogTypeFilter(logTypeFilter);
+    setPrevTimeframeFilter(timeframeFilter);
   }
 
   // Custom confirmation state
@@ -56,7 +59,24 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
 
     const matchesType = logTypeFilter === 'ALL' || tx.type === logTypeFilter;
 
-    return matchesSearch && matchesType;
+    let matchesTimeframe = true;
+    const txDate = new Date(tx.date);
+    
+    if (timeframeFilter === 'TODAY') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      matchesTimeframe = txDate >= today;
+    } else if (timeframeFilter === '1_WEEK') {
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      matchesTimeframe = txDate >= oneWeekAgo;
+    } else if (timeframeFilter === '1_MONTH') {
+      const oneMonthAgo = new Date();
+      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+      matchesTimeframe = txDate >= oneMonthAgo;
+    }
+
+    return matchesSearch && matchesType && matchesTimeframe;
   });
 
   // Sort logs by date desc
@@ -77,7 +97,7 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
             <ClipboardList className="w-5 h-5 text-blue-600" />
             สมุดบัญชีความเคลื่อนไหวสินค้าและประวัติตีกลับ
           </h2>
-          <p className="text-xs text-slate-550 mt-1">
+          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
             บันทึกการเคลมสินค้า ตรวจสอบคนเซ็นรับเข้าสินค้าคนล่าสุด หรือสืบค้นใบเสร็จอ้างอิงย้อนหลัง
           </p>
         </div>
@@ -112,9 +132,9 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
       </div>
 
       {/* Control filters */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5 p-4 bg-slate-50 rounded-xl border border-slate-200">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5 p-4 bg-slate-50 rounded-xl border border-slate-200">
         {/* Search Input */}
-        <div className="relative col-span-2">
+        <div className="relative col-span-1 md:col-span-2">
           <Search className="absolute left-3 top-2.5 w-4.5 h-4.5 text-slate-400" />
           <input
             type="text"
@@ -133,10 +153,25 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
             onChange={(e: any) => setLogTypeFilter(e.target.value)}
             className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-hidden"
           >
-            <option value="ALL">ดูทุกประเภทการเคลื่อนไหว (IN / OUT / RETURN)</option>
+            <option value="ALL">ทุกประเภทรายการเคลื่อนไหว</option>
             <option value="IN">เฉพาะนำเข้าคลังสินค้า [IN]</option>
             <option value="OUT">เฉพาะเบิกสินค้าออกคลัง [OUT]</option>
-            <option value="RETURN">เฉพาะสินค้าตีกลับ/เคลมรับคืน [RETURN]</option>
+            <option value="RETURN">เฉพาะสินค้าตีกลับ [RETURN]</option>
+          </select>
+        </div>
+
+        {/* Timeframe filter */}
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+          <select
+            value={timeframeFilter}
+            onChange={(e: any) => setTimeframeFilter(e.target.value)}
+            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-750 focus:outline-hidden font-medium"
+          >
+            <option value="1_WEEK">📅 แสดงล่าสุด (1 สัปดาห์)</option>
+            <option value="ALL">🗂️ แสดงทั้งหมด (ดูได้ตลอด)</option>
+            <option value="TODAY">⏱️ เฉพาะวันนี้ (Today)</option>
+            <option value="1_MONTH">📆 แสดงล่าสุด (1 เดือน)</option>
           </select>
         </div>
       </div>

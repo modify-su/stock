@@ -33,7 +33,7 @@ export default function ShelfAuditModal({
 }: ShelfAuditModalProps) {
   // Filter products for this shelf
   const shelfProducts = products.filter(
-    p => (p.location || '').trim().toLowerCase() === shelf.name.trim().toLowerCase()
+    p => (p.location || '').trim().toLowerCase() === (shelf?.name || '').trim().toLowerCase()
   );
 
   // Local state for tracking physical counts being audited
