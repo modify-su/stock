@@ -430,6 +430,7 @@ export default function App() {
   // --- Live App Version Checking and Clean Auto-Update ---
   const [clientVersion, setClientVersion] = useState<string | null>(null);
   const [isNewVersionAvailable, setIsNewVersionAvailable] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     const fetchVersion = async () => {
@@ -458,36 +459,6 @@ export default function App() {
           const data = await res.json();
           if (data && data.version && data.version !== clientVersion) {
             setIsNewVersionAvailable(true);
-            
-            // 🔒 ออกจากระบบโดยอัตโนมัติ เพื่อความปลอดภัยและบังคับดึงข้อมูลโค้ดใหม่ล่าสุด
-            localStorage.removeItem('inventory_current_user');
-            localStorage.removeItem('inventory_is_authenticated');
-            sessionStorage.clear();
-            
-            // สั่งล้างแคชใน Cache Storage และปิด Service Worker ของเบราว์เซอร์ทันที
-            try {
-              if ('caches' in window) {
-                const cacheKeys = await caches.keys();
-                await Promise.all(cacheKeys.map(key => caches.delete(key)));
-              }
-              if ('serviceWorker' in navigator) {
-                const registrations = await navigator.serviceWorker.getRegistrations();
-                await Promise.all(registrations.map(reg => reg.unregister()));
-              }
-            } catch (cacheErr) {
-              console.warn("Failed to clear cache during autoupdate:", cacheErr);
-            }
-
-            // ตั้งเวลาหน่วงให้บันทึกสเตตก่อนทำ Hard Reload ข้ามแคช (Bypass Cache)
-            setTimeout(() => {
-              setCurrentUser(null);
-              setIsAuthenticated(false);
-              const origin = window.location.origin;
-              const pathname = window.location.pathname;
-              const searchParams = new URLSearchParams(window.location.search);
-              searchParams.set('nocache', String(Date.now()));
-              window.location.href = `${origin}${pathname}?${searchParams.toString()}${window.location.hash}`;
-            }, 3000);
           }
         }
       } catch (e) {
@@ -498,6 +469,37 @@ export default function App() {
     const interval = setInterval(checkVersion, 15000);
     return () => clearInterval(interval);
   }, [clientVersion]);
+
+  useEffect(() => {
+    const handlePwaUpdate = () => {
+      setIsNewVersionAvailable(true);
+    };
+    window.addEventListener('pwa-update-available', handlePwaUpdate);
+    return () => window.removeEventListener('pwa-update-available', handlePwaUpdate);
+  }, []);
+
+  const handlePerformUpdate = async () => {
+    setIsUpdating(true);
+    try {
+      if ('caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map(key => caches.delete(key)));
+      }
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(reg => reg.unregister()));
+      }
+    } catch (cacheErr) {
+      console.warn("Failed to clear cache during update:", cacheErr);
+    }
+
+    // Hard reload with cache busting query parameter, keeping user logged in!
+    const origin = window.location.origin;
+    const pathname = window.location.pathname;
+    const searchParams = new URLSearchParams(window.location.search);
+    searchParams.set('nocache', String(Date.now()));
+    window.location.href = `${origin}${pathname}?${searchParams.toString()}${window.location.hash}`;
+  };
 
   // --- Real-time Current User Profile Watcher ---
   // Syncs the active logged-in session instantly if an Admin updates their role, status, or name
@@ -1242,9 +1244,42 @@ export default function App() {
     return (
       <div className="min-h-screen flex flex-col bg-slate-50">
         {isNewVersionAvailable && (
-          <div className="bg-blue-600 text-white text-center py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-md relative z-50 animate-pulse">
-            <Sparkles className="w-4 h-4 text-amber-300 animate-spin" />
-            <span>🚀 ระบบพบคลิปต์บิลด์ใหม่ล่าสุดจาก AI Studio! บังคับเคลียร์แคชและระบบได้ Logout ชั่วคราวเพื่ออัปเดตไฟล์แบบไม่สะดุดในอีกสักครู่...</span>
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 z-[99999] animate-fade-in text-slate-800 font-sans">
+            <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl p-6 text-center space-y-5 animate-scale-up">
+              <div className="mx-auto w-14 h-14 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center border border-indigo-100 shadow-sm animate-bounce">
+                <Sparkles className="w-7 h-7" />
+              </div>
+              
+              <div className="space-y-2">
+                <h3 className="text-lg font-bold text-slate-900">🔔 ตรวจพบการปรับปรุงระบบคลัง!</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  ระบบหลังบ้านได้รับการอัปเดตเพื่อปรับปรุงความเสถียร ประสิทธิภาพ และความเร็วในการใช้งานแอปพลิเคชัน (PWA) ให้ดียิ่งขึ้นแล้วครับ
+                </p>
+                <div className="bg-emerald-50 text-emerald-800 p-2.5 rounded-lg border border-emerald-100 text-[11px] leading-relaxed text-left font-medium mt-1">
+                  💡 <b>ความปลอดภัย:</b> บัญชีผู้ใช้งานของคุณจะยังล็อกอินอยู่เหมือนเดิม และข้อมูลที่บันทึกไว้จะไม่สูญหายแต่อย่างใด
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  onClick={handlePerformUpdate}
+                  disabled={isUpdating}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {isUpdating ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      <span>กำลังติดตั้งความปลอดภัยและอัปเดต...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCcw className="w-4 h-4" />
+                      <span>🚀 โหลดหน้าจอใหม่เพื่ออัปเดตทันที</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         )}
         <div className="flex-1 flex flex-col">
@@ -1331,9 +1366,42 @@ export default function App() {
   return (
     <div id="app-wrapper" className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
       {isNewVersionAvailable && (
-        <div className="bg-blue-600 text-white text-center py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-md relative z-50">
-          <Sparkles className="w-4 h-4 text-amber-300 animate-spin" />
-          <span>🚀 ตรวจพบการอัปเดตระบบคลังเวอร์ชันใหม่! ระบบกำลังโหลดข้อมูลและปรับปรุงหน้าจอให้คุณโดยอัตโนมัติในอีกสักครู่ (โดยไม่ต้องกด Ctrl+F5)</span>
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 z-[99999] text-slate-800 font-sans">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl p-6 text-center space-y-5">
+            <div className="mx-auto w-14 h-14 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center border border-indigo-100 shadow-sm animate-bounce">
+              <Sparkles className="w-7 h-7" />
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-slate-900">🔔 ตรวจพบการปรับปรุงระบบคลัง!</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                ระบบหลังบ้านได้รับการอัปเดตเพื่อปรับปรุงความเสถียร ประสิทธิภาพ และความเร็วในการใช้งานแอปพลิเคชัน (PWA) ให้ดียิ่งขึ้นแล้วครับ
+              </p>
+              <div className="bg-emerald-50 text-emerald-800 p-2.5 rounded-lg border border-emerald-100 text-[11px] leading-relaxed text-left font-medium mt-1">
+                💡 <b>ความปลอดภัย:</b> บัญชีผู้ใช้งานของคุณจะยังล็อกอินอยู่เหมือนเดิม และข้อมูลที่บันทึกไว้จะไม่สูญหายแต่อย่างใด
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={handlePerformUpdate}
+                disabled={isUpdating}
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isUpdating ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                    <span>กำลังติดตั้งความปลอดภัยและอัปเดต...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCcw className="w-4 h-4" />
+                    <span>🚀 โหลดหน้าจอใหม่เพื่ออัปเดตทันที</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {/* 1. Header Navigation Bar */}

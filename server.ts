@@ -860,6 +860,39 @@ ${skuReferenceListText || "(No SKUs found in system database)"}`;
     res.json({ version: SERVER_VERSION });
   });
 
+  // Serve a byte-for-byte unique service worker on every single build/start
+  // This completely resolves the PWA caching issue where mobile devices hold onto outdated builds
+  app.get("/sw.js", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Content-Type", "application/javascript");
+
+    let swPath = "";
+    if (process.env.NODE_ENV !== "production") {
+      swPath = path.join(process.cwd(), "public", "sw.js");
+    } else {
+      swPath = path.join(process.cwd(), "dist", "sw.js");
+    }
+
+    try {
+      const fs = require("fs");
+      let swContent = fs.readFileSync(swPath, "utf8");
+      
+      // Inject the current unique SERVER_VERSION and rewrite cache name dynamically
+      swContent = `// Dynamic Server Build: ${SERVER_VERSION}\n` + swContent;
+      swContent = swContent.replace(
+        "const CACHE_NAME = 'smart-stock-v1';",
+        `const CACHE_NAME = 'smart-stock-${SERVER_VERSION}';`
+      );
+      
+      res.send(swContent);
+    } catch (err) {
+      console.error("Failed to dynamically modify sw.js, falling back to static:", err);
+      res.sendFile(swPath);
+    }
+  });
+
   // Set up Vite server middleware in dev mode, serve index.html directly in prod mode
   if (process.env.NODE_ENV !== "production" || process.env.DISABLE_HMR === "true") {
     const vite = await createViteServer({
