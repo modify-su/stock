@@ -851,39 +851,7 @@ export default function InventoryTable({
                 </div>
               </div>
 
-              {/* Unit Conversion Settings */}
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2.5">
-                <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  📦 ตั้งค่าการเบิกแบ่งบรรจุภัณฑ์ (Unit Conversion)
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">หน่วยนับคลังหลัก (คลังใหญ่)</label>
-                    <input
-                      type="text"
-                      value={newWholesaleUnit}
-                      onChange={(e) => setNewWholesaleUnit(e.target.value)}
-                      placeholder="เช่น กระสอบ, ลัง, กล่องใหญ่"
-                      className="w-full px-2.5 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">อัตราแบ่งย่อย (ต่อ 1 หน่วยคลังใหญ่)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={newConversionFactor}
-                      onChange={(e) => setNewConversionFactor(Math.max(1, Number(e.target.value)))}
-                      className="w-full px-2.5 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 font-medium"
-                    />
-                  </div>
-                </div>
-                {newWholesaleUnit && newUnit && (
-                  <p className="text-[10px] text-blue-600 font-medium">
-                    💡 ตัวอย่าง: เบิกคลังใหญ่ 1 {newWholesaleUnit} จะแบ่งขายได้ {newConversionFactor} {newUnit || 'หน่วยพร้อมขาย'}
-                  </p>
-                )}
-              </div>
+
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1098,39 +1066,7 @@ export default function InventoryTable({
                 </div>
               </div>
 
-              {/* Unit Conversion Settings */}
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2.5">
-                <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  📦 ตั้งค่าการเบิกแบ่งบรรจุภัณฑ์ (Unit Conversion)
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">หน่วยนับคลังหลัก (คลังใหญ่)</label>
-                    <input
-                      type="text"
-                      value={editingProduct.wholesaleUnit || ''}
-                      onChange={(e) => setEditingProduct({ ...editingProduct, wholesaleUnit: e.target.value })}
-                      placeholder="เช่น กระสอบ, ลัง, กล่องใหญ่"
-                      className="w-full px-2.5 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">อัตราแบ่งย่อย (ต่อ 1 หน่วยคลังใหญ่)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={editingProduct.conversionFactor || 1}
-                      onChange={(e) => setEditingProduct({ ...editingProduct, conversionFactor: Math.max(1, Number(e.target.value)) })}
-                      className="w-full px-2.5 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 font-medium"
-                    />
-                  </div>
-                </div>
-                {(editingProduct.wholesaleUnit || 'กระสอบ') && (editingProduct.unit || 'ชิ้น') && (
-                  <p className="text-[10px] text-blue-600 font-medium">
-                    💡 ตัวอย่าง: เบิกคลังใหญ่ 1 {editingProduct.wholesaleUnit || 'กระสอบ'} จะแบ่งขายได้ {editingProduct.conversionFactor || 1} {editingProduct.unit || 'หน่วยพร้อมขาย'}
-                  </p>
-                )}
-              </div>
+
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
