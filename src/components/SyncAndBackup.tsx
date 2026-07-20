@@ -20,7 +20,7 @@ import {
   FileUp,
   FileSpreadsheet
 } from 'lucide-react';
-import { AppSettings, Product, Transaction, UserProfile, RolePermissions, Category, Shelf, CloudBackup } from '../types';
+import { AppSettings, Product, Transaction, UserProfile, RolePermissions, Category, Shelf, CloudBackup, Unit } from '../types';
 import ConfirmModal from './ConfirmModal';
 import { db } from '../firebase';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
@@ -51,11 +51,13 @@ interface SyncAndBackupProps {
   rolePermissions: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>;
   categories: Category[];
   shelves: Shelf[];
+  units?: Unit[];
   onRestoreFullBackup: (
     backupProducts: Product[],
     backupTransactions: Transaction[],
     backupCategories: Category[],
     backupShelves: Shelf[],
+    backupUnits?: Unit[],
     backupSettings?: AppSettings,
     backupRolePermissions?: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>
   ) => Promise<void>;
@@ -71,6 +73,7 @@ export default function SyncAndBackup({
   rolePermissions,
   categories,
   shelves,
+  units = [],
   onRestoreFullBackup
 }: SyncAndBackupProps) {
 
@@ -141,10 +144,12 @@ export default function SyncAndBackup({
         transactionsCount: transactions.length,
         categoriesCount: categories.length,
         shelvesCount: shelves.length,
+        unitsCount: units.length,
         products,
         transactions,
         categories,
         shelves,
+        units,
         settings
       };
 
@@ -189,6 +194,7 @@ export default function SyncAndBackup({
         backup.transactions || [],
         backup.categories || [],
         backup.shelves || [],
+        backup.units || [],
         backup.settings,
         backup.rolePermissions
       );
@@ -196,7 +202,7 @@ export default function SyncAndBackup({
       setConfirmDialog({
         isOpen: true,
         title: '🎉 กู้คืนระบบสำเร็จสมบูรณ์',
-        message: `แอปพลิเคชันได้รับการกู้คืนข้อมูลกลับไป ณ วันที่ ${new Date(backup.createdAt).toLocaleString('th-TH')} เรียบร้อยแล้ว!\n\nข้อมูลที่กู้กลับมา:\n📦 สินค้าคลัง: ${backup.productsCount} รายการ\n📝 ประวัติธุรกรรมเดินบัญชี: ${backup.transactionsCount} รายการ\n📁 หมวดหมู่: ${backup.categoriesCount} รายการ\n📍 ผังชั้นจัดวาง: ${backup.shelvesCount} รายการ`,
+        message: `แอปพลิเคชันได้รับการกู้คืนข้อมูลกลับไป ณ วันที่ ${new Date(backup.createdAt).toLocaleString('th-TH')} เรียบร้อยแล้ว!\n\nข้อมูลที่กู้กลับมา:\n📦 สินค้าคลัง: ${backup.productsCount} รายการ\n📝 ประวัติธุรกรรมเดินบัญชี: ${backup.transactionsCount} รายการ\n📁 หมวดหมู่: ${backup.categoriesCount} รายการ\n📍 ผังชั้นจัดวาง: ${backup.shelvesCount} รายการ\n⚖️ หน่วยนับสินค้า: ${backup.unitsCount || 0} รายการ`,
         confirmText: 'ตกลง (รีโหลดระบบ)',
         isAlertOnly: true,
         variant: 'info',
@@ -224,10 +230,12 @@ export default function SyncAndBackup({
         transactionsCount: transactions.length,
         categoriesCount: categories.length,
         shelvesCount: shelves.length,
+        unitsCount: units.length,
         products,
         transactions,
         categories,
         shelves,
+        units,
         settings
       };
 
@@ -286,6 +294,7 @@ export default function SyncAndBackup({
                 backup.transactions || [],
                 backup.categories || [],
                 backup.shelves || [],
+                backup.units || [],
                 backup.settings,
                 backup.rolePermissions
               );

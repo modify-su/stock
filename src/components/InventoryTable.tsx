@@ -1,15 +1,19 @@
 import { useState, FormEvent } from 'react';
 import { Search, Plus, Edit2, Trash2, SlidersHorizontal, AlertCircle, ShoppingBag, Folder, Tag, MapPin, DollarSign, ArrowDown, ArrowUp, Lock, ChevronLeft, ChevronRight, Package } from 'lucide-react';
-import { Product, Category, Shelf } from '../types';
+import { Product, Category, Shelf, Unit } from '../types';
 import ConfirmModal from './ConfirmModal';
 
 interface InventoryTableProps {
   products: Product[];
   categories: Category[];
   shelves?: Shelf[];
+  units?: Unit[];
   onAddCategory: (name: string) => Promise<void>;
   onUpdateCategory: (id: string, name: string) => Promise<void>;
   onDeleteCategory: (id: string) => Promise<void>;
+  onAddUnit?: (name: string) => Promise<void>;
+  onUpdateUnit?: (id: string, name: string) => Promise<void>;
+  onDeleteUnit?: (id: string) => Promise<void>;
   onAddProduct: (product: Omit<Product, 'id' | 'updatedAt'>) => void;
   onUpdateProduct: (product: Product) => void;
   onDeleteProduct: (id: string) => void;
@@ -29,9 +33,13 @@ export default function InventoryTable({
   products,
   categories,
   shelves = [],
+  units = [],
   onAddCategory,
   onUpdateCategory,
   onDeleteCategory,
+  onAddUnit,
+  onUpdateUnit,
+  onDeleteUnit,
   onAddProduct,
   onUpdateProduct,
   onDeleteProduct,
@@ -46,6 +54,8 @@ export default function InventoryTable({
   canDeleteProducts = true,
   canResetSystem = true,
 }: InventoryTableProps) {
+  const unitNames = units.length > 0 ? units.map(u => u.name) : ['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'];
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -90,6 +100,13 @@ export default function InventoryTable({
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [editingCatName, setEditingCatName] = useState('');
   const [catError, setCatError] = useState('');
+
+  // Unit management modal states
+  const [isManageUnitOpen, setIsManageUnitOpen] = useState(false);
+  const [newUnitNameInput, setNewUnitNameInput] = useState('');
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
+  const [editingUnitName, setEditingUnitName] = useState('');
+  const [unitError, setUnitError] = useState('');
   const [newQty, setNewQty] = useState<number>(0);
   const [newWholesaleStock, setNewWholesaleStock] = useState<number>(0);
   const [newMinStock, setNewMinStock] = useState<number>(10);
@@ -418,18 +435,32 @@ export default function InventoryTable({
             ))}
           </select>
           {canManageProducts && (
-            <button
-              onClick={() => {
-                setCatError('');
-                setNewCatName('');
-                setEditingCatId(null);
-                setIsManageCatOpen(true);
-              }}
-              className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 bg-white border border-slate-200 hover:border-blue-300 rounded-lg transition-all shrink-0 cursor-pointer"
-              title="จัดการรายชื่อหมวดหมู่สินค้า"
-            >
-              <Folder className="w-5 h-5" />
-            </button>
+            <div className="flex gap-1 shrink-0">
+              <button
+                onClick={() => {
+                  setCatError('');
+                  setNewCatName('');
+                  setEditingCatId(null);
+                  setIsManageCatOpen(true);
+                }}
+                className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 bg-white border border-slate-200 hover:border-blue-300 rounded-lg transition-all shrink-0 cursor-pointer"
+                title="จัดการรายชื่อหมวดหมู่สินค้า"
+              >
+                <Folder className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => {
+                  setUnitError('');
+                  setNewUnitNameInput('');
+                  setEditingUnitId(null);
+                  setIsManageUnitOpen(true);
+                }}
+                className="p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 bg-white border border-slate-200 hover:border-emerald-300 rounded-lg transition-all shrink-0 cursor-pointer"
+                title="จัดการรายชื่อหน่วยนับสินค้า (เช่น แพ็ค, ถัง, ลัง, ชิ้น)"
+              >
+                <Tag className="w-5 h-5" />
+              </button>
+            </div>
           )}
         </div>
 
@@ -537,7 +568,9 @@ export default function InventoryTable({
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <div className="font-semibold text-emerald-600 font-mono text-base">{p.quantity}</div>
+                      <div className="font-semibold text-emerald-600 font-mono text-base">
+                        {p.quantity} <span className="text-xs font-sans font-medium text-slate-500">{p.unit || 'ชิ้น'}</span>
+                      </div>
                       <div className="mt-1">
                         {isOutOfStock ? (
                           <span className="inline-block px-1.5 py-0.5 text-[9px] text-rose-700 bg-rose-50 border border-rose-200 rounded font-semibold">สินค้าหมด!</span>
@@ -826,34 +859,108 @@ export default function InventoryTable({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">🛒 จำนวนกำลังจำหน่าย (พร้อมขาย) *</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={newQty}
-                    onChange={(e) => setNewQty(Number(e.target.value))}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 font-semibold"
-                    required
-                  />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">จำนวนพร้อมจำหน่ายทันที</span>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-600">🛒 จำนวนกำลังจำหน่าย (พร้อมขาย) *</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsManageUnitOpen(true)}
+                      className="text-[10px] font-bold text-blue-600 hover:underline hover:text-blue-700"
+                    >
+                      ⚙️ จัดการหน่วยนับ
+                    </button>
+                  </div>
+                  <div className="relative flex items-stretch">
+                    <input
+                      type="number"
+                      min={0}
+                      value={newQty}
+                      onChange={(e) => setNewQty(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-l-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 font-semibold border-r-0"
+                      required
+                    />
+                    <select
+                      value={unitNames.includes(newUnit) ? newUnit : 'CUSTOM'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'CUSTOM') {
+                          setNewUnit('');
+                        } else {
+                          setNewUnit(val);
+                        }
+                      }}
+                      className="px-2 bg-slate-100 border border-slate-250 border-l-0 rounded-r-lg text-xs font-bold text-slate-600 focus:outline-hidden focus:ring-2 focus:ring-blue-105 cursor-pointer max-w-[6.5rem] text-center"
+                    >
+                      {unitNames.map(u => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                      <option value="CUSTOM">อื่นๆ...</option>
+                    </select>
+                  </div>
+                  {!unitNames.includes(newUnit) && (
+                    <input
+                      type="text"
+                      value={newUnit}
+                      onChange={(e) => setNewUnit(e.target.value)}
+                      placeholder="ระบุหน่วยนับพร้อมขาย..."
+                      className="mt-1 w-full px-2 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500 font-medium"
+                      required
+                    />
+                  )}
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">จำนวนพร้อมจำหน่ายปลีก/พร้อมส่ง</span>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">📦 จำนวนในคลังสินค้าหลัก (คลังใหญ่)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={newWholesaleStock}
-                    onChange={(e) => setNewWholesaleStock(Number(e.target.value))}
-                    placeholder="เช่น 100"
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 font-semibold"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-600">📦 จำนวนในคลังสินค้าหลัก (คลังใหญ่)</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsManageUnitOpen(true)}
+                      className="text-[10px] font-bold text-blue-600 hover:underline hover:text-blue-700"
+                    >
+                      ⚙️ จัดการหน่วยนับ
+                    </button>
+                  </div>
+                  <div className="relative flex items-stretch">
+                    <input
+                      type="number"
+                      min={0}
+                      value={newWholesaleStock}
+                      onChange={(e) => setNewWholesaleStock(Number(e.target.value))}
+                      placeholder="เช่น 100"
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-l-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 font-semibold border-r-0"
+                    />
+                    <select
+                      value={unitNames.includes(newWholesaleUnit) ? newWholesaleUnit : 'CUSTOM'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'CUSTOM') {
+                          setNewWholesaleUnit('');
+                        } else {
+                          setNewWholesaleUnit(val);
+                        }
+                      }}
+                      className="px-2 bg-slate-100 border border-slate-250 border-l-0 rounded-r-lg text-xs font-bold text-slate-600 focus:outline-hidden focus:ring-2 focus:ring-blue-105 cursor-pointer max-w-[6.5rem] text-center"
+                    >
+                      {unitNames.map(u => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                      <option value="CUSTOM">อื่นๆ...</option>
+                    </select>
+                  </div>
+                  {!unitNames.includes(newWholesaleUnit) && (
+                    <input
+                      type="text"
+                      value={newWholesaleUnit}
+                      onChange={(e) => setNewWholesaleUnit(e.target.value)}
+                      placeholder="ระบุหน่วยนับคลังหลัก..."
+                      className="mt-1 w-full px-2 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500 font-medium"
+                      required
+                    />
+                  )}
                   <span className="text-[10px] text-slate-400 mt-0.5 block">คลังเก็บสินค้าหลักเพื่อแบ่งเบิก</span>
                 </div>
               </div>
 
-
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-505 mb-1">เกณฑ์แจ้งเตือนสต๊อกต่ำ *</label>
                   <input
@@ -865,39 +972,7 @@ export default function InventoryTable({
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-505 mb-1">หน่วยนับ *</label>
-                  <select
-                    value={['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].includes(newUnit) ? newUnit : 'CUSTOM'}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === 'CUSTOM') {
-                        setNewUnit('');
-                      } else {
-                        setNewUnit(val);
-                      }
-                    }}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 mb-1"
-                  >
-                    {['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].map(u => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                    <option value="CUSTOM">อื่นๆ / เพิ่มเติม...</option>
-                  </select>
-                  {!['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].includes(newUnit) && (
-                    <input
-                      type="text"
-                      value={newUnit}
-                      onChange={(e) => setNewUnit(e.target.value)}
-                      placeholder="พิมพ์ระบุหน่วยนับ..."
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                      required
-                    />
-                  )}
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-505 mb-1">ตำแหน่งเก็บสินค้า (Shelf Location)</label>
                   <select
@@ -933,30 +1008,31 @@ export default function InventoryTable({
                     />
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-505 mb-1">น้ำหนัก (ระบุได้)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={newWeight}
-                      onChange={(e) => setNewWeight(e.target.value)}
-                      placeholder="เช่น 150"
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-505 mb-1">หน่วยน้ำหนัก</label>
-                    <select
-                      value={newWeightUnit}
-                      onChange={(e) => setNewWeightUnit(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                    >
-                      <option value="g">กรัม (g)</option>
-                      <option value="kg">กก. (kg)</option>
-                    </select>
-                  </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-505 mb-1">น้ำหนัก (ระบุได้)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={newWeight}
+                    onChange={(e) => setNewWeight(e.target.value)}
+                    placeholder="เช่น 150"
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-505 mb-1">หน่วยน้ำหนัก</label>
+                  <select
+                    value={newWeightUnit}
+                    onChange={(e) => setNewWeightUnit(e.target.value)}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                  >
+                    <option value="g">กรัม (g)</option>
+                    <option value="kg">กก. (kg)</option>
+                  </select>
                 </div>
               </div>
 
@@ -1041,34 +1117,109 @@ export default function InventoryTable({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">🛒 จำนวนกำลังจำหน่าย (พร้อมขาย) *</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={editingProduct.quantity}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, quantity: Number(e.target.value) })}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 font-semibold"
-                    required
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-600">🛒 จำนวนกำลังจำหน่าย (พร้อมขาย) *</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsManageUnitOpen(true)}
+                      className="text-[10px] font-bold text-blue-600 hover:underline hover:text-blue-700"
+                    >
+                      ⚙️ จัดการหน่วยนับ
+                    </button>
+                  </div>
+                  <div className="relative flex items-stretch">
+                    <input
+                      type="number"
+                      min={0}
+                      value={editingProduct.quantity}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, quantity: Number(e.target.value) })}
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-l-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 font-semibold border-r-0"
+                      required
+                    />
+                    <select
+                      value={unitNames.includes(editingProduct.unit || 'ชิ้น') ? (editingProduct.unit || 'ชิ้น') : 'CUSTOM'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'CUSTOM') {
+                          setEditingProduct({ ...editingProduct, unit: '' });
+                        } else {
+                          setEditingProduct({ ...editingProduct, unit: val });
+                        }
+                      }}
+                      className="px-2 bg-slate-50 border border-slate-250 border-l-0 rounded-r-lg text-xs font-bold text-slate-600 focus:outline-hidden focus:ring-2 focus:ring-blue-105 cursor-pointer max-w-[6.5rem] text-center"
+                    >
+                      {unitNames.map(u => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                      <option value="CUSTOM">อื่นๆ...</option>
+                    </select>
+                  </div>
+                  {!unitNames.includes(editingProduct.unit || 'ชิ้น') && (
+                    <input
+                      type="text"
+                      value={editingProduct.unit || ''}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, unit: e.target.value })}
+                      placeholder="ระบุหน่วยนับพร้อมขาย..."
+                      className="mt-1 w-full px-2 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500 font-medium"
+                      required
+                    />
+                  )}
                   <span className="text-[10px] text-blue-600 font-medium mt-0.5 block">ระบบบันทึกประวัติการเปลี่ยนแปลงให้</span>
                 </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">📦 จำนวนในคลังสินค้าหลัก (คลังใหญ่)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={editingProduct.wholesaleStock || 0}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, wholesaleStock: Number(e.target.value) })}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 font-semibold"
-                    required
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-600">📦 จำนวนในคลังสินค้าหลัก (คลังใหญ่)</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsManageUnitOpen(true)}
+                      className="text-[10px] font-bold text-blue-600 hover:underline hover:text-blue-700"
+                    >
+                      ⚙️ จัดการหน่วยนับ
+                    </button>
+                  </div>
+                  <div className="relative flex items-stretch">
+                    <input
+                      type="number"
+                      min={0}
+                      value={editingProduct.wholesaleStock || 0}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, wholesaleStock: Number(e.target.value) })}
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-l-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 font-semibold border-r-0"
+                      required
+                    />
+                    <select
+                      value={unitNames.includes(editingProduct.wholesaleUnit || 'กระสอบ') ? (editingProduct.wholesaleUnit || 'กระสอบ') : 'CUSTOM'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'CUSTOM') {
+                          setEditingProduct({ ...editingProduct, wholesaleUnit: '' });
+                        } else {
+                          setEditingProduct({ ...editingProduct, wholesaleUnit: val });
+                        }
+                      }}
+                      className="px-2 bg-slate-50 border border-slate-250 border-l-0 rounded-r-lg text-xs font-bold text-slate-600 focus:outline-hidden focus:ring-2 focus:ring-blue-105 cursor-pointer max-w-[6.5rem] text-center"
+                    >
+                      {unitNames.map(u => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                      <option value="CUSTOM">อื่นๆ...</option>
+                    </select>
+                  </div>
+                  {!unitNames.includes(editingProduct.wholesaleUnit || 'กระสอบ') && (
+                    <input
+                      type="text"
+                      value={editingProduct.wholesaleUnit || ''}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, wholesaleUnit: e.target.value })}
+                      placeholder="ระบุหน่วยนับคลังหลัก..."
+                      className="mt-1 w-full px-2 py-1 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500 font-medium"
+                      required
+                    />
+                  )}
                   <span className="text-[10px] text-blue-600 font-medium mt-0.5 block">ระบบบันทึกประวัติการเปลี่ยนแปลงให้</span>
                 </div>
               </div>
 
-
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-550 mb-1">เกณฑ์แจ้งเตือนสต๊อกต่ำ *</label>
                   <input
@@ -1080,39 +1231,7 @@ export default function InventoryTable({
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-550 mb-1">หน่วยนับ *</label>
-                  <select
-                    value={['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].includes(editingProduct.unit || 'ชิ้น') ? (editingProduct.unit || 'ชิ้น') : 'CUSTOM'}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === 'CUSTOM') {
-                        setEditingProduct({ ...editingProduct, unit: '' });
-                      } else {
-                        setEditingProduct({ ...editingProduct, unit: val });
-                      }
-                    }}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500 mb-1"
-                  >
-                    {['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].map(u => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                    <option value="CUSTOM">อื่นๆ / เพิ่มเติม...</option>
-                  </select>
-                  {!['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ'].includes(editingProduct.unit || 'ชิ้น') && (
-                    <input
-                      type="text"
-                      value={editingProduct.unit || ''}
-                      onChange={(e) => setEditingProduct({ ...editingProduct, unit: e.target.value })}
-                      placeholder="พิมพ์ระบุหน่วยนับ..."
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                      required
-                    />
-                  )}
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">ชั้นที่เก็บสินค้า (Shelf Location)</label>
                   <select
@@ -1151,33 +1270,34 @@ export default function InventoryTable({
                     />
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">น้ำหนัก (ระบุได้)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={editingProduct.weight !== undefined && editingProduct.weight !== null ? editingProduct.weight : ''}
-                      onChange={(e) => setEditingProduct({ 
-                        ...editingProduct, 
-                        weight: e.target.value ? Number(e.target.value) : undefined 
-                      })}
-                      placeholder="เช่น 150"
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">หน่วยน้ำหนัก</label>
-                    <select
-                      value={editingProduct.weightUnit || 'g'}
-                      onChange={(e) => setEditingProduct({ ...editingProduct, weightUnit: e.target.value })}
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
-                    >
-                      <option value="g">กรัม (g)</option>
-                      <option value="kg">กก. (kg)</option>
-                    </select>
-                  </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">น้ำหนัก (ระบุได้)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={editingProduct.weight !== undefined && editingProduct.weight !== null ? editingProduct.weight : ''}
+                    onChange={(e) => setEditingProduct({ 
+                      ...editingProduct, 
+                      weight: e.target.value ? Number(e.target.value) : undefined 
+                    })}
+                    placeholder="เช่น 150"
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">หน่วยน้ำหนัก</label>
+                  <select
+                    value={editingProduct.weightUnit || 'g'}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, weightUnit: e.target.value })}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-105 focus:border-blue-500"
+                  >
+                    <option value="g">กรัม (g)</option>
+                    <option value="kg">กก. (kg)</option>
+                  </select>
                 </div>
               </div>
 
@@ -1473,6 +1593,192 @@ export default function InventoryTable({
               <div className="pt-4 border-t border-slate-200 flex items-center justify-end">
                 <button
                   onClick={() => setIsManageCatOpen(false)}
+                  className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                >
+                  ปิดหน้านี้
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3.5. Modal for Managing Units */}
+      {isManageUnitOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-md border border-slate-205 overflow-hidden transform transition-all">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-250 flex items-center justify-between">
+              <h3 className="text-md font-bold text-slate-800 flex items-center gap-2">
+                <Tag className="w-5 h-5 text-emerald-600" />
+                จัดการหน่วยนับสินค้าในคลัง
+              </h3>
+              <button
+                onClick={() => setIsManageUnitOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {unitError && (
+                <div className="p-2.5 bg-rose-50 text-rose-700 text-xs rounded-lg font-medium flex items-center gap-1.5 border border-rose-250">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{unitError}</span>
+                </div>
+              )}
+
+              {/* Add unit form inline */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                  เพิ่มหน่วยนับสินค้าใหม่
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="เช่น แพ็ค, ลัง, ถัง, โหล"
+                    value={newUnitNameInput}
+                    onChange={(e) => setNewUnitNameInput(e.target.value)}
+                    className="flex-1 px-3 py-1.5 text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-105"
+                  />
+                  <button
+                    onClick={async () => {
+                      setUnitError('');
+                      if (!newUnitNameInput.trim()) {
+                        setUnitError('กรุณากรอกชื่อหน่วยนับ');
+                        return;
+                      }
+                      try {
+                        if (onAddUnit) {
+                          await onAddUnit(newUnitNameInput);
+                          setNewUnitNameInput('');
+                        }
+                      } catch (err: any) {
+                        setUnitError(err.message || 'เกิดข้อผิดพลาดในการตรวจสอบ');
+                      }
+                    }}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-xs whitespace-nowrap"
+                  >
+                    เพิ่มหน่วยนับ
+                  </button>
+                </div>
+              </div>
+
+              {/* Unit list */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                  รายชื่อหน่วยนับสะสมในคลัง ({units.length} หน่วย)
+                </label>
+                
+                {units.length === 0 ? (
+                  <div className="py-8 text-center text-slate-405 text-xs">
+                    ยังไม่มีการเพิ่มรายชื่อหน่วยนับสินค้าในคลังขณะนี้
+                  </div>
+                ) : (
+                  <div className="max-h-[220px] overflow-y-auto divide-y divide-slate-100 pr-1">
+                    {units.map((u) => (
+                      <div key={u.id} className="py-2.5 flex items-center justify-between gap-3 text-sm">
+                        {editingUnitId === u.id ? (
+                          <div className="flex-1 flex gap-1.5">
+                            <input
+                              type="text"
+                              value={editingUnitName}
+                              onChange={(e) => setEditingUnitName(e.target.value)}
+                              className="flex-1 px-2.5 py-1 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-hidden"
+                            />
+                            <button
+                              onClick={async () => {
+                                setUnitError('');
+                                if (!editingUnitName.trim()) {
+                                  setUnitError('กรุณากรอกชื่อหน่วยนับ');
+                                  return;
+                                }
+                                try {
+                                  if (onUpdateUnit) {
+                                    await onUpdateUnit(u.id, editingUnitName);
+                                    setEditingUnitId(null);
+                                  }
+                                } catch (err: any) {
+                                  setUnitError(err.message || 'เกิดข้อผิดพลาด');
+                                }
+                              }}
+                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
+                            >
+                              บันทึก
+                            </button>
+                            <button
+                              onClick={() => setEditingUnitId(null)}
+                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-650 text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
+                            >
+                              ยกเลิก
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-slate-750">{u.name}</span>
+                            <div className="flex gap-1.5 shrink-0">
+                              <button
+                                onClick={() => {
+                                  setEditingUnitId(u.id);
+                                  setEditingUnitName(u.name);
+                                }}
+                                className="p-1 px-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors cursor-pointer"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (!canDeleteProducts) return;
+                                  setConfirmDialog({
+                                    isOpen: true,
+                                    title: '⚠️ ยืนยันการลบหน่วยนับ',
+                                    message: `คุณต้องการลบหน่วยนับสินค้า "${u.name}" ออกจากระบบจริงหรือไม่?\n\n(สินค้าที่ใช้หน่วยนับนี้อยู่จะไม่ถูกลบ แต่หน่วยนับนี้จะไม่ปรากฏในรายการตัวเลือกด่วนอีกต่อไป)`,
+                                    confirmText: 'ลบหน่วยนับ',
+                                    cancelText: 'ยกเลิก',
+                                    variant: 'danger',
+                                    onConfirm: async () => {
+                                      try {
+                                        if (onDeleteUnit) {
+                                          await onDeleteUnit(u.id);
+                                          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                                        }
+                                      } catch (err: any) {
+                                        setUnitError(err.message || 'เกิดข้อผิดพลาด');
+                                        setConfirmDialog({
+                                          isOpen: true,
+                                          title: '❌ เกิดข้อผิดพลาด',
+                                          message: err.message || 'ไม่สามารถลบหน่วยนับได้',
+                                          confirmText: 'ตกลง',
+                                          isAlertOnly: true,
+                                          variant: 'danger',
+                                          onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+                                        });
+                                      }
+                                    }
+                                  });
+                                }}
+                                disabled={!canDeleteProducts}
+                                className={`p-1 px-1.5 rounded transition-colors ${
+                                  canDeleteProducts 
+                                    ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer' 
+                                    : 'text-slate-300 bg-transparent cursor-not-allowed opacity-40'
+                                }`}
+                                title={canDeleteProducts ? "ลบหน่วยนับ" : "ไม่อนุญาตให้ลบหน่วยนับ"}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-end">
+                <button
+                  onClick={() => setIsManageUnitOpen(false)}
                   className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
                 >
                   ปิดหน้านี้

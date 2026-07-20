@@ -89,6 +89,11 @@ export interface Category {
   name: string;
 }
 
+export interface Unit {
+  id: string;
+  name: string;
+}
+
 export interface Shelf {
   id: string;
   name: string;
@@ -107,10 +112,12 @@ export interface CloudBackup {
   transactionsCount: number;
   categoriesCount: number;
   shelvesCount: number;
+  unitsCount?: number;
   products: Product[];
   transactions: Transaction[];
   categories: Category[];
   shelves: Shelf[];
+  units?: Unit[];
   settings?: AppSettings;
   rolePermissions?: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>;
 }

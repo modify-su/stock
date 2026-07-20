@@ -29,7 +29,7 @@ import {
   ChevronRight,
   Bot
 } from 'lucide-react';
-import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf } from './types';
+import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf, Unit } from './types';
 import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS } from './mockData';
 import DashboardStats from './components/DashboardStats';
 import InventoryTable from './components/InventoryTable';
@@ -188,7 +188,8 @@ export default function App() {
     settings: true,
     rolePermissions: true,
     categories: true,
-    shelves: true
+    shelves: true,
+    units: true
   });
 
   const dbLoading = loadingCollections.users || 
@@ -197,7 +198,8 @@ export default function App() {
                     loadingCollections.settings || 
                     loadingCollections.rolePermissions ||
                     loadingCollections.categories ||
-                    loadingCollections.shelves;
+                    loadingCollections.shelves ||
+                    loadingCollections.units;
 
   // --- Real-time Sync States from Firestore ---
   const [products, setProducts] = useState<Product[]>([]);
@@ -205,6 +207,7 @@ export default function App() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [rolePermissions, setRolePermissions] = useState<Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>>(DEFAULT_ROLE_PERMISSIONS);
 
@@ -386,6 +389,29 @@ export default function App() {
       setLoadingCollections(prev => ({ ...prev, shelves: false }));
     });
 
+    // 8. Units real-time listener
+    const unsubUnits = onSnapshot(collection(db, 'units'), (snapshot) => {
+      if (snapshot.empty) {
+        // Auto-seed units if empty
+        const defaultUnits = ['ชิ้น', 'กล่อง', 'แพ็ค', 'ซอง', 'ถุง', 'กระสอบ', 'ถัง', 'ลัง'];
+        defaultUnits.forEach(async (u, idx) => {
+          const unitId = `unit-${Date.now()}-${idx}`;
+          await setDoc(doc(db, 'units', unitId), { id: unitId, name: u });
+        });
+      } else {
+        const list: Unit[] = [];
+        snapshot.forEach((snap) => {
+          list.push(snap.data() as Unit);
+        });
+        list.sort((a, b) => a.name.localeCompare(b.name, 'th'));
+        setUnits(list);
+      }
+      setLoadingCollections(prev => ({ ...prev, units: false }));
+    }, (error) => {
+      console.error("units sync error", error);
+      setLoadingCollections(prev => ({ ...prev, units: false }));
+    });
+
     return () => {
       unsubUsers();
       unsubProducts();
@@ -394,6 +420,7 @@ export default function App() {
       unsubRolePerms();
       unsubCategories();
       unsubShelves();
+      unsubUnits();
     };
   }, []);
 
@@ -690,6 +717,36 @@ export default function App() {
 
   const handleDeleteCategory = async (id: string) => {
     await deleteDoc(doc(db, 'categories', id));
+  };
+
+  const handleAddUnit = async (name: string) => {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    const exists = units.some(u => u.name.toLowerCase() === cleanName.toLowerCase());
+    if (exists) {
+      throw new Error(`หน่วยนับ "${cleanName}" มีในระบบคลังเรียบร้อยแล้ว`);
+    }
+    const id = `unit-${Date.now()}`;
+    await setDoc(doc(db, 'units', id), {
+      id,
+      name: cleanName
+    });
+  };
+
+  const handleUpdateUnit = async (id: string, newName: string) => {
+    const cleanName = newName.trim();
+    if (!cleanName) return;
+    const exists = units.some(u => u.name.toLowerCase() === cleanName.toLowerCase() && u.id !== id);
+    if (exists) {
+      throw new Error(`หน่วยนับ "${cleanName}" มีในระบบคลังเรียบร้อยแล้ว`);
+    }
+    await updateDoc(doc(db, 'units', id), {
+      name: cleanName
+    });
+  };
+
+  const handleDeleteUnit = async (id: string) => {
+    await deleteDoc(doc(db, 'units', id));
   };
 
   const handleUpdateRolePermissions = async (role: 'ADMIN' | 'KEEPER' | 'AUDITOR', perms: RolePermissions) => {
@@ -1021,6 +1078,7 @@ export default function App() {
     backupTransactions: Transaction[],
     backupCategories: Category[],
     backupShelves: Shelf[],
+    backupUnits?: Unit[],
     backupSettings?: AppSettings,
     backupRolePermissions?: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>
   ) => {
@@ -1051,6 +1109,12 @@ export default function App() {
         actions.push({ type: 'delete', ref: docSnap.ref });
       });
 
+      // 4.5. Delete all current units
+      const uSnapshot = await getDocs(collection(db, 'units'));
+      uSnapshot.forEach((docSnap) => {
+        actions.push({ type: 'delete', ref: docSnap.ref });
+      });
+
       // 5. Add backup products
       backupProducts.forEach((p) => {
         actions.push({ type: 'set', ref: doc(db, 'products', p.id), data: p });
@@ -1070,6 +1134,13 @@ export default function App() {
       backupShelves.forEach((s) => {
         actions.push({ type: 'set', ref: doc(db, 'shelves', s.id), data: s });
       });
+
+      // 8.5 Add backup units
+      if (backupUnits) {
+        backupUnits.forEach((u) => {
+          actions.push({ type: 'set', ref: doc(db, 'units', u.id), data: u });
+        });
+      }
 
       // 9. Add backup settings if present
       if (backupSettings) {
@@ -1815,9 +1886,13 @@ export default function App() {
             products={products}
             categories={categories}
             shelves={shelves}
+            units={units}
             onAddCategory={handleAddCategory}
             onUpdateCategory={handleUpdateCategory}
             onDeleteCategory={handleDeleteCategory}
+            onAddUnit={handleAddUnit}
+            onUpdateUnit={handleUpdateUnit}
+            onDeleteUnit={handleDeleteUnit}
             onAddProduct={handleAddProduct}
             onUpdateProduct={handleUpdateProduct}
             onDeleteProduct={handleDeleteProduct}
@@ -1880,6 +1955,7 @@ export default function App() {
             rolePermissions={rolePermissions}
             categories={categories}
             shelves={shelves}
+            units={units}
             onRestoreFullBackup={handleRestoreFullBackup}
           />
         )}
