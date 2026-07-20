@@ -25,6 +25,22 @@ import ConfirmModal from './ConfirmModal';
 import { db } from '../firebase';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
 
+export const EXPORT_HEADERS = [
+  { key: 'sku', label: 'รหัส SKU', defaultChecked: true, getValue: (p: Product) => p.sku },
+  { key: 'name', label: 'ชื่อรายการสินค้า', defaultChecked: true, getValue: (p: Product) => p.name },
+  { key: 'category', label: 'หมวดหมู่', defaultChecked: true, getValue: (p: Product) => p.category },
+  { key: 'quantity', label: 'กำลังจำหน่าย (พร้อมขาย)', defaultChecked: true, getValue: (p: Product) => p.quantity.toString() },
+  { key: 'wholesaleStock', label: 'คลังหลัก (รอเบิก)', defaultChecked: true, getValue: (p: Product) => (p.wholesaleStock !== undefined ? p.wholesaleStock.toString() : '0') },
+  { key: 'unit', label: 'หน่วยนับ', defaultChecked: true, getValue: (p: Product) => p.unit || 'ชิ้น' },
+  { key: 'location', label: 'สถานที่จัดเก็บ', defaultChecked: true, getValue: (p: Product) => p.location || '-' },
+  { key: 'minStock', label: 'เกณฑ์แจ้งเตือนสินค้าต่ำสุด', defaultChecked: false, getValue: (p: Product) => p.minStock.toString() },
+  { key: 'price', label: 'ราคาสินค้า', defaultChecked: false, getValue: (p: Product) => (p.price !== undefined ? p.price.toString() : '-') },
+  { key: 'weight', label: 'น้ำหนัก', defaultChecked: false, getValue: (p: Product) => (p.weight !== undefined && p.weight !== null ? p.weight.toString() : '-') },
+  { key: 'weightUnit', label: 'หน่วยน้ำหนัก', defaultChecked: false, getValue: (p: Product) => p.weightUnit || '-' },
+  { key: 'wholesaleUnit', label: 'หน่วยคลังหลัก', defaultChecked: false, getValue: (p: Product) => p.wholesaleUnit || '-' },
+  { key: 'conversionFactor', label: 'อัตราแปลงหน่วย', defaultChecked: false, getValue: (p: Product) => (p.conversionFactor !== undefined ? p.conversionFactor.toString() : '1') }
+];
+
 interface SyncAndBackupProps {
   settings: AppSettings;
   onUpdateSettings: (s: AppSettings) => Promise<void>;
@@ -60,6 +76,23 @@ export default function SyncAndBackup({
 
   const [importStatus, setImportStatus] = useState<{ success?: boolean; count?: number; message?: string } | null>(null);
   const [isUrlCopied, setIsUrlCopied] = useState(false);
+
+  // Customizable Export columns state
+  const [selectedExportKeys, setSelectedExportKeys] = useState<string[]>(
+    EXPORT_HEADERS.filter(h => h.defaultChecked).map(h => h.key)
+  );
+
+  const handleSelectMain7 = () => {
+    setSelectedExportKeys(['sku', 'name', 'category', 'quantity', 'wholesaleStock', 'unit', 'location']);
+  };
+
+  const handleSelectAll = () => {
+    setSelectedExportKeys(EXPORT_HEADERS.map(h => h.key));
+  };
+
+  const handleSelectNone = () => {
+    setSelectedExportKeys([]);
+  };
 
   // Cloud Backup and Recovery State hooks
   const [backups, setBackups] = useState<CloudBackup[]>([]);
@@ -317,18 +350,15 @@ export default function SyncAndBackup({
 
 const handleExportProductsToCsv = () => {
     try {
-      const headers = ["ชื่อสินค้า", "รหัสสินค้า_SKU", "หมวดหมู่", "จำนวนคงเหลือ", "เกณฑ์แจ้งเตือนสินค้าต่ำสุด", "หน่วยนับ", "ตำแหน่งชั้นวาง", "น้ำหนัก", "หน่วยน้ำหนัก"];
-      const rows = products.map(p => [
-        p.name,
-        p.sku,
-        p.category,
-        p.quantity.toString(),
-        p.minStock.toString(),
-        p.unit || 'ชิ้น',
-        p.location || '-',
-        p.weight !== undefined && p.weight !== null ? p.weight.toString() : '-',
-        p.weightUnit || '-'
-      ]);
+      if (selectedExportKeys.length === 0) {
+        alert('⚠️ กรุณาเลือกหัวข้อคอลัมน์อย่างน้อย 1 รายการเพื่อส่งออกข้อมูล');
+        return;
+      }
+
+      const activeHeaders = EXPORT_HEADERS.filter(h => selectedExportKeys.includes(h.key));
+      const headers = activeHeaders.map(h => h.label);
+      const rows = products.map(p => activeHeaders.map(h => h.getValue(p)));
+
       const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(col => `"${col.replace(/"/g, '""')}"`).join(","))].join("\n");
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -719,14 +749,81 @@ const handleExportProductsToCsv = () => {
           <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50 space-y-4 flex flex-col justify-between">
             <div className="space-y-4">
               {/* Product inventory export */}
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                   <Download className="w-3.5 h-3.5 text-blue-600" />
                   <span>ดาวน์โหลดข้อมูลสินค้าคงเหลือในคลัง (Export Current Inventory)</span>
                 </h4>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  ส่งออกตารางสินค้าปัจจุบันพร้อมน้ำหนักและตำแหน่งจัดวางเป็นไฟล์ Excel / CSV (.csv) รองรับการเปิดใช้งานและกรองข้อมูลด้วย Microsoft Excel
+                  ส่งออกตารางสินค้าปัจจุบันพร้อมข้อมูลชั้นวางและพารามิเตอร์อื่นๆ เป็นไฟล์ Excel / CSV (.csv) หรือคัดลอกลงบอร์ดโดยตรงตามหัวข้อที่คุณกำหนดด้านล่างนี้:
                 </p>
+
+                {/* Column Selection Card */}
+                <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                      🛠️ เลือกคอลัมน์ส่งออก (Select Columns)
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleSelectMain7}
+                        className="px-2 py-0.5 text-[10px] font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 cursor-pointer transition-colors"
+                        title="เลือกเฉพาะ 7 หัวข้อหลักที่ปรากฏในตารางคลังสินค้า"
+                      >
+                        เฉพาะ 7 หัวหลักในตาราง
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSelectAll}
+                        className="px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 rounded border border-slate-200 cursor-pointer transition-colors"
+                      >
+                        เลือกทั้งหมด
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSelectNone}
+                        className="px-2 py-0.5 text-[10px] font-semibold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 cursor-pointer transition-colors"
+                      >
+                        ล้างทั้งหมด
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 p-2 bg-slate-50/50 rounded-lg border border-slate-100 max-h-48 overflow-y-auto">
+                    {EXPORT_HEADERS.map((h) => {
+                      const isChecked = selectedExportKeys.includes(h.key);
+                      return (
+                        <label
+                          key={h.key}
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10.5px] cursor-pointer transition-all select-none ${
+                            isChecked
+                              ? 'bg-blue-50/50 border-blue-200 text-blue-800 font-semibold'
+                              : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              setSelectedExportKeys(prev =>
+                                prev.includes(h.key)
+                                  ? prev.filter(k => k !== h.key)
+                                  : [...prev, h.key]
+                              );
+                            }}
+                            className="w-3 h-3 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <span>{h.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[10px] text-slate-400 italic">
+                    💡 ระบบจะจัดเรียงข้อมูลตามคอลัมน์ที่เลือกตามลำดับด้านบนในไฟล์ผลลัพธ์
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     onClick={handleExportProductsToCsv}
@@ -738,21 +835,16 @@ const handleExportProductsToCsv = () => {
 
                   <button
                     onClick={() => {
-                      const headers = ["ชื่อสินค้า", "รหัสสินค้า_SKU", "หมวดหมู่", "จำนวนคงเหลือ", "เกณฑ์แจ้งเตือนสินค้าต่ำสุด", "หน่วยนับ", "ตำแหน่งชั้นวาง", "น้ำหนัก", "หน่วยน้ำหนัก"];
-                      const rows = products.map(p => [
-                        p.name,
-                        p.sku,
-                        p.category,
-                        p.quantity.toString(),
-                        p.minStock.toString(),
-                        p.unit || 'ชิ้น',
-                        p.location || '-',
-                        p.weight !== undefined && p.weight !== null ? p.weight.toString() : '-',
-                        p.weightUnit || '-'
-                      ]);
+                      if (selectedExportKeys.length === 0) {
+                        alert('⚠️ กรุณาเลือกหัวข้อคอลัมน์อย่างน้อย 1 รายการเพื่อคัดลอกข้อมูล');
+                        return;
+                      }
+                      const activeHeaders = EXPORT_HEADERS.filter(h => selectedExportKeys.includes(h.key));
+                      const headers = activeHeaders.map(h => h.label);
+                      const rows = products.map(p => activeHeaders.map(h => h.getValue(p)));
                       const tsvContent = [headers.join("\t"), ...rows.map(e => e.join("\t"))].join("\n");
                       navigator.clipboard.writeText(tsvContent);
-                      alert("📋 คัดลอกข้อมูลสินค้าแบบแบ่งคอลัมน์ (Tab-Separated) ลงบอร์ดคลิปบอร์ดแล้ว! คุณสามารถกดปุ่มวาง (Ctrl+V) ลงในโปรแกรม Excel หรือ Google Sheets ได้ทันที");
+                      alert("📋 คัดลอกข้อมูลสินค้าแบบแบ่งคอลัมน์ (Tab-Separated) ลงบอร์ดคลิปบอร์ดตามหัวข้อที่เลือกแล้ว! คุณสามารถกดปุ่มวาง (Ctrl+V) ลงในโปรแกรม Excel หรือ Google Sheets ได้ทันที");
                     }}
                     className="px-3 py-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer"
                   >
