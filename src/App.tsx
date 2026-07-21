@@ -1680,7 +1680,7 @@ export default function App() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 overflow-x-hidden">
+        <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 overflow-x-hidden">
           
           {/* Banner Announcement / Welcoming Block */}
           <div id="welcome-banner" className="bg-white text-slate-800 p-6 rounded-xl shadow-xs border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1714,171 +1714,16 @@ export default function App() {
 
           {/* Tab Contents */}
         {activeMenuTab === 'OVERVIEW' && (
-          <div className="space-y-6">
-            {/* KPI stats section */}
-            <DashboardStats
-              products={products}
-              transactions={transactions}
-              onLowStockFilter={() => {
-                setActiveMenuTab('INVENTORY');
-                handleFilterLowStock();
-              }}
-              onClearFilters={handleClearFilters}
-              isLowStockFiltered={false}
-            />
-
-            {/* Overview Grid Summary */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Alert Card */}
-              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse"></span>
-                    รายการสินค้าใกล้หมดเกณฑ์ ({products.filter((p) => p.quantity <= p.minStock).length} รายการ)
-                  </h3>
-                  <button
-                    onClick={() => {
-                      setActiveMenuTab('INVENTORY');
-                      handleFilterLowStock();
-                    }}
-                    className="text-xs text-blue-600 font-semibold hover:underline cursor-pointer"
-                  >
-                    ดูสินค้าสต๊อกต่ำทั้งหมด →
-                  </button>
-                </div>
-
-                <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
-                  {products.filter((p) => p.quantity <= p.minStock).length === 0 ? (
-                    <div className="py-12 text-center text-slate-400 text-xs font-normal">
-                      ✔️ ทุกรายการสินค้ามีสต๊อกเพียงพอ ไม่จำเป็นต้องนำเข้าขณะนี้
-                    </div>
-                  ) : (
-                    products
-                      .filter((p) => p.quantity <= p.minStock)
-                      .slice(0, 5)
-                      .map((p) => (
-                        <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs hover:bg-slate-100/50 transition-colors">
-                          <div className="space-y-0.5">
-                            <span className="font-mono text-blue-600 font-semibold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-100 text-[10px]">{p.sku}</span>
-                            <p className="font-semibold text-slate-800 mt-1">{p.name}</p>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-slate-400 font-sans block text-[10px]">คงเหลือปัจจุบัน</span>
-                            <span className="text-orange-600 font-bold font-mono text-sm">{p.quantity} / {p.minStock} ชิ้น</span>
-                          </div>
-                        </div>
-                      ))
-                  )}
-                </div>
-              </div>
-
-              {/* Latest transactions stream */}
-              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
-                  <div className="space-y-0.5">
-                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      <History className="w-4 h-4 text-slate-450" />
-                      ประวัติเล็ดเจอร์ด่วนล่าสุด
-                    </h3>
-                    <p className="text-[10px] text-slate-400">
-                      แสดงรายการเด่นเพื่อความสะดวกรวดเร็ว
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <label className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 select-none hover:bg-slate-100 transition-colors cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showRecentOnlyOneWeek}
-                        onChange={(e) => setShowRecentOnlyOneWeek(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
-                      />
-                      <span>📅 กรอง 1 สัปดาห์ล่าสุด</span>
-                    </label>
-                    <button
-                      onClick={() => setActiveMenuTab('LOGS')}
-                      className="text-xs text-blue-600 font-bold hover:underline cursor-pointer flex items-center gap-0.5"
-                    >
-                      ดูประวัติทั้งหมด →
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
-                  {(() => {
-                    const oneWeekAgo = new Date();
-                    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-                    
-                    const displayedTx = showRecentOnlyOneWeek
-                      ? transactions.filter(tx => new Date(tx.date) >= oneWeekAgo)
-                      : transactions;
-
-                    if (displayedTx.length === 0) {
-                      return (
-                        <div className="py-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2.5">
-                          <p className="text-slate-400 text-xs font-medium">
-                            {showRecentOnlyOneWeek 
-                              ? '🧹 ไม่มีประวัติทำรายการใน 1 สัปดาห์ล่าสุด (พรีวิวเคลียร์แล้ว)' 
-                              : 'ยังไม่มีรายการเคลื่อนไหวใดๆ ในระบบขณะนี้'}
-                          </p>
-                          {showRecentOnlyOneWeek && (
-                            <button
-                              onClick={() => setShowRecentOnlyOneWeek(false)}
-                              className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 hover:border-blue-200 px-2.5 py-1.5 rounded-lg cursor-pointer transition-all mx-auto block"
-                            >
-                              📂 แสดงรายการย้อนหลังทั้งหมด
-                            </button>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    return displayedTx.slice(0, 4).map((tx) => {
-                      return (
-                        <div key={tx.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex items-center justify-between hover:bg-slate-100/50 transition-colors">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={`inline-block px-1.5 py-0.2 rounded font-mono font-bold text-[9px] ${
-                                tx.type === 'IN'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : tx.type === 'OUT'
-                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
-                              }`}>
-                                {tx.type === 'IN' ? 'RECEIVE' : tx.type === 'OUT' ? 'DISPATCH' : 'RETURN'}
-                              </span>
-                              <span className="font-mono text-slate-400 text-[10px]">{new Date(tx.date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</span>
-                            </div>
-                            <p className="font-semibold text-slate-800 truncate max-w-[200px] sm:max-w-xs">{tx.productName}</p>
-                          </div>
-                          <div className="text-right">
-                            <span className={`font-bold font-mono text-xs ${
-                              tx.type === 'IN' ? 'text-emerald-700' : tx.type === 'OUT' ? 'text-rose-700' : 'text-blue-700'
-                            }`}>
-                              {tx.type === 'IN' ? '+' : tx.type === 'OUT' ? '-' : '↩️ '}{tx.quantity}
-                            </span>
-                            <span className="text-[10px] text-slate-400 block mt-0.5 font-sans">โดย {tx.operator}</span>
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-            </div>
-
-            {/* Helpful quick guide layout for real-world scenarios */}
-            <div className="bg-blue-50/50 p-5 rounded-xl border border-blue-100/70 flex flex-col sm:flex-row items-start gap-4">
-              <div className="p-3 bg-blue-100 text-blue-700 rounded-lg shrink-0">
-                <Info className="w-5 h-5" />
-              </div>
-              <div className="space-y-1">
-                <h4 className="text-sm font-bold text-blue-900">แนะนำการบริหารระดับคลัง (Smart Operations Flow Tracking)</h4>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  เมื่อตรวจสอบหากพบสินค้า <span className="text-orange-600 font-bold font-semibold">ใกล้หมดระดับเกณฑ์คุมเข้ม</span> แนะนำให้สลับไปยังเมนู <span className="font-bold underline text-blue-700 cursor-pointer" onClick={() => setActiveMenuTab('OPERATIONS')}>"บันทึกความเคลื่อนไหว"</span> เพื่อรับเข้าสินค้าใหม่และกำหนดรหัสใบสั่งซื้อ (PO No.) ในทันที เพื่อให้ข้อมูลคลังจัดเก็บบันทึกได้อย่างเป็นระบบเสมอดังความตั้งใจ
-                </p>
-              </div>
-            </div>
-          </div>
+          <DashboardStats
+            products={products}
+            transactions={transactions}
+            onLowStockFilter={() => {
+              setActiveMenuTab('INVENTORY');
+              handleFilterLowStock();
+            }}
+            onClearFilters={handleClearFilters}
+            isLowStockFiltered={false}
+          />
         )}
 
         {activeMenuTab === 'INVENTORY' && (
@@ -2190,7 +2035,7 @@ export default function App() {
 
       {/* 7. Footer Accent */}
       <footer id="app-footer" className="bg-slate-900 text-slate-400 py-8 border-t border-slate-800 text-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="space-y-1">
             <p className="font-bold text-slate-300">ระบบคลังสินค้าเสมือนจริง (Virtual Inventory Tracker)</p>
             <p className="text-[11px] text-slate-500">
