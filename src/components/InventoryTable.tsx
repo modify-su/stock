@@ -792,7 +792,7 @@ export default function InventoryTable({
       {/* 1. Modal for ADDING Product */}
       {isAddOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-xl shadow-lg w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl border border-slate-200 overflow-hidden transform transition-all">
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-250 flex items-center justify-between">
               <h3 className="text-md font-bold text-slate-800 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-blue-600" />
@@ -1059,7 +1059,7 @@ export default function InventoryTable({
       {/* 2. Modal for EDITING Product */}
       {editingProduct && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-xl shadow-lg w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl border border-slate-200 overflow-hidden transform transition-all">
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-250 flex items-center justify-between">
               <h3 className="text-md font-bold text-slate-800 flex items-center gap-2">
                 <Edit2 className="w-4.5 h-4.5 text-blue-600" />
