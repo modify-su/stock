@@ -29,7 +29,7 @@ import {
   ChevronRight,
   Bot
 } from 'lucide-react';
-import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf, Unit } from './types';
+import { Product, Transaction, TransactionType, UserProfile, AppSettings, RolePermissions, Category, Shelf, Unit, WarehouseItem } from './types';
 import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS } from './mockData';
 import DashboardStats from './components/DashboardStats';
 import InventoryTable from './components/InventoryTable';
@@ -43,6 +43,7 @@ import ShelfAuditModal from './components/ShelfAuditModal';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import SmartScanner from './components/SmartScanner';
 import LineBotSettings from './components/LineBotSettings';
+import WarehouseManagement from './components/WarehouseManagement';
 
 
 // Import Firebase
@@ -142,6 +143,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermi
 
 const DEFAULT_MENU_LABELS = {
   OVERVIEW: 'ภาพรวม & แดชบอร์ด',
+  WAREHOUSE: 'คลังสินค้า',
   OPERATIONS: 'บันทึกความเคลื่อนไหว',
   INVENTORY: 'จัดการสต๊อกสินค้า',
   LOGS: 'ประวัติทำรายการ (Ledger)',
@@ -189,7 +191,8 @@ export default function App() {
     rolePermissions: true,
     categories: true,
     shelves: true,
-    units: true
+    units: true,
+    warehouseItems: true
   });
 
   const dbLoading = loadingCollections.users || 
@@ -199,10 +202,12 @@ export default function App() {
                     loadingCollections.rolePermissions ||
                     loadingCollections.categories ||
                     loadingCollections.shelves ||
-                    loadingCollections.units;
+                    loadingCollections.units ||
+                    loadingCollections.warehouseItems;
 
   // --- Real-time Sync States from Firestore ---
   const [products, setProducts] = useState<Product[]>([]);
+  const [warehouseItems, setWarehouseItems] = useState<WarehouseItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -412,6 +417,25 @@ export default function App() {
       setLoadingCollections(prev => ({ ...prev, units: false }));
     });
 
+    // 8.5. Warehouse Items listener
+    const unsubWarehouseItems = onSnapshot(collection(db, 'warehouse_items'), (snapshot) => {
+      const list: WarehouseItem[] = [];
+      snapshot.forEach((snap) => {
+        const data = snap.data();
+        list.push({
+          id: snap.id,
+          ...data
+        } as WarehouseItem);
+      });
+      // Sort: newest updated first
+      list.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+      setWarehouseItems(list);
+      setLoadingCollections(prev => ({ ...prev, warehouseItems: false }));
+    }, (error) => {
+      console.error("warehouse items sync error", error);
+      setLoadingCollections(prev => ({ ...prev, warehouseItems: false }));
+    });
+
     return () => {
       unsubUsers();
       unsubProducts();
@@ -421,6 +445,7 @@ export default function App() {
       unsubCategories();
       unsubShelves();
       unsubUnits();
+      unsubWarehouseItems();
     };
   }, []);
 
@@ -578,7 +603,7 @@ export default function App() {
   // --- Filter states ---
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isLowStockOnly, setIsLowStockOnly] = useState(false);
-  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER' | 'LINE_BOT'>('OVERVIEW');
+  const [activeMenuTab, setActiveMenuTab] = useState<'OVERVIEW' | 'WAREHOUSE' | 'INVENTORY' | 'OPERATIONS' | 'LOGS' | 'SETTINGS' | 'SYNC' | 'SHELVES' | 'SCANNER' | 'LINE_BOT'>('OVERVIEW');
   const [showLoginUnderMaintenance, setShowLoginUnderMaintenance] = useState(false);
   const [showRecentOnlyOneWeek, setShowRecentOnlyOneWeek] = useState<boolean>(true);
 
@@ -818,6 +843,75 @@ export default function App() {
       }
     });
     return cleaned as T;
+  };
+  
+  // --- Warehouse Item Core Methods ---
+  const handleAddWarehouseItem = async (item: Omit<WarehouseItem, 'id' | 'updatedAt'>) => {
+    const id = `wh-${Date.now()}`;
+    const newItem: WarehouseItem = {
+      ...item,
+      id,
+      updatedAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, 'warehouse_items', id), cleanFirestoreData(newItem));
+  };
+
+  const handleUpdateWarehouseItem = async (item: WarehouseItem) => {
+    await setDoc(doc(db, 'warehouse_items', item.id), cleanFirestoreData({
+      ...item,
+      updatedAt: new Date().toISOString()
+    }));
+  };
+
+  const handleDeleteWarehouseItem = async (id: string) => {
+    await deleteDoc(doc(db, 'warehouse_items', id));
+  };
+
+  const handlePortionWarehouseItem = async (
+    warehouseItemId: string, 
+    deductQty: number, 
+    targetProductId: string, 
+    addQty: number,
+    portionReason: string
+  ) => {
+    const batch = writeBatch(db);
+    
+    // 1. Deduct from warehouse item
+    const whRef = doc(db, 'warehouse_items', warehouseItemId);
+    const whItem = warehouseItems.find(item => item.id === warehouseItemId);
+    if (!whItem) throw new Error("Warehouse item not found");
+    const newWhQty = Math.max(0, whItem.quantity - deductQty);
+    batch.update(whRef, {
+      quantity: newWhQty,
+      updatedAt: new Date().toISOString()
+    });
+
+    // 2. Add to target product
+    const prodRef = doc(db, 'products', targetProductId);
+    const prodItem = products.find(p => p.id === targetProductId);
+    if (!prodItem) throw new Error("Target product not found");
+    const newProdQty = (prodItem.quantity || 0) + addQty;
+    batch.update(prodRef, {
+      quantity: newProdQty,
+      updatedAt: new Date().toISOString()
+    });
+
+    // 3. Log transaction
+    const txId = `tx-${Date.now()}`;
+    const newTx: Transaction = {
+      id: txId,
+      productId: prodItem.id,
+      productSku: prodItem.sku,
+      productName: prodItem.name,
+      type: 'IN',
+      quantity: addQty,
+      date: new Date().toISOString(),
+      reason: `${portionReason} [หักคลังใหญ่: ${deductQty} ${whItem.unit} ➡️ เติมหน้าร้าน: +${addQty} ${prodItem.unit}]`,
+      operator: currentUser?.name || 'ผู้ดูแลระบบ',
+    };
+    batch.set(doc(db, 'transactions', txId), cleanFirestoreData(newTx));
+
+    await batch.commit();
   };
   
   // Add new dynamic product
@@ -1409,6 +1503,12 @@ export default function App() {
       isAdminOnly: false,
     },
     {
+      id: 'WAREHOUSE',
+      label: menuLabels.WAREHOUSE || 'คลังสินค้า',
+      icon: <Layers className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
+      isAdminOnly: false,
+    },
+    {
       id: 'SCANNER',
       label: menuLabels.SCANNER || 'ระบบสแกนพัสดุ AI',
       icon: <Camera className={fontSizeClasses[menuFontSize]?.icon || 'w-4 h-4'} />,
@@ -1723,6 +1823,20 @@ export default function App() {
             }}
             onClearFilters={handleClearFilters}
             isLowStockFiltered={false}
+          />
+        )}
+
+        {activeMenuTab === 'WAREHOUSE' && (
+          <WarehouseManagement
+            warehouseItems={warehouseItems}
+            categories={categories}
+            units={units}
+            products={products}
+            onAddWarehouseItem={handleAddWarehouseItem}
+            onUpdateWarehouseItem={handleUpdateWarehouseItem}
+            onDeleteWarehouseItem={handleDeleteWarehouseItem}
+            onPortionWarehouseItem={handlePortionWarehouseItem}
+            canManage={rolePermissions[currentUser.role].manageProducts}
           />
         )}
 

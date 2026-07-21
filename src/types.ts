@@ -122,4 +122,16 @@ export interface CloudBackup {
   rolePermissions?: Record<'ADMIN' | 'KEEPER' | 'AUDITOR', RolePermissions>;
 }
 
+export interface WarehouseItem {
+  id: string;
+  category: string;
+  name: string;
+  size: string;
+  quantity: number;
+  unit: string;
+  status: 'NOT_DISTRIBUTED' | 'AWAITING_PORTION'; // 'ยังไม่ได้จำหน่าย' | 'รอการแบ่งจำหน่าย'
+  updatedAt: string;
+}
+
+
 
