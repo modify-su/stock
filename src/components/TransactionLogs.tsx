@@ -1,5 +1,22 @@
 import { useState } from 'react';
-import { ClipboardList, Search, ArrowDownLeft, ArrowUpRight, RotateCcw, Filter, User2, FileText, Calendar, Trash2, Lock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  ClipboardList, 
+  Search, 
+  ArrowDownLeft, 
+  ArrowUpRight, 
+  RotateCcw, 
+  Filter, 
+  User2, 
+  FileText, 
+  Calendar, 
+  Trash2, 
+  Lock, 
+  ChevronLeft, 
+  ChevronRight,
+  Download,
+  Copy,
+  FileSpreadsheet
+} from 'lucide-react';
 import { Transaction } from '../types';
 import ConfirmModal from './ConfirmModal';
 
@@ -13,7 +30,28 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
   // Filters state
   const [logSearch, setLogSearch] = useState('');
   const [logTypeFilter, setLogTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'RETURN'>('ALL');
-  const [timeframeFilter, setTimeframeFilter] = useState<'1_WEEK' | 'ALL' | 'TODAY' | '1_MONTH'>('1_WEEK');
+  const [timeframeFilter, setTimeframeFilter] = useState<'1_WEEK' | 'ALL' | 'TODAY' | '1_MONTH' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM_MONTH' | 'CUSTOM_RANGE'>('1_WEEK');
+  
+  // Custom Month & Date Range States
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  });
+  const [customStartDate, setCustomStartDate] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}-01`;
+  });
+  const [customEndDate, setCustomEndDate] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -23,12 +61,25 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
   const [prevLogSearch, setPrevLogSearch] = useState(logSearch);
   const [prevLogTypeFilter, setPrevLogTypeFilter] = useState(logTypeFilter);
   const [prevTimeframeFilter, setPrevTimeframeFilter] = useState(timeframeFilter);
+  const [prevSelectedMonth, setPrevSelectedMonth] = useState(selectedMonth);
+  const [prevCustomStartDate, setPrevCustomStartDate] = useState(customStartDate);
+  const [prevCustomEndDate, setPrevCustomEndDate] = useState(customEndDate);
 
-  if (logSearch !== prevLogSearch || logTypeFilter !== prevLogTypeFilter || timeframeFilter !== prevTimeframeFilter) {
+  if (
+    logSearch !== prevLogSearch || 
+    logTypeFilter !== prevLogTypeFilter || 
+    timeframeFilter !== prevTimeframeFilter ||
+    selectedMonth !== prevSelectedMonth ||
+    customStartDate !== prevCustomStartDate ||
+    customEndDate !== prevCustomEndDate
+  ) {
     setCurrentPage(1);
     setPrevLogSearch(logSearch);
     setPrevLogTypeFilter(logTypeFilter);
     setPrevTimeframeFilter(timeframeFilter);
+    setPrevSelectedMonth(selectedMonth);
+    setPrevCustomStartDate(customStartDate);
+    setPrevCustomEndDate(customEndDate);
   }
 
   // Custom confirmation state
@@ -60,20 +111,59 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
     const matchesType = logTypeFilter === 'ALL' || tx.type === logTypeFilter;
 
     let matchesTimeframe = true;
-    const txDate = new Date(tx.date);
-    
-    if (timeframeFilter === 'TODAY') {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      matchesTimeframe = txDate >= today;
-    } else if (timeframeFilter === '1_WEEK') {
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      matchesTimeframe = txDate >= oneWeekAgo;
-    } else if (timeframeFilter === '1_MONTH') {
-      const oneMonthAgo = new Date();
-      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-      matchesTimeframe = txDate >= oneMonthAgo;
+    if (tx.date) {
+      const txDate = new Date(tx.date);
+      if (!isNaN(txDate.getTime())) {
+        if (timeframeFilter === 'TODAY') {
+          const today = new Date();
+          matchesTimeframe = (
+            txDate.getFullYear() === today.getFullYear() &&
+            txDate.getMonth() === today.getMonth() &&
+            txDate.getDate() === today.getDate()
+          );
+        } else if (timeframeFilter === '1_WEEK') {
+          const oneWeekAgo = new Date();
+          oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+          matchesTimeframe = txDate >= oneWeekAgo;
+        } else if (timeframeFilter === '1_MONTH') {
+          const oneMonthAgo = new Date();
+          oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+          matchesTimeframe = txDate >= oneMonthAgo;
+        } else if (timeframeFilter === 'THIS_MONTH') {
+          const now = new Date();
+          matchesTimeframe = (
+            txDate.getFullYear() === now.getFullYear() &&
+            txDate.getMonth() === now.getMonth()
+          );
+        } else if (timeframeFilter === 'LAST_MONTH') {
+          const lastMonth = new Date();
+          lastMonth.setDate(1);
+          lastMonth.setMonth(lastMonth.getMonth() - 1);
+          matchesTimeframe = (
+            txDate.getFullYear() === lastMonth.getFullYear() &&
+            txDate.getMonth() === lastMonth.getMonth()
+          );
+        } else if (timeframeFilter === 'CUSTOM_MONTH' && selectedMonth) {
+          const [y, m] = selectedMonth.split('-');
+          const targetYear = parseInt(y, 10);
+          const targetMonth = parseInt(m, 10) - 1;
+          matchesTimeframe = (
+            txDate.getFullYear() === targetYear &&
+            txDate.getMonth() === targetMonth
+          );
+        } else if (timeframeFilter === 'CUSTOM_RANGE') {
+          if (customStartDate) {
+            const start = new Date(customStartDate);
+            start.setHours(0, 0, 0, 0);
+            if (txDate < start) matchesTimeframe = false;
+          }
+          if (customEndDate && matchesTimeframe) {
+            const end = new Date(customEndDate);
+            end.setHours(23, 59, 59, 999);
+            if (txDate > end) matchesTimeframe = false;
+          }
+        }
+      }
     }
 
     return matchesSearch && matchesType && matchesTimeframe;
@@ -82,11 +172,104 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
   // Sort logs by date desc
   const sortedLogs = [...filteredLogs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  // Statistics
+  const inCount = sortedLogs.filter(t => t.type === 'IN').reduce((s, t) => s + (t.quantity || 0), 0);
+  const outCount = sortedLogs.filter(t => t.type === 'OUT').reduce((s, t) => s + (t.quantity || 0), 0);
+  const returnCount = sortedLogs.filter(t => t.type === 'RETURN').reduce((s, t) => s + (t.quantity || 0), 0);
+
   // Paginated logs
   const totalPages = Math.ceil(sortedLogs.length / itemsPerPage) || 1;
   const activePage = currentPage > totalPages ? totalPages : currentPage;
   const startIndex = (activePage - 1) * itemsPerPage;
   const paginatedLogs = sortedLogs.slice(startIndex, startIndex + itemsPerPage);
+
+  // Direct export CSV handler
+  const handleExportFilteredCsv = () => {
+    if (sortedLogs.length === 0) {
+      alert('⚠️ ไม่มีรายการในผลการค้นหาปัจจุบันเพื่อส่งออก');
+      return;
+    }
+    const headers = [
+      "วันที่-เวลา",
+      "รหัสสินค้า_SKU",
+      "ชื่อสินค้า",
+      "ประเภทรายการ",
+      "จำนวน",
+      "น้ำหนักรวม",
+      "หน่วยน้ำหนัก",
+      "ผู้ปฏิบัติการ",
+      "เลขที่อ้างอิง",
+      "สถานะสินค้าตีกลับ",
+      "หมายเหตุ/เหตุผล"
+    ];
+    const rows = sortedLogs.map(t => {
+      let typeStr = t.type === 'IN' ? 'รับเข้า (IN)' : t.type === 'OUT' ? 'เบิกออก (OUT)' : 'สินค้าคืน/ตีกลับ (RETURN)';
+      let returnStr = t.returnStatus === 'RE_STOCK' ? 'คืนสต๊อกหลัก' : t.returnStatus === 'DAMAGED_WRITE_OFF' ? 'สินค้าชำรุด/เขียนตัดบัญชี' : t.returnStatus === 'PENDING_INSPECT' ? 'รอตรวจสอบคุณภาพ' : '-';
+      return [
+        t.date ? new Date(t.date).toLocaleString('th-TH') : '-',
+        t.productSku,
+        t.productName,
+        typeStr,
+        t.quantity.toString(),
+        t.weight !== undefined && t.weight !== null ? t.weight.toString() : '-',
+        t.weightUnit || '-',
+        t.operator || '-',
+        t.referenceNo || '-',
+        returnStr,
+        t.reason || '-'
+      ];
+    });
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(col => `"${(col || '').replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Transaction_Logs_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Direct copy TSV handler for Google Sheets
+  const handleCopyFilteredTsv = () => {
+    if (sortedLogs.length === 0) {
+      alert('⚠️ ไม่มีรายการในผลการค้นหาปัจจุบันเพื่อคัดลอก');
+      return;
+    }
+    const headers = [
+      "วันที่-เวลา",
+      "รหัสสินค้า SKU",
+      "ชื่อสินค้า",
+      "ประเภทรายการ",
+      "จำนวน",
+      "น้ำหนักรวม",
+      "หน่วยน้ำหนัก",
+      "ผู้ปฏิบัติการ",
+      "เลขที่อ้างอิง",
+      "สถานะสินค้าตีกลับ",
+      "หมายเหตุ/เหตุผล"
+    ];
+    const rows = sortedLogs.map(t => {
+      let typeStr = t.type === 'IN' ? 'รับเข้า (IN)' : t.type === 'OUT' ? 'เบิกออก (OUT)' : 'สินค้าคืน/ตีกลับ (RETURN)';
+      let returnStr = t.returnStatus === 'RE_STOCK' ? 'คืนสต๊อกหลัก' : t.returnStatus === 'DAMAGED_WRITE_OFF' ? 'สินค้าชำรุด/เขียนตัดบัญชี' : t.returnStatus === 'PENDING_INSPECT' ? 'รอตรวจสอบคุณภาพ' : '-';
+      return [
+        t.date ? new Date(t.date).toLocaleString('th-TH') : '-',
+        t.productSku,
+        t.productName,
+        typeStr,
+        t.quantity.toString(),
+        t.weight !== undefined && t.weight !== null ? t.weight.toString() : '-',
+        t.weightUnit || '-',
+        t.operator || '-',
+        t.referenceNo || '-',
+        returnStr,
+        t.reason || '-'
+      ];
+    });
+    const tsvContent = [headers.join("\t"), ...rows.map(e => e.join("\t"))].join("\n");
+    navigator.clipboard.writeText(tsvContent);
+    alert(`📋 คัดลอกข้อมูล ${sortedLogs.length} รายการ (Tab-Separated) ลงคลิปบอร์ดแล้ว! สามารถวาง (Ctrl+V) ลงในโปรแกรม Excel หรือ Google Sheets ได้ทันที`);
+  };
 
   return (
     <div id="logs-container" className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
@@ -102,77 +285,174 @@ export default function TransactionLogs({ transactions, onResetLogs, canResetLog
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            if (!canResetLogs) return;
-            setConfirmDialog({
-              isOpen: true,
-              title: '⚠️ รีเซ็ตข้อมูลประวัติทั้งหมด',
-              message: 'คุณต้องการรีเซ็ตประวัติทำรายการความเคลื่อนไหวทั้งหมดกลับไปเป็นข้อมูลตั้งต้นหรือไม่?\n\n(ข้อมูลประวัติทั้งหมดจะถูกลบและเขียนทับด้วยชุดข้อมูลตัวอย่างเริ่มต้นของระบบ)',
-              confirmText: 'รีเซ็ตข้อมูล',
-              cancelText: 'ยกเลิก',
-              variant: 'danger',
-              onConfirm: () => {
-                onResetLogs();
-                setConfirmDialog(p => ({ ...p, isOpen: false }));
-              }
-            });
-          }}
-          disabled={!canResetLogs}
-          className={`flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-all border font-medium ${
-            canResetLogs
-              ? 'text-slate-500 hover:text-rose-600 border-slate-200 hover:border-rose-100 bg-white hover:bg-rose-50/20 cursor-pointer'
-              : 'text-slate-350 bg-slate-50 border-slate-250 cursor-not-allowed opacity-60'
-          }`}
-          title={!canResetLogs ? "บทบาทของคุณไม่มีสิทธิ์ในการรีเซ็ตประวัติ" : "รีเซ็ตคลังสินค้าทั้งหมดกลับสู่ค่าเริ่มต้น"}
-        >
-          {canResetLogs ? <Trash2 className="w-3.5 h-3.5 text-slate-400" /> : <Lock className="w-3.5 h-3.5 text-slate-400" />}
-          รีเซ็ตสมุดบัญชีประวัติ
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleExportFilteredCsv}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-all shadow-xs cursor-pointer"
+            title="ดาวน์โหลดข้อมูลรายการที่กรองอยู่ในหน้านี้เป็นไฟล์ CSV / Excel"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>ส่งออก (.CSV / Excel)</span>
+          </button>
+
+          <button
+            onClick={handleCopyFilteredTsv}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-all cursor-pointer"
+            title="คัดลอกตารางไปวางใน Google Sheets หรือ Excel"
+          >
+            <Copy className="w-3.5 h-3.5 text-slate-500" />
+            <span>คัดลอกไป Sheets</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (!canResetLogs) return;
+              setConfirmDialog({
+                isOpen: true,
+                title: '⚠️ รีเซ็ตข้อมูลประวัติทั้งหมด',
+                message: 'คุณต้องการรีเซ็ตประวัติทำรายการความเคลื่อนไหวทั้งหมดกลับไปเป็นข้อมูลตั้งต้นหรือไม่?\n\n(ข้อมูลประวัติทั้งหมดจะถูกลบและเขียนทับด้วยชุดข้อมูลตัวอย่างเริ่มต้นของระบบ)',
+                confirmText: 'รีเซ็ตข้อมูล',
+                cancelText: 'ยกเลิก',
+                variant: 'danger',
+                onConfirm: () => {
+                  onResetLogs();
+                  setConfirmDialog(p => ({ ...p, isOpen: false }));
+                }
+              });
+            }}
+            disabled={!canResetLogs}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-all border font-medium ${
+              canResetLogs
+                ? 'text-slate-500 hover:text-rose-600 border-slate-200 hover:border-rose-100 bg-white hover:bg-rose-50/20 cursor-pointer'
+                : 'text-slate-350 bg-slate-50 border-slate-250 cursor-not-allowed opacity-60'
+            }`}
+            title={!canResetLogs ? "บทบาทของคุณไม่มีสิทธิ์ในการรีเซ็ตประวัติ" : "รีเซ็ตคลังสินค้าทั้งหมดกลับสู่ค่าเริ่มต้น"}
+          >
+            {canResetLogs ? <Trash2 className="w-3.5 h-3.5 text-slate-400" /> : <Lock className="w-3.5 h-3.5 text-slate-400" />}
+            รีเซ็ตประวัติ
+          </button>
+        </div>
       </div>
 
       {/* Control filters */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5 p-4 bg-slate-50 rounded-xl border border-slate-200">
-        {/* Search Input */}
-        <div className="relative col-span-1 md:col-span-2">
-          <Search className="absolute left-3 top-2.5 w-4.5 h-4.5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="ค้นหาตามรหัส SKU, ชื่อสินค้า, พนักงานผู้ทำรายการ, หมายเหตุ หรือเลขเอกสาร..."
-            value={logSearch}
-            onChange={(e) => setLogSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-lg placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
-          />
+      <div className="space-y-3 mb-5 p-4 bg-slate-50 rounded-xl border border-slate-200">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          {/* Search Input */}
+          <div className="relative col-span-1 md:col-span-2">
+            <Search className="absolute left-3 top-2.5 w-4.5 h-4.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="ค้นหาตามรหัส SKU, ชื่อสินค้า, พนักงานผู้ทำรายการ, หมายเหตุ หรือเลขเอกสาร..."
+              value={logSearch}
+              onChange={(e) => setLogSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-lg placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          {/* Level filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+            <select
+              value={logTypeFilter}
+              onChange={(e: any) => setLogTypeFilter(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-hidden cursor-pointer"
+            >
+              <option value="ALL">ทุกประเภทรายการเคลื่อนไหว</option>
+              <option value="IN">เฉพาะนำเข้าคลังสินค้า [IN]</option>
+              <option value="OUT">เฉพาะเบิกสินค้าออกคลัง [OUT]</option>
+              <option value="RETURN">เฉพาะสินค้าตีกลับ [RETURN]</option>
+            </select>
+          </div>
+
+          {/* Timeframe filter */}
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+            <select
+              value={timeframeFilter}
+              onChange={(e: any) => setTimeframeFilter(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-750 focus:outline-hidden font-medium cursor-pointer"
+            >
+              <option value="1_WEEK">📅 แสดงล่าสุด (1 สัปดาห์)</option>
+              <option value="TODAY">⏱️ เฉพาะวันนี้ (Today)</option>
+              <option value="THIS_MONTH">📅 ประจำเดือนนี้</option>
+              <option value="LAST_MONTH">📆 ประจำเดือนที่แล้ว</option>
+              <option value="CUSTOM_MONTH">🗓️ กำหนดระบุเดือน...</option>
+              <option value="CUSTOM_RANGE">📆 กำหนดช่วงวันที่...</option>
+              <option value="1_MONTH">⏱️ ย้อนหลัง 30 วัน</option>
+              <option value="ALL">🗂️ แสดงทั้งหมด (All Time)</option>
+            </select>
+          </div>
         </div>
 
-        {/* Level filter */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-          <select
-            value={logTypeFilter}
-            onChange={(e: any) => setLogTypeFilter(e.target.value)}
-            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-hidden"
-          >
-            <option value="ALL">ทุกประเภทรายการเคลื่อนไหว</option>
-            <option value="IN">เฉพาะนำเข้าคลังสินค้า [IN]</option>
-            <option value="OUT">เฉพาะเบิกสินค้าออกคลัง [OUT]</option>
-            <option value="RETURN">เฉพาะสินค้าตีกลับ [RETURN]</option>
-          </select>
-        </div>
+        {/* Conditional Month Picker */}
+        {timeframeFilter === 'CUSTOM_MONTH' && (
+          <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-lg flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-blue-900 shrink-0">🗓️ ระบุเดือนและปีที่ต้องการ:</span>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-3 py-1.5 text-xs bg-white border border-blue-200 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-blue-200 focus:outline-hidden"
+              />
+            </div>
+            {selectedMonth && (
+              <span className="text-xs text-blue-700 font-medium">
+                (กรองเฉพาะข้อมูลของเดือน {new Date(selectedMonth + '-01').toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })})
+              </span>
+            )}
+          </div>
+        )}
 
-        {/* Timeframe filter */}
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-          <select
-            value={timeframeFilter}
-            onChange={(e: any) => setTimeframeFilter(e.target.value)}
-            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-750 focus:outline-hidden font-medium"
-          >
-            <option value="1_WEEK">📅 แสดงล่าสุด (1 สัปดาห์)</option>
-            <option value="ALL">🗂️ แสดงทั้งหมด (ดูได้ตลอด)</option>
-            <option value="TODAY">⏱️ เฉพาะวันนี้ (Today)</option>
-            <option value="1_MONTH">📆 แสดงล่าสุด (1 เดือน)</option>
-          </select>
+        {/* Conditional Date Range Picker */}
+        {timeframeFilter === 'CUSTOM_RANGE' && (
+          <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-lg flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap">
+            <span className="text-xs font-bold text-blue-900 shrink-0">📆 กำหนดช่วงวันที่:</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-600">ตั้งแต่วันที่:</span>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="px-2.5 py-1.5 text-xs bg-white border border-blue-200 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-blue-200 focus:outline-hidden"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-600">ถึงวันที่:</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="px-2.5 py-1.5 text-xs bg-white border border-blue-200 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-blue-200 focus:outline-hidden"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Summary badge / counts */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-slate-200/70 text-xs">
+          <div className="text-slate-600 flex items-center gap-2 flex-wrap">
+            <span>ผลการค้นหา: <strong className="text-slate-900 font-bold">{sortedLogs.length}</strong> รายการ</span>
+            <span className="text-slate-300">|</span>
+            <span className="text-emerald-700 font-medium">📥 รับเข้า: <strong>+{inCount}</strong> ชิ้น</span>
+            <span className="text-slate-300">|</span>
+            <span className="text-rose-700 font-medium">📤 เบิกออก: <strong>-{outCount}</strong> ชิ้น</span>
+            {returnCount > 0 && (
+              <>
+                <span className="text-slate-300">|</span>
+                <span className="text-blue-700 font-medium">↩️ สินค้าตีกลับ: <strong>{returnCount}</strong> ชิ้น</span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportFilteredCsv}
+              className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer flex items-center gap-1"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>ดาวน์โหลดไฟล์ผลลัพธ์นี้</span>
+            </button>
+          </div>
         </div>
       </div>
 

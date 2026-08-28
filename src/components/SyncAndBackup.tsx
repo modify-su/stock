@@ -18,7 +18,12 @@ import {
   Plus,
   FileDown,
   FileUp,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ArrowDownLeft,
+  ArrowUpRight,
+  RotateCcw,
+  Filter,
+  Copy
 } from 'lucide-react';
 import { AppSettings, Product, Transaction, UserProfile, RolePermissions, Category, Shelf, CloudBackup, Unit } from '../types';
 import ConfirmModal from './ConfirmModal';
@@ -84,6 +89,29 @@ export default function SyncAndBackup({
   const [selectedExportKeys, setSelectedExportKeys] = useState<string[]>(
     EXPORT_HEADERS.filter(h => h.defaultChecked).map(h => h.key)
   );
+
+  // Transactions Export Date & Filter state
+  const [txExportPeriod, setTxExportPeriod] = useState<'ALL' | 'THIS_MONTH' | 'LAST_MONTH' | 'MONTH' | 'DATE_RANGE' | 'TODAY'>('ALL');
+  const [txExportMonth, setTxExportMonth] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  });
+  const [txExportStartDate, setTxExportStartDate] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}-01`;
+  });
+  const [txExportEndDate, setTxExportEndDate] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [txExportType, setTxExportType] = useState<'ALL' | 'IN_OUT' | 'IN' | 'OUT' | 'RETURN'>('ALL');
 
   const handleSelectMain7 = () => {
     setSelectedExportKeys(['sku', 'name', 'category', 'quantity', 'wholesaleStock', 'unit', 'location']);
@@ -382,8 +410,102 @@ const handleExportProductsToCsv = () => {
     }
   };
 
+  const getFilteredTransactions = () => {
+    return transactions.filter(t => {
+      // Type Filter
+      if (txExportType === 'IN' && t.type !== 'IN') return false;
+      if (txExportType === 'OUT' && t.type !== 'OUT') return false;
+      if (txExportType === 'RETURN' && t.type !== 'RETURN') return false;
+      if (txExportType === 'IN_OUT' && t.type !== 'IN' && t.type !== 'OUT') return false;
+
+      if (!t.date) return true;
+      const txDate = new Date(t.date);
+      if (isNaN(txDate.getTime())) return true;
+
+      if (txExportPeriod === 'ALL') return true;
+
+      if (txExportPeriod === 'TODAY') {
+        const today = new Date();
+        return (
+          txDate.getFullYear() === today.getFullYear() &&
+          txDate.getMonth() === today.getMonth() &&
+          txDate.getDate() === today.getDate()
+        );
+      }
+
+      if (txExportPeriod === 'THIS_MONTH') {
+        const now = new Date();
+        return (
+          txDate.getFullYear() === now.getFullYear() &&
+          txDate.getMonth() === now.getMonth()
+        );
+      }
+
+      if (txExportPeriod === 'LAST_MONTH') {
+        const lastMonth = new Date();
+        lastMonth.setDate(1);
+        lastMonth.setMonth(lastMonth.getMonth() - 1);
+        return (
+          txDate.getFullYear() === lastMonth.getFullYear() &&
+          txDate.getMonth() === lastMonth.getMonth()
+        );
+      }
+
+      if (txExportPeriod === 'MONTH' && txExportMonth) {
+        const [y, m] = txExportMonth.split('-');
+        const targetYear = parseInt(y, 10);
+        const targetMonth = parseInt(m, 10) - 1;
+        return (
+          txDate.getFullYear() === targetYear &&
+          txDate.getMonth() === targetMonth
+        );
+      }
+
+      if (txExportPeriod === 'DATE_RANGE') {
+        if (txExportStartDate) {
+          const start = new Date(txExportStartDate);
+          start.setHours(0, 0, 0, 0);
+          if (txDate < start) return false;
+        }
+        if (txExportEndDate) {
+          const end = new Date(txExportEndDate);
+          end.setHours(23, 59, 59, 999);
+          if (txDate > end) return false;
+        }
+        return true;
+      }
+
+      return true;
+    });
+  };
+
+  const getExportFileName = () => {
+    const typeLabel = txExportType === 'IN' ? 'รับเข้า_IN' : txExportType === 'OUT' ? 'เบิกออก_OUT' : txExportType === 'IN_OUT' ? 'รับเข้าและส่งออก_IN_OUT' : txExportType === 'RETURN' ? 'สินค้าตีกลับ_RETURN' : 'ทุกประเภท';
+    let periodLabel = 'ทั้งหมด';
+    if (txExportPeriod === 'TODAY') {
+      periodLabel = `วันนี้_${new Date().toISOString().slice(0, 10)}`;
+    } else if (txExportPeriod === 'THIS_MONTH') {
+      periodLabel = `เดือนนี้_${new Date().toISOString().slice(0, 7)}`;
+    } else if (txExportPeriod === 'LAST_MONTH') {
+      const lm = new Date();
+      lm.setDate(1);
+      lm.setMonth(lm.getMonth() - 1);
+      periodLabel = `เดือนที่แล้ว_${lm.toISOString().slice(0, 7)}`;
+    } else if (txExportPeriod === 'MONTH') {
+      periodLabel = `ประจำเดือน_${txExportMonth || 'เลือก'}`;
+    } else if (txExportPeriod === 'DATE_RANGE') {
+      periodLabel = `ช่วงวันที่_${txExportStartDate || 'ต้น'}_ถึง_${txExportEndDate || 'ปลาย'}`;
+    }
+    return `Transaction_Movement_${settings.appName || 'Stock'}_${periodLabel}_${typeLabel}.csv`;
+  };
+
   const handleExportTransactionsToCsv = () => {
     try {
+      const targetList = getFilteredTransactions();
+      if (targetList.length === 0) {
+        alert('⚠️ ไม่พบข้อมูลรายการเคลื่อนไหวที่ตรงตามเงื่อนไข วัน/เดือน/ประเภท ที่ระบุ');
+        return;
+      }
       const headers = [
         "วันที่-เวลา",
         "รหัสสินค้า_SKU",
@@ -397,7 +519,7 @@ const handleExportProductsToCsv = () => {
         "สถานะสินค้าตีกลับ",
         "หมายเหตุ/เหตุผล"
       ];
-      const rows = transactions.map(t => {
+      const rows = targetList.map(t => {
         let typeStr = t.type === 'IN' ? 'รับเข้า (IN)' : t.type === 'OUT' ? 'เบิกออก (OUT)' : 'สินค้าคืน/ตีกลับ (RETURN)';
         let returnStr = t.returnStatus === 'RE_STOCK' ? 'คืนสต๊อกหลัก' : t.returnStatus === 'DAMAGED_WRITE_OFF' ? 'สินค้าชำรุด/เขียนตัดบัญชี (Write-off)' : t.returnStatus === 'PENDING_INSPECT' ? 'รอตรวจสอบคุณภาพ' : '-';
         return [
@@ -414,15 +536,60 @@ const handleExportProductsToCsv = () => {
           t.reason || '-'
         ];
       });
-      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(col => `"${col.replace(/"/g, '""')}"`).join(","))].join("\n");
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(col => `"${(col || '').replace(/"/g, '""')}"`).join(","))].join("\n");
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.setAttribute("href", url);
-      link.setAttribute("download", `Transaction_Movement_Report_${settings.appName || 'Stock'}_${new Date().toISOString().slice(0, 10)}.csv`);
+      link.setAttribute("download", getExportFileName());
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCopyTransactionsToClipboard = () => {
+    try {
+      const targetList = getFilteredTransactions();
+      if (targetList.length === 0) {
+        alert('⚠️ ไม่พบข้อมูลรายการเคลื่อนไหวที่ตรงตามเงื่อนไข วัน/เดือน/ประเภท ที่ระบุ');
+        return;
+      }
+      const headers = [
+        "วันที่-เวลา",
+        "รหัสสินค้า SKU",
+        "ชื่อสินค้า",
+        "ประเภทรายการ",
+        "จำนวน",
+        "น้ำหนักรวม",
+        "หน่วยน้ำหนัก",
+        "ผู้ปฏิบัติการ",
+        "เลขที่อ้างอิง",
+        "สถานะสินค้าตีกลับ",
+        "หมายเหตุ/เหตุผล"
+      ];
+      const rows = targetList.map(t => {
+        let typeStr = t.type === 'IN' ? 'รับเข้า (IN)' : t.type === 'OUT' ? 'เบิกออก (OUT)' : 'สินค้าคืน/ตีกลับ (RETURN)';
+        let returnStr = t.returnStatus === 'RE_STOCK' ? 'คืนสต๊อกหลัก' : t.returnStatus === 'DAMAGED_WRITE_OFF' ? 'สินค้าชำรุด/เขียนตัดบัญชี' : t.returnStatus === 'PENDING_INSPECT' ? 'รอตรวจสอบคุณภาพ' : '-';
+        return [
+          t.date ? new Date(t.date).toLocaleString('th-TH') : '-',
+          t.productSku,
+          t.productName,
+          typeStr,
+          t.quantity.toString(),
+          t.weight !== undefined && t.weight !== null ? t.weight.toString() : '-',
+          t.weightUnit || '-',
+          t.operator || '-',
+          t.referenceNo || '-',
+          returnStr,
+          t.reason || '-'
+        ];
+      });
+      const tsvContent = [headers.join("\t"), ...rows.map(e => e.join("\t"))].join("\n");
+      navigator.clipboard.writeText(tsvContent);
+      alert(`📋 คัดลอกข้อมูลรายการเคลื่อนไหวจำนวน ${targetList.length} รายการ (Tab-Separated) ลงในคลิปบอร์ดแล้ว! สามารถกดวาง (Ctrl+V) ลงใน Excel หรือ Google Sheets ได้ทันที`);
     } catch (err) {
       console.error(err);
     }
@@ -863,21 +1030,161 @@ const handleExportProductsToCsv = () => {
               </div>
 
               {/* Transactions log export */}
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>ส่งออกรายงานประวัติความเคลื่อนไหว (Export Operations Logs)</span>
-                </h4>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  ส่งออกประวัติบันทึกการเบิก-จ่าย รับเข้า ปรับจำนวนสินค้าในคลังย้อนหลังทั้งหมด เพื่อนำไปใช้ตรวจสอบกระทบยอดฝ่ายบัญชี
-                </p>
-                <div className="pt-1">
+              <div className="space-y-3 pt-3 border-t border-slate-200">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                    <span>ส่งออกรายงานประวัติการรับเข้า - ส่งออก (Export Movements & Transactions)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 leading-relaxed mt-0.5">
+                    เลือกกำหนดช่วงเวลา เดือน วันที่ และประเภทรายการที่ต้องการส่งออก เพื่อนำไปจัดทำบัญชีสต๊อกหรือรายงานประจำงวด
+                  </p>
+                </div>
+
+                {/* Filter and Period Selection Box */}
+                <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-3 text-xs">
+                  {/* 1. Transaction Type Selector */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1.5 flex items-center gap-1">
+                      <Filter className="w-3 h-3 text-slate-400" />
+                      ประเภทรายการที่ต้องการส่งออก:
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {[
+                        { id: 'ALL', label: 'ทั้งหมด (ทุกประเภท)' },
+                        { id: 'IN_OUT', label: 'รับเข้า & ส่งออก (IN+OUT)' },
+                        { id: 'IN', label: '📥 เฉพาะรับเข้า (IN)' },
+                        { id: 'OUT', label: '📤 เฉพาะส่งออก/เบิกจ่าย (OUT)' },
+                        { id: 'RETURN', label: '↩️ เฉพาะสินค้าตีกลับ (RETURN)' },
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setTxExportType(t.id as any)}
+                          className={`px-2 py-1.5 rounded-lg border text-left text-[10.5px] font-medium transition-all cursor-pointer ${
+                            txExportType === t.id
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold shadow-xs'
+                              : 'bg-slate-50/60 border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Date & Month Period Selector */}
+                  <div className="border-t border-slate-100 pt-2.5">
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1.5 flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-slate-400" />
+                      กำหนดช่วงเวลา / เดือน / วันที่:
+                    </label>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-2.5">
+                      {[
+                        { id: 'ALL', label: '🗂️ ทั้งหมด (All Time)' },
+                        { id: 'MONTH', label: '🗓️ กำหนดตามเดือน (Month)' },
+                        { id: 'DATE_RANGE', label: '📆 กำหนดช่วงวันที่ (Range)' },
+                        { id: 'TODAY', label: '⏱️ เฉพาะวันนี้ (Today)' },
+                        { id: 'THIS_MONTH', label: '📅 ประจำเดือนนี้' },
+                        { id: 'LAST_MONTH', label: '📆 ประจำเดือนที่แล้ว' },
+                      ].map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setTxExportPeriod(p.id as any)}
+                          className={`px-2 py-1.5 rounded-lg border text-left text-[10.5px] font-medium transition-all cursor-pointer ${
+                            txExportPeriod === p.id
+                              ? 'bg-blue-50 border-blue-300 text-blue-800 font-bold shadow-xs'
+                              : 'bg-slate-50/60 border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Conditional Input for Month Selection */}
+                    {txExportPeriod === 'MONTH' && (
+                      <div className="p-2.5 bg-blue-50/40 border border-blue-100 rounded-lg flex flex-col sm:flex-row sm:items-center gap-2">
+                        <span className="text-[11px] font-bold text-blue-800 shrink-0">เลือกเดือน/ปี:</span>
+                        <input
+                          type="month"
+                          value={txExportMonth}
+                          onChange={(e) => setTxExportMonth(e.target.value)}
+                          className="px-2.5 py-1 text-xs bg-white border border-blue-200 rounded-md text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-400"
+                        />
+                        <span className="text-[10px] text-blue-600">
+                          {txExportMonth ? `(รายงานประจำเดือน ${new Date(txExportMonth + '-01').toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })})` : ''}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Conditional Input for Date Range Selection */}
+                    {txExportPeriod === 'DATE_RANGE' && (
+                      <div className="p-2.5 bg-blue-50/40 border border-blue-100 rounded-lg flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-bold text-blue-800 shrink-0">ตั้งแต่วันที่:</span>
+                          <input
+                            type="date"
+                            value={txExportStartDate}
+                            onChange={(e) => setTxExportStartDate(e.target.value)}
+                            className="px-2.5 py-1 text-xs bg-white border border-blue-200 rounded-md text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-400"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-bold text-blue-800 shrink-0">ถึงวันที่:</span>
+                          <input
+                            type="date"
+                            value={txExportEndDate}
+                            onChange={(e) => setTxExportEndDate(e.target.value)}
+                            className="px-2.5 py-1 text-xs bg-white border border-blue-200 rounded-md text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-400"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Live Match Statistics Preview */}
+                  {(() => {
+                    const currentFiltered = getFilteredTransactions();
+                    const inQty = currentFiltered.filter(t => t.type === 'IN').reduce((s, t) => s + (t.quantity || 0), 0);
+                    const outQty = currentFiltered.filter(t => t.type === 'OUT').reduce((s, t) => s + (t.quantity || 0), 0);
+                    const retQty = currentFiltered.filter(t => t.type === 'RETURN').reduce((s, t) => s + (t.quantity || 0), 0);
+
+                    return (
+                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="text-[11px] text-slate-600">
+                          📊 พบข้อมูลที่ตรงเงื่อนไข: <strong className="text-slate-800 font-bold">{currentFiltered.length}</strong> รายการ
+                          {currentFiltered.length > 0 && (
+                            <span className="text-[10px] text-slate-500 block sm:inline sm:ml-2">
+                              (รับเข้า: <span className="text-emerald-600 font-semibold">+{inQty}</span> | เบิกออก: <span className="text-rose-600 font-semibold">-{outQty}</span> {retQty > 0 ? `| ตีกลับ: ${retQty}` : ''})
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          UTF-8 BOM (.csv)
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     onClick={handleExportTransactionsToCsv}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
                   >
-                    <FileSpreadsheet className="w-3 h-3" />
-                    <span>ดาวน์โหลดบันทึกธุรกรรม (.CSV / Excel)</span>
+                    <Download className="w-3 h-3" />
+                    <span>ดาวน์โหลดรายงานรายการ (.CSV / Excel)</span>
+                  </button>
+
+                  <button
+                    onClick={handleCopyTransactionsToClipboard}
+                    className="px-3 py-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    <Copy className="w-3 h-3 text-emerald-600" />
+                    <span>คัดลอกด่วนไป Google Sheets (Tab)</span>
                   </button>
                 </div>
               </div>

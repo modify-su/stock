@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { initializeApp } from "firebase/app";
@@ -876,20 +877,30 @@ ${skuReferenceListText || "(No SKUs found in system database)"}`;
     }
 
     try {
-      const fs = require("fs");
-      let swContent = fs.readFileSync(swPath, "utf8");
-      
-      // Inject the current unique SERVER_VERSION and rewrite cache name dynamically
-      swContent = `// Dynamic Server Build: ${SERVER_VERSION}\n` + swContent;
-      swContent = swContent.replace(
-        "const CACHE_NAME = 'smart-stock-v1';",
-        `const CACHE_NAME = 'smart-stock-${SERVER_VERSION}';`
-      );
-      
-      res.send(swContent);
+      if (fs.existsSync(swPath)) {
+        let swContent = fs.readFileSync(swPath, "utf8");
+        
+        // Inject the current unique SERVER_VERSION and rewrite cache name dynamically
+        swContent = `// Dynamic Server Build: ${SERVER_VERSION}\n` + swContent;
+        swContent = swContent.replace(
+          "const CACHE_NAME = 'smart-stock-v1';",
+          `const CACHE_NAME = 'smart-stock-${SERVER_VERSION}';`
+        );
+        
+        return res.send(swContent);
+      } else {
+        const fallbackPublicPath = path.join(process.cwd(), "public", "sw.js");
+        if (fs.existsSync(fallbackPublicPath)) {
+          return res.sendFile(fallbackPublicPath);
+        }
+        return res.status(404).send("// sw.js not found");
+      }
     } catch (err) {
       console.error("Failed to dynamically modify sw.js, falling back to static:", err);
-      res.sendFile(swPath);
+      if (fs.existsSync(swPath)) {
+        return res.sendFile(swPath);
+      }
+      return res.status(404).send("// sw.js not found");
     }
   });
 
